@@ -1,7 +1,8 @@
 let cloudRevision=0,cloudEditable=false,cloudDirty=false,cloudBusy=false;
 let legacyBackup=null;try{legacyBackup=localStorage.getItem('sena-v1');}catch{}
 const bar=document.createElement('section');bar.className='panel';bar.innerHTML='<b>☁ ข้อมูลกลางของก๊วน</b><p id="cloudStatus" role="status">กำลังเชื่อมต่อ…</p><div class="actions"><a class="secondary" href="/admin" target="_top">เข้าสู่ระบบผู้จัด</a><button class="secondary" id="cloudRefresh">โหลดข้อมูลกลางใหม่</button><button class="primary" id="cloudSave" hidden>บันทึกขึ้นออนไลน์</button><button class="secondary" id="cloudImport" hidden>นำเข้าข้อมูลเดิมในเครื่อง</button></div><small>เพื่อนจัดคู่ เล่น Sena Cup และเก็บคะแนนในเครื่องได้ทันที • แก้รายชื่อ/Lv/เพศ หรือบันทึกข้อมูลกลาง ต้องล็อกอินผู้จัด</small>';
-document.querySelector('main').prepend(bar);
+bar.id = 'club-tools';
+document.querySelector('footer').before(bar);
 const cloudStatus=s=>$('#cloudStatus').textContent=s;
 function cloudLock(){
  document.querySelectorAll('main button, main input, main select, main textarea').forEach(el=>{
