@@ -26,3 +26,15 @@ test('guest API excludes levels and team differences; organizer retains them', a
   assert.equal(generated.status,200);
   const data=await generated.json();assert.equal(data.result.schedule.length,2);assert(!('diff' in data.result.schedule[0]));assert(!('players' in data));
 });
+test('cup medals follow completed scores and clear for the next cup',()=>{
+ const teams=[['A','B'],['C','D'],['E','F']];
+ const cup={teams,matches:[{a:0,b:1,sa:21,sb:10},{a:0,b:2,sa:21,sb:8},{a:1,b:2,sa:21,sb:9}]};
+ const awards=globalThis.Sena.cupAwards(cup);
+ assert.equal(awards.get('a'),'🥇');assert.equal(awards.get('b'),'🥇');
+ assert.equal(awards.get('e'),'💩');assert.equal(awards.get('f'),'💩');assert(!awards.has('c'));
+ assert.equal(globalThis.Sena.cupAwards(null).size,0);
+ assert.equal(globalThis.Sena.cupAwards({teams,matches:globalThis.Sena.roundRobin(teams)}).size,0);
+ cup.matches=cup.matches.map(m=>({...m,sa:m.sb,sb:m.sa}));
+ assert.equal(globalThis.Sena.cupAwards(cup).get('a'),'💩');
+ assert.equal(globalThis.Sena.cupAwards(cup).get('e'),'🥇');
+});

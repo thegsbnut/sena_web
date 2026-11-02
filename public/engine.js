@@ -29,5 +29,17 @@ function generate(players,rounds=10,locks=[],trials=90,candidateLimit=0){
 }
 function roundRobin(teams){let matches=[];for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++)matches.push({a:i,b:j,sa:'',sb:''});return matches;}
 function standings(teams,matches){let rows=teams.map((t,i)=>({i,name:t.join(' / '),played:0,w:0,pf:0,pa:0}));matches.forEach(m=>{if(m.sa===''||m.sb==='')return;let a=+m.sa,b=+m.sb;if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a===b)return;rows[m.a].played++;rows[m.b].played++;rows[m.a].pf+=a;rows[m.a].pa+=b;rows[m.b].pf+=b;rows[m.b].pa+=a;rows[a>b?m.a:m.b].w++;});return rows.sort((a,b)=>b.w-a.w||(b.pf-b.pa)-(a.pf-a.pa)||b.pf-a.pf);}
-root.Sena={generate,valid,roundRobin,standings};if(typeof module!=='undefined')module.exports=root.Sena;
+function cupAwards(cup) {
+ const medals = new Map();
+ if (!cup || cup.teams.length < 2 || !cup.matches.length || !cup.matches.every(m =>
+   Number.isInteger(m.sa) && Number.isInteger(m.sb) && m.sa >= 0 && m.sb >= 0 && m.sa !== m.sb)) return medals;
+ const rows = standings(cup.teams,cup.matches);
+ const equal = (a,b) => a.w===b.w && a.pf-a.pa===b.pf-b.pa && a.pf===b.pf;
+ for (const row of rows) {
+   const badge = equal(row,rows[0]) ? '🥇' : equal(row,rows[rows.length-1]) ? '💩' : '';
+   if (badge) for (const name of cup.teams[row.i]) medals.set(name.trim().toLowerCase(),badge);
+ }
+ return medals;
+}
+root.Sena={generate,valid,roundRobin,standings,cupAwards};if(typeof module!=='undefined')module.exports=root.Sena;
 })(typeof window==='undefined'?globalThis:window);
