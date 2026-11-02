@@ -12,7 +12,6 @@ export function valid(s){if(!s||!Array.isArray(s.players)||s.players.length>200|
 async function body(req,max){const text=await req.text();if(text.length>max)throw Error('body too large');return JSON.parse(text);}
 export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
-if(path==='/admin')return env.ASSETS.fetch(new Request(url.origin+'/admin.html',req));
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
 if(path==='/api/login'&&req.method==='POST'){
  if(!env.DB||!ready(env))return json({error:'ยังไม่ได้ตั้งค่า DB และ ADMIN_KEY ใน Cloudflare'},503);
