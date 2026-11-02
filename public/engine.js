@@ -27,7 +27,36 @@ function generate(players,rounds=10,locks=[],trials=90,candidateLimit=0){
  }
  if(!best)throw Error('ยังจัดตารางตามเงื่อนไขนี้ไม่ได้ ลองเพิ่มผู้เล่นหรือลดคู่ล็อก');return best;
 }
-function roundRobin(teams){let matches=[];for(let i=0;i<teams.length;i++)for(let j=i+1;j<teams.length;j++)matches.push({a:i,b:j,sa:'',sb:''});return matches;}
+function cupRestConflicts(matches) {
+ return matches.slice(1).reduce((total,match,index) => {
+   const previous=matches[index];
+   return total + Number(match.a===previous.a || match.a===previous.b) + Number(match.b===previous.a || match.b===previous.b);
+ },0);
+}
+function roundRobin(teams) {
+ const matches=[];
+ for(let a=0;a<teams.length;a++) for(let b=a+1;b<teams.length;b++) matches.push({a,b,sa:'',sb:''});
+ let best=matches, bestCost=cupRestConflicts(matches);
+ for(let trial=0;trial<100 && bestCost>0;trial++) {
+   const remaining=matches.slice(), ordered=[], lastPlayed=Array(teams.length).fill(-1);
+   while(remaining.length) {
+     const previous=ordered[ordered.length-1];
+     let bestIndex=0, bestScore=Infinity;
+     for(let index=0;index<remaining.length;index++) {
+       const match=remaining[index];
+       const overlap=previous ? Number(match.a===previous.a || match.a===previous.b)+Number(match.b===previous.a || match.b===previous.b) : 0;
+       const score=overlap*10000 + Math.max(lastPlayed[match.a],lastPlayed[match.b])*2 + Math.random()*10;
+       if(score<bestScore) {bestScore=score;bestIndex=index;}
+     }
+     const match=remaining.splice(bestIndex,1)[0];
+     lastPlayed[match.a]=lastPlayed[match.b]=ordered.length;
+     ordered.push(match);
+   }
+   const cost=cupRestConflicts(ordered);
+   if(cost<bestCost) {best=ordered;bestCost=cost;}
+ }
+ return best;
+}
 function standings(teams,matches){let rows=teams.map((t,i)=>({i,name:t.join(' / '),played:0,w:0,pf:0,pa:0}));matches.forEach(m=>{if(m.sa===''||m.sb==='')return;let a=+m.sa,b=+m.sb;if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0||a===b)return;rows[m.a].played++;rows[m.b].played++;rows[m.a].pf+=a;rows[m.a].pa+=b;rows[m.b].pf+=b;rows[m.b].pa+=a;rows[a>b?m.a:m.b].w++;});return rows.sort((a,b)=>b.w-a.w||(b.pf-b.pa)-(a.pf-a.pa)||b.pf-a.pf);}
 function cupAwards(cup) {
  const medals = new Map();
@@ -41,5 +70,5 @@ function cupAwards(cup) {
  }
  return medals;
 }
-root.Sena={generate,valid,roundRobin,standings,cupAwards};if(typeof module!=='undefined')module.exports=root.Sena;
+root.Sena={generate,valid,roundRobin,standings,cupAwards,cupRestConflicts};if(typeof module!=='undefined')module.exports=root.Sena;
 })(typeof window==='undefined'?globalThis:window);
