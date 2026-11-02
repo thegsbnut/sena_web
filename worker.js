@@ -1,3 +1,4 @@
+import './public/engine.js';
 import seed from './seed.json' with {type:'json'};
 const enc=new TextEncoder();
 const json=(data,status=200,headers={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
@@ -20,6 +21,16 @@ const cookie=value=>'__Host-sena='+value+'; Path=/; Secure; HttpOnly; SameSite=S
 const originOK=req=>req.headers.get('Origin')===new URL(req.url).origin;
 export function valid(s){if(!s||!Array.isArray(s.players)||s.players.length>200||!s.players.every(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.name.trim()&&p.name.length<=100&&typeof p.thai==='string'&&Number.isFinite(p.lv)&&p.lv>=0&&p.lv<=100&&['M','F'].includes(p.gender)))return false;const ids=new Set(s.players.map(p=>p.id));if(ids.size!==s.players.length||!Array.isArray(s.selected)||!s.selected.every(id=>ids.has(id))||!Number.isInteger(s.rounds)||s.rounds<1||s.rounds>30||!Array.isArray(s.locks))return false;if(s.result&&(!Array.isArray(s.result.schedule)||!s.result.schedule.every(m=>Array.isArray(m.ids)&&m.ids.length===4&&m.ids.every(id=>ids.has(id)))||!s.result.counts||!Object.keys(s.result.counts).every(id=>ids.has(id))))return false;if(s.cup&&(!Array.isArray(s.cup.teams)||s.cup.teams.length>20||!s.cup.teams.every(t=>Array.isArray(t)&&t.length===2&&t.every(n=>typeof n==='string'&&n.length<=100))||!Array.isArray(s.cup.matches)||!s.cup.matches.every(m=>Number.isInteger(m.a)&&m.a>=0&&m.a<s.cup.teams.length&&Number.isInteger(m.b)&&m.b>=0&&m.b<s.cup.teams.length&&['sa','sb'].every(k=>m[k]===''||Number.isInteger(m[k])&&m[k]>=0&&m[k]<=999))))return false;return true;}
 async function body(req,max){const text=await req.text();if(text.length>max)throw Error('body too large');return JSON.parse(text);}
+export function guestState(state) {
+  return {
+    players: state.players.map(({id,name,thai,gender}) => ({id,name,thai,gender})),
+    selected: state.selected, rounds: state.rounds, locks: state.locks,
+    result: state.result ? guestResult(state.result) : null, cup: state.cup
+  };
+}
+function guestResult(result) {
+  return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
+}
 export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
@@ -35,9 +46,20 @@ if(path==='/api/login'&&req.method==='POST'){
  const exp=String(Date.now()+28800000);return json({ok:true},200,{'Set-Cookie':cookie(exp+'.'+await sessionSignature(exp,env,true))});
 }
 if(path==='/api/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':'__Host-sena=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'});
+if (path === '/api/generate' && req.method === 'POST') {
+  if (!env.DB) return json({error:'ยังไม่ได้ตั้งค่าฐานข้อมูล'},503);
+  const input = await body(req,10000);
+  if (!Array.isArray(input.selected) || input.selected.length > 24 || new Set(input.selected).size !== input.selected.length || !Number.isInteger(input.rounds) || input.rounds < 1 || input.rounds > 30 || !Array.isArray(input.locks) || input.locks.length > 30 || !input.locks.every(l => l && Number.isInteger(l.round) && Array.isArray(l.ids) && l.ids.length === 4)) return json({error:'ข้อมูลจัดคู่ไม่ถูกต้อง'},400);
+  const row = await env.DB.prepare('SELECT payload FROM club_state WHERE id=1').first();
+  const roster = row ? JSON.parse(row.payload) : seed;
+  const players = roster.players.filter(p => input.selected.includes(p.id));
+  if (players.length !== input.selected.length) return json({error:'รายชื่อเปลี่ยนแล้ว กรุณาโหลดข้อมูลกลางใหม่'},409);
+  try { return json({result:guestResult(globalThis.Sena.generate(players,input.rounds,input.locks,3,60))}); }
+  catch { return json({error:'จัดคู่ตามเงื่อนไขนี้ไม่ได้ กรุณาตรวจจำนวนคนและคู่ล็อก'},400); }
+}
 if(path==='/api/state'){
  const canEdit=await authorized(req,env);
- if(req.method==='GET'){if(!env.DB)return json({state:seed,revision:0,updatedAt:null,canEdit:false,setupRequired:true});const row=await env.DB.prepare('SELECT revision,payload,updated_at FROM club_state WHERE id=1').first();return json({state:row?JSON.parse(row.payload):seed,revision:row?.revision||0,updatedAt:row?.updated_at||null,canEdit});}
+ if(req.method==='GET'){if(!env.DB)return json({state:guestState(seed),revision:0,updatedAt:null,canEdit:false,setupRequired:true});const row=await env.DB.prepare('SELECT revision,payload,updated_at FROM club_state WHERE id=1').first();return json({state:canEdit?(row?JSON.parse(row.payload):seed):guestState(row?JSON.parse(row.payload):seed),revision:row?.revision||0,updatedAt:row?.updated_at||null,canEdit});}
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
  if(!canEdit)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);if(!env.DB)return json({error:'ยังไม่ได้ผูก DB'},503);
  const input=await body(req,500000);if(!valid(input.state)||!Number.isInteger(input.revision)||input.revision<0)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
