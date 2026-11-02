@@ -1,11 +1,21 @@
 import seed from './seed.json' with {type:'json'};
 const enc=new TextEncoder();
 const json=(data,status=200,headers={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
-const ready=env=>typeof env.ADMIN_KEY==='string'&&env.ADMIN_KEY.length>=32;
+const ready=env=>typeof env.ADMIN_KEY==='string'&&env.ADMIN_KEY.length>=7;
 async function digest(s){return new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(s)));}
 async function equal(a,b){const [x,y]=await Promise.all([digest(a),digest(b)]);let diff=0;for(let i=0;i<x.length;i++)diff|=x[i]^y[i];return diff===0;}
 async function sign(value,key){const k=await crypto.subtle.importKey('raw',enc.encode(key),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',k,enc.encode(value)))).map(x=>x.toString(16).padStart(2,'0')).join('');}
-export async function authorized(req,env){if(!ready(env))return false;const token=(req.headers.get('Cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('__Host-sena='))?.slice(12);if(!token)return false;const [exp,sig]=token.split('.');if(!/^\d+$/.test(exp)||Number(exp)<=Date.now()||Number(exp)>Date.now()+28800000)return false;return equal(sig||'',await sign(exp,env.ADMIN_KEY));}
+async function sessionSignature(exp, env, initialize = false) {
+  if (initialize) {
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS session_signing (id INTEGER PRIMARY KEY, secret TEXT NOT NULL)').run();
+    await env.DB.prepare('INSERT OR IGNORE INTO session_signing (id,secret) VALUES (1,lower(hex(randomblob(32))))').run();
+  }
+  const row = await env.DB.prepare('SELECT secret FROM session_signing WHERE id=1').first();
+  if (!row?.secret) throw Error('Missing session signing key');
+  return sign(JSON.stringify([exp, env.ADMIN_KEY]), row.secret);
+}
+export async function authorized(req,env){if(!ready(env)||!env.DB)return false;const token=(req.headers.get('Cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('__Host-sena='))?.slice(12);if(!token)return false;const [exp,sig]=token.split('.');if(!/^\d+$/.test(exp)||Number(exp)<=Date.now()||Number(exp)>Date.now()+28800000)return false;if (!/^[0-9a-f]{64}$/.test(sig||'')) return false;
+try { return await equal(sig, await sessionSignature(exp, env)); } catch { return false; }}
 const cookie=value=>'__Host-sena='+value+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800';
 const originOK=req=>req.headers.get('Origin')===new URL(req.url).origin;
 export function valid(s){if(!s||!Array.isArray(s.players)||s.players.length>200||!s.players.every(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.name.trim()&&p.name.length<=100&&typeof p.thai==='string'&&Number.isFinite(p.lv)&&p.lv>=0&&p.lv<=100&&['M','F'].includes(p.gender)))return false;const ids=new Set(s.players.map(p=>p.id));if(ids.size!==s.players.length||!Array.isArray(s.selected)||!s.selected.every(id=>ids.has(id))||!Number.isInteger(s.rounds)||s.rounds<1||s.rounds>30||!Array.isArray(s.locks))return false;if(s.result&&(!Array.isArray(s.result.schedule)||!s.result.schedule.every(m=>Array.isArray(m.ids)&&m.ids.length===4&&m.ids.every(id=>ids.has(id)))||!s.result.counts||!Object.keys(s.result.counts).every(id=>ids.has(id))))return false;if(s.cup&&(!Array.isArray(s.cup.teams)||s.cup.teams.length>20||!s.cup.teams.every(t=>Array.isArray(t)&&t.length===2&&t.every(n=>typeof n==='string'&&n.length<=100))||!Array.isArray(s.cup.matches)||!s.cup.matches.every(m=>Number.isInteger(m.a)&&m.a>=0&&m.a<s.cup.teams.length&&Number.isInteger(m.b)&&m.b>=0&&m.b<s.cup.teams.length&&['sa','sb'].every(k=>m[k]===''||Number.isInteger(m[k])&&m[k]>=0&&m[k]<=999))))return false;return true;}
@@ -16,13 +26,13 @@ if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({err
 if(path==='/api/login'&&req.method==='POST'){
  if (!env.DB) return json({error:'กรุณาผูกฐานข้อมูล D1 ชื่อ DB กับ Worker ใน Production'},503);
  if (typeof env.ADMIN_KEY !== 'string' || !env.ADMIN_KEY) return json({error:'Worker ยังไม่พบ ADMIN_KEY ใน Production ตรวจชื่อ Secret ให้เป็นตัวใหญ่ แล้วกด Deploy'},503);
- if (!ready(env)) return json({error:'ADMIN_KEY ที่ตั้งใน Cloudflare สั้นเกินไป กรุณาตั้งรหัสอย่างน้อย 32 ตัวอักษร แล้วกด Deploy'},503);
+ if (!ready(env)) return json({error:'ADMIN_KEY ที่ตั้งใน Cloudflare สั้นเกินไป กรุณาตั้งรหัสอย่างน้อย 7 ตัวอักษร แล้วกด Deploy'},503);
  const input=await body(req,1024);if(typeof input.key!=='string'||input.key.length>256)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
  const ip=Array.from(await digest(req.headers.get('CF-Connecting-IP')||'unknown')).join(''),window=Math.floor(Date.now()/900000);
  const attempt=await env.DB.prepare('INSERT INTO login_attempts (ip,window,attempts) VALUES (?,?,1) ON CONFLICT(ip) DO UPDATE SET window=excluded.window, attempts=CASE WHEN login_attempts.window=excluded.window THEN login_attempts.attempts+1 ELSE 1 END RETURNING attempts').bind(ip,window).first();
  if(attempt.attempts>10)return json({error:'ลองหลายครั้งเกินไป กรุณารอ 15 นาที'},429,{'Retry-After':'900'});
  if(!await equal(input.key,env.ADMIN_KEY))return json({error:'รหัสผู้จัดไม่ถูกต้อง'},401);
- const exp=String(Date.now()+28800000);return json({ok:true},200,{'Set-Cookie':cookie(exp+'.'+await sign(exp,env.ADMIN_KEY))});
+ const exp=String(Date.now()+28800000);return json({ok:true},200,{'Set-Cookie':cookie(exp+'.'+await sessionSignature(exp,env,true))});
 }
 if(path==='/api/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':'__Host-sena=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'});
 if(path==='/api/state'){
