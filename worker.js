@@ -14,7 +14,9 @@ export default {async fetch(req,env){const url=new URL(req.url),path=url.pathnam
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
 if(path==='/api/login'&&req.method==='POST'){
- if(!env.DB||!ready(env))return json({error:'ยังไม่ได้ตั้งค่า DB และ ADMIN_KEY ใน Cloudflare'},503);
+ if (!env.DB) return json({error:'กรุณาผูกฐานข้อมูล D1 ชื่อ DB กับ Worker ใน Production'},503);
+ if (typeof env.ADMIN_KEY !== 'string' || !env.ADMIN_KEY) return json({error:'Worker ยังไม่พบ ADMIN_KEY ใน Production ตรวจชื่อ Secret ให้เป็นตัวใหญ่ แล้วกด Deploy'},503);
+ if (!ready(env)) return json({error:'ADMIN_KEY ที่ตั้งใน Cloudflare สั้นเกินไป กรุณาตั้งรหัสอย่างน้อย 32 ตัวอักษร แล้วกด Deploy'},503);
  const input=await body(req,1024);if(typeof input.key!=='string'||input.key.length>256)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
  const ip=Array.from(await digest(req.headers.get('CF-Connecting-IP')||'unknown')).join(''),window=Math.floor(Date.now()/900000);
  const attempt=await env.DB.prepare('INSERT INTO login_attempts (ip,window,attempts) VALUES (?,?,1) ON CONFLICT(ip) DO UPDATE SET window=excluded.window, attempts=CASE WHEN login_attempts.window=excluded.window THEN login_attempts.attempts+1 ELSE 1 END RETURNING attempts').bind(ip,window).first();
