@@ -17,7 +17,7 @@
 ใส่ comma หลัง `"keep_vars": true` ก่อนเพิ่มรายการนี้ แล้ว commit เพื่อ deploy ใหม่
 6. Worker → Settings → Variables and Secrets → Add → ชนิด Secret
    - Name: `ADMIN_KEY`
-   - Value: รหัสสุ่มอย่างน้อย 32 ตัวอักษร เก็บในตัวจัดการรหัสผ่าน
+   - Value: รหัสสุ่มอย่างน้อย 7 ตัวอักษร เก็บในตัวจัดการรหัสผ่าน
    - ห้ามใส่รหัสนี้ใน GitHub หรือส่งลงแชต
    - Save/Deploy ตามหน้าจอ
 7. เปิด URL ของ Worker → เข้าสู่ระบบผู้จัด → ใส่ ADMIN_KEY → ทดลองบันทึกออนไลน์
