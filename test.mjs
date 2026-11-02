@@ -38,3 +38,13 @@ test('cup medals follow completed scores and clear for the next cup',()=>{
  assert.equal(globalThis.Sena.cupAwards(cup).get('a'),'💩');
  assert.equal(globalThis.Sena.cupAwards(cup).get('e'),'🥇');
 });
+test('round robin covers every pair once and separates consecutive teams',()=>{
+ for(let n=2;n<=20;n++) {
+  const matches=globalThis.Sena.roundRobin(Array.from({length:n},(_,i)=>['A'+i,'B'+i]));
+  assert.equal(matches.length,n*(n-1)/2);
+  assert.equal(new Set(matches.map(m=>[m.a,m.b].sort((a,b)=>a-b).join(','))).size,matches.length);
+  assert(matches.every(m=>m.a!==m.b && m.sa==='' && m.sb===''));
+  if(n>=5)assert.equal(globalThis.Sena.cupRestConflicts(matches),0);
+  if(n===3 || n===4)assert.equal(globalThis.Sena.cupRestConflicts(matches),2);
+ }
+});
