@@ -1,0 +1,39 @@
+import seed from './seed.json' with {type:'json'};
+const enc=new TextEncoder();
+const json=(data,status=200,headers={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store',...headers}});
+const ready=env=>typeof env.ADMIN_KEY==='string'&&env.ADMIN_KEY.length>=32;
+async function digest(s){return new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(s)));}
+async function equal(a,b){const [x,y]=await Promise.all([digest(a),digest(b)]);let diff=0;for(let i=0;i<x.length;i++)diff|=x[i]^y[i];return diff===0;}
+async function sign(value,key){const k=await crypto.subtle.importKey('raw',enc.encode(key),{name:'HMAC',hash:'SHA-256'},false,['sign']);return Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',k,enc.encode(value)))).map(x=>x.toString(16).padStart(2,'0')).join('');}
+export async function authorized(req,env){if(!ready(env))return false;const token=(req.headers.get('Cookie')||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('__Host-sena='))?.slice(12);if(!token)return false;const [exp,sig]=token.split('.');if(!/^\d+$/.test(exp)||Number(exp)<=Date.now()||Number(exp)>Date.now()+28800000)return false;return equal(sig||'',await sign(exp,env.ADMIN_KEY));}
+const cookie=value=>'__Host-sena='+value+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800';
+const originOK=req=>req.headers.get('Origin')===new URL(req.url).origin;
+export function valid(s){if(!s||!Array.isArray(s.players)||s.players.length>200||!s.players.every(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.name.trim()&&p.name.length<=100&&typeof p.thai==='string'&&Number.isFinite(p.lv)&&p.lv>=0&&p.lv<=100&&['M','F'].includes(p.gender)))return false;const ids=new Set(s.players.map(p=>p.id));if(ids.size!==s.players.length||!Array.isArray(s.selected)||!s.selected.every(id=>ids.has(id))||!Number.isInteger(s.rounds)||s.rounds<1||s.rounds>30||!Array.isArray(s.locks))return false;if(s.result&&(!Array.isArray(s.result.schedule)||!s.result.schedule.every(m=>Array.isArray(m.ids)&&m.ids.length===4&&m.ids.every(id=>ids.has(id)))||!s.result.counts||!Object.keys(s.result.counts).every(id=>ids.has(id))))return false;if(s.cup&&(!Array.isArray(s.cup.teams)||s.cup.teams.length>20||!s.cup.teams.every(t=>Array.isArray(t)&&t.length===2&&t.every(n=>typeof n==='string'&&n.length<=100))||!Array.isArray(s.cup.matches)||!s.cup.matches.every(m=>Number.isInteger(m.a)&&m.a>=0&&m.a<s.cup.teams.length&&Number.isInteger(m.b)&&m.b>=0&&m.b<s.cup.teams.length&&['sa','sb'].every(k=>m[k]===''||Number.isInteger(m[k])&&m[k]>=0&&m[k]<=999))))return false;return true;}
+async function body(req,max){const text=await req.text();if(text.length>max)throw Error('body too large');return JSON.parse(text);}
+export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+if(path==='/')return Response.redirect(url.origin+'/court.html',302);
+if(path==='/admin')return env.ASSETS.fetch(new Request(url.origin+'/admin.html',req));
+if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
+if(path==='/api/login'&&req.method==='POST'){
+ if(!env.DB||!ready(env))return json({error:'ยังไม่ได้ตั้งค่า DB และ ADMIN_KEY ใน Cloudflare'},503);
+ const input=await body(req,1024);if(typeof input.key!=='string'||input.key.length>256)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
+ const ip=Array.from(await digest(req.headers.get('CF-Connecting-IP')||'unknown')).join(''),window=Math.floor(Date.now()/900000);
+ const attempt=await env.DB.prepare('INSERT INTO login_attempts (ip,window,attempts) VALUES (?,?,1) ON CONFLICT(ip) DO UPDATE SET window=excluded.window, attempts=CASE WHEN login_attempts.window=excluded.window THEN login_attempts.attempts+1 ELSE 1 END RETURNING attempts').bind(ip,window).first();
+ if(attempt.attempts>10)return json({error:'ลองหลายครั้งเกินไป กรุณารอ 15 นาที'},429,{'Retry-After':'900'});
+ if(!await equal(input.key,env.ADMIN_KEY))return json({error:'รหัสผู้จัดไม่ถูกต้อง'},401);
+ const exp=String(Date.now()+28800000);return json({ok:true},200,{'Set-Cookie':cookie(exp+'.'+await sign(exp,env.ADMIN_KEY))});
+}
+if(path==='/api/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':'__Host-sena=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'});
+if(path==='/api/state'){
+ const canEdit=await authorized(req,env);
+ if(req.method==='GET'){if(!env.DB)return json({state:seed,revision:0,updatedAt:null,canEdit:false,setupRequired:true});const row=await env.DB.prepare('SELECT revision,payload,updated_at FROM club_state WHERE id=1').first();return json({state:row?JSON.parse(row.payload):seed,revision:row?.revision||0,updatedAt:row?.updated_at||null,canEdit});}
+ if(req.method!=='POST')return json({error:'Method not allowed'},405);
+ if(!canEdit)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);if(!env.DB)return json({error:'ยังไม่ได้ผูก DB'},503);
+ const input=await body(req,500000);if(!valid(input.state)||!Number.isInteger(input.revision)||input.revision<0)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
+ const now=new Date().toISOString(),payload=JSON.stringify(input.state);
+ const r=input.revision===0?await env.DB.prepare('INSERT OR IGNORE INTO club_state (id,revision,payload,updated_at) VALUES (1,1,?,?)').bind(payload,now).run():await env.DB.prepare('UPDATE club_state SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?').bind(payload,now,input.revision).run();
+ if(r.meta.changes!==1)return json({error:'มีข้อมูลใหม่จากอีกเครื่อง กรุณาสำรองข้อมูลแล้วโหลดข้อมูลกลางใหม่'},409);return json({revision:input.revision+1,updatedAt:now});
+}
+if(path.startsWith('/api/'))return json({error:'Not found'},404);
+return env.ASSETS.fetch(req);
+}catch{return json({error:'ยังใช้บริการนี้ไม่ได้ ตรวจการตั้งค่า D1 และรัน schema.sql ก่อน หรือทดลองใหม่อีกครั้ง'},503);}}};
