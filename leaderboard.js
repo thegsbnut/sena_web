@@ -1,6 +1,7 @@
 import {baseline} from './leaderboard-data.js';
 import './public/engine.js';
-const key = name => name.trim().toLowerCase();
+const canonicalName = name => ({nott:'Not',not:'Not',beau:'Bo',bo:'Bo'}[name.trim().toLowerCase()] || name.trim());
+const key = name => canonicalName(name).toLowerCase();
 export function cleanCup(value) {
  if(!value || typeof value.title!=='string' || !value.title.trim() || value.title.length>100 || !/^\d{4}-\d{2}-\d{2}$/.test(value.date) || (Number.isNaN(Date.parse(value.date+'T00:00:00Z')) || new Date(value.date+'T00:00:00Z').toISOString().slice(0,10)!==value.date) || typeof value.inBaseline!=='boolean') throw Error('กรอกชื่อรายการ วันที่ และสถานะยอดตั้งต้นให้ครบ');
  const teams=value.teams;
@@ -15,13 +16,13 @@ export function cleanCup(value) {
   pairs.add([m.a,m.b].sort((a,b)=>a-b).join(','));
  }
  if(pairs.size!==matches.length)throw Error('คู่แข่งขันซ้ำ');
- return {title:value.title.trim(),date:value.date,inBaseline:value.inBaseline,teams:teams.map(t=>t.map(n=>n.trim())),matches:matches.map(({a,b,sa,sb})=>({a,b,sa,sb}))};
+ return {title:value.title.trim(),date:value.date,inBaseline:value.inBaseline,teams:teams.map(t=>t.map(canonicalName)),matches:matches.map(({a,b,sa,sb})=>({a,b,sa,sb}))};
 }
 function addCup(totals,cup){
  const rows=globalThis.Sena.standings(cup.teams,cup.matches);
  const equal=(a,b)=>a.w===b.w&&a.pf-a.pa===b.pf-b.pa&&a.pf===b.pf;
  for(const row of rows)for(const name of cup.teams[row.i]){
-  const id=key(name),p=totals.get(id)||{name,played:0,w:0,l:0,pf:0,pa:0,crown:0,poo:0};
+  const id=key(name),p=totals.get(id)||{name:canonicalName(name),played:0,w:0,l:0,pf:0,pa:0,crown:0,poo:0};
   p.played+=row.played;p.w+=row.w;p.l+=row.played-row.w;p.pf+=row.pf;p.pa+=row.pa;
   if(equal(row,rows[0]))p.crown++;
   else if(equal(row,rows[rows.length-1]))p.poo++;
@@ -57,6 +58,6 @@ export async function leaderboardRoute(req,env,isAdmin){
  }
  if(req.method!=='GET')return reply({error:'Method not allowed'},405);
  const result=await env.DB.prepare('SELECT id,revision,sequence,payload FROM cup_history ORDER BY sequence').all();
- const history=result.results.map(row=>({...JSON.parse(row.payload),id:row.id,revision:row.revision,sequence:row.sequence}));
+ const history=result.results.map(row=>{const cup=JSON.parse(row.payload);return {...cup,teams:cup.teams.map(team=>team.map(canonicalName)),id:row.id,revision:row.revision,sequence:row.sequence};});
  return reply({history,standings:standings(history),canEdit:isAdmin});
 }

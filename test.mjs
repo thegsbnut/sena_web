@@ -54,7 +54,7 @@ const historyFixture=()=>({title:'Cup test',date:'2026-11-03',inBaseline:false,t
 test('leaderboard baseline exactly preserves supplied historical totals',()=>{
  const rows=leaderboardStandings([]);assert.equal(rows.length,15);
  assert.deepEqual(rows.find(p=>p.name==='Nut'),{name:'Nut',played:12,w:10,l:2,pf:239,pa:189,crown:1,poo:0,change:2,position:1,diff:50,winPercent:10/12*100});
- assert.equal(rows.find(p=>p.name==='Beau').w,9);assert.equal(rows.find(p=>p.name==='Bua').w,5);assert.equal(rows.find(p=>p.name==='Zong').crown,1);
+ assert.equal(rows.find(p=>p.name==='Bo').w,9);assert.equal(rows.find(p=>p.name==='Bua').w,5);assert.equal(rows.find(p=>p.name==='Zong').crown,1);
 });
 test('history adds totals once, excluded imports do not add, editing recomputes',()=>{
  const c={...historyFixture(),sequence:1};let rows=leaderboardStandings([c]);
@@ -77,4 +77,13 @@ test('history API is public read, admin only write and uses revision for retries
  assert.equal((await leaderboardRoute(post(1,{...historyFixture(),inBaseline:true}),env,true)).status,200);
  assert.equal((await leaderboardRoute(post(1),env,true)).status,409);
  r=await leaderboardRoute(get(),env,false);const result=await r.json();assert.equal(result.history.length,1);assert.equal(result.standings.find(p=>p.name==='Nut').w,10);assert.equal(result.canEdit,false);assert(!JSON.stringify(result).includes('"lv"'));
+});
+test('historical aliases merge with current Bo and Not without duplicate players',()=>{
+ const old={...historyFixture(),sequence:1,teams:[['Beau','Nott'],['Bomb','Tom']]};
+ const rows=leaderboardStandings([old]);
+ assert.equal(rows.length,15);assert.equal(rows.find(p=>p.name==='Bo').w,10);assert.equal(rows.find(p=>p.name==='Not').w,3);
+ assert(!rows.some(p=>['Beau','Nott'].includes(p.name)));
+ const cleaned=cleanCup(old);assert.deepEqual(cleaned.teams[0],['Bo','Not']);
+ assert.throws(()=>cleanCup({...old,teams:[['Bo','Beau'],['Not','Tom']]}));
+ assert.equal(leaderboardStandings([]).find(p=>p.name==='Bo').pf,231);
 });
