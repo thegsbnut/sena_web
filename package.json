@@ -1,1 +1,1 @@
-{"name":"sena-web","version":"1.0.0","private":true,"type":"module","scripts":{"build":"node --check worker.js","deploy":"wrangler deploy","test":"node --test test.mjs test-clubs.mjs test-backups.mjs test-history-form.mjs test-cup-sync.mjs"},"devDependencies":{"wrangler":"4.92.0"}}
+{"name":"sena-web","version":"1.0.0","private":true,"type":"module","scripts":{"build":"node --check worker.js","deploy":"wrangler deploy","test":"node --test test.mjs test-clubs.mjs test-backups.mjs test-history-form.mjs test-cup-sync.mjs test-buddy.mjs"},"devDependencies":{"wrangler":"4.92.0"}}

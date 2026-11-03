@@ -20,10 +20,11 @@
  async function load(){
   const res=await venueFetch('/api/leaderboard',{cache:'no-store'}),body=await res.json();
   if(!res.ok)throw Error(body.error);
-  data=body;draw();status('ข้อมูลออนไลน์ล่าสุด');
+  data=body;draw();window.SenaLeaderboardSnapshot={history:data.history,standings:data.standings};window.dispatchEvent(new CustomEvent('sena:leaderboard',{detail:window.SenaLeaderboardSnapshot}));status('ข้อมูลออนไลน์ล่าสุด');
  }
  function openEditor(record=null,current=false){
   if(!data.canEdit)return;
+  window.dispatchEvent(new CustomEvent('sena:board-tab',{detail:'history'}));
   editing=record;
   draft=record?structuredClone(record):current?structuredClone(state.cup):null;
   const form=document.querySelector('#historyForm');form.reset();
