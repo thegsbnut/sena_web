@@ -8,7 +8,7 @@ function venueUrl(path,club=activeClub) {
  return url.pathname+url.search+url.hash;
 }
 function venueFetch(path,options){return fetch(venueUrl(path),options);}
-function venueText(text){return activeClub==='88'?text.replaceAll('Sena Cup','88 Cup').replaceAll('SENA CUP','88 CUP').replaceAll('SENA COURT','88 COURT'):text;}
+function venueText(text){return activeClub==='88'?text.replaceAll('Sena Cup','88 Cup').replaceAll('SENA CUP','88 CUP').replaceAll('SENA COURT','88 COURT').replaceAll('SENA Court','88 Court').replaceAll('SENA BADMINTON CLUB','88 BADMINTON CLUB'):text;}
 let leavingClub=false;
 document.addEventListener('DOMContentLoaded',()=>{
  const select=document.querySelector('#clubSelect');
