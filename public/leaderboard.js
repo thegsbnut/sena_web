@@ -1,5 +1,6 @@
 (() => {
  const section=document.querySelector('#leaderboard');
+ document.querySelector('#historyForm').addEventListener('input',()=>document.querySelector('#historyEditor').dataset.dirty='1');
  let data={history:[],standings:[],canEdit:false}, editing=null, draft=null, busy=false;
  const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const status=text=>document.querySelector('#leaderboardStatus').textContent=text;
@@ -14,10 +15,10 @@
   document.querySelector('#historyList').innerHTML=data.history.length?data.history.slice().reverse().map(c=>{
    const standings=Sena.standings(c.teams,c.matches);
    return `<article class="panel"><div class="sectionhead"><h2>${esc(c.title)}</h2><span>${esc(c.date)}</span></div><p class="hint">${c.inBaseline?'รวมอยู่ในยอดตั้งต้นแล้ว':'นับเพิ่มในสถิติสะสม'} · ${c.matches.length} เกม</p><details><summary>ดูอันดับและคะแนน</summary><ol>${standings.map(row=>`<li>${esc(row.name)} · ชนะ ${row.w} · แต้ม ${row.pf}–${row.pa}</li>`).join('')}</ol>${c.matches.map((m,i)=>`<p>เกม ${i+1} · ${esc(nameOf(c.teams[m.a]))} <b>${m.sa} : ${m.sb}</b> ${esc(nameOf(c.teams[m.b]))}</p>`).join('')}</details>${data.canEdit?`<button class="secondary" data-edit-history="${esc(c.id)}">แก้ไขรายการนี้</button>`:''}</article>`;
-  }).join(''):'<div class="panel">ยังไม่มีผลแยกรายการ • สถิติจากภาพเก็บเป็นยอดสะสมตั้งต้นแล้ว</div>';
+  }).join(''):(activeClub==='88'?'<div class="panel">ยังไม่มีประวัติ 88 Cup • เริ่มบันทึกการแข่งขันแรกได้เลย</div>':'<div class="panel">ยังไม่มีผลแยกรายการ • สถิติจากภาพเก็บเป็นยอดสะสมตั้งต้นแล้ว</div>');
  }
  async function load(){
-  const res=await fetch('/api/leaderboard',{cache:'no-store'}),body=await res.json();
+  const res=await venueFetch('/api/leaderboard',{cache:'no-store'}),body=await res.json();
   if(!res.ok)throw Error(body.error);
   data=body;draw();status('ข้อมูลออนไลน์ล่าสุด');
  }
@@ -26,10 +27,10 @@
   editing=record;
   draft=record?structuredClone(record):current?structuredClone(state.cup):null;
   const form=document.querySelector('#historyForm');form.reset();
-  form.elements.title.value=record?.title||'Sena Cup';form.elements.date.value=record?.date||today();
-  form.elements.inBaseline.checked=record?.inBaseline||false;
+  form.elements.title.value=record?.title||cupName;form.elements.date.value=record?.date||today();
+  form.elements.inBaseline.checked=record?.inBaseline||false;form.elements.inBaseline.closest('label').hidden=activeClub==='88';
   form.elements.teams.value=draft?draft.teams.map(nameOf).join('\n'):'';
-  document.querySelector('#historyEditor').hidden=false;
+  document.querySelector('#historyEditor').hidden=false;document.querySelector('#historyEditor').dataset.dirty='0';
   renderScoreEditor();form.elements.title.focus();
  }
  function renderScoreEditor(){
@@ -39,7 +40,7 @@
  document.querySelector('#leaderboardRefresh').onclick=()=>load().catch(e=>status(e.message));
  document.querySelector('#manualHistory').onclick=()=>openEditor();
  document.querySelector('#historyList').onclick=e=>{const id=e.target.dataset.editHistory;if(id)openEditor(data.history.find(c=>c.id===id));};
- document.querySelector('#cancelHistory').onclick=()=>document.querySelector('#historyEditor').hidden=true;
+ document.querySelector('#cancelHistory').onclick=()=>{document.querySelector('#historyEditor').hidden=true;document.querySelector('#historyEditor').dataset.dirty='0';};
  document.querySelector('#buildHistoryScores').onclick=()=>{
   const teams=document.querySelector('#historyForm').elements.teams.value.split('\n').map(s=>s.trim()).filter(Boolean).map(s=>s.split('/').map(n=>n.trim()));
   if(teams.length<2||teams.length>20||teams.some(t=>t.length!==2||t.some(n=>!n))||new Set(teams.flat().map(n=>n.toLowerCase())).size!==teams.flat().length)return status('กรอก 2–20 ทีม ชื่อไม่ซ้ำ ทีมละ 2 คน คั่นด้วย /');
@@ -71,9 +72,9 @@
   const cup={title:form.elements.title.value,date:form.elements.date.value,inBaseline:form.elements.inBaseline.checked,teams:draft.teams,matches};
   busy=true;const button=form.querySelector('[type="submit"]');button.disabled=true;
   try{
-   const res=await fetch('/api/leaderboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,revision:editing?.revision||0,cup})}),body=await res.json();
+   const res=await venueFetch('/api/leaderboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,revision:editing?.revision||0,cup})}),body=await res.json();
    if(!res.ok)throw Error(body.error);
-   document.querySelector('#historyEditor').hidden=true;await load();status('บันทึกประวัติและคำนวณยอดสะสมแล้ว ✓');
+   document.querySelector('#historyEditor').hidden=true;document.querySelector('#historyEditor').dataset.dirty='0';await load();status('บันทึกประวัติและคำนวณยอดสะสมแล้ว ✓');
   }catch(error){status(error.message);}finally{busy=false;button.disabled=false;}
  };
  load().catch(e=>status(e.message));

@@ -33,9 +33,13 @@ function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
 export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+const club=url.searchParams.get('club')||'sena';
+if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วนที่เลือก'},400);
+const stateTable=club==='88'?'club_state_88':'club_state';
+if(club==='88'&&env.DB&&['/api/state','/api/generate'].includes(path))await env.DB.prepare('CREATE TABLE IF NOT EXISTS club_state_88 (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
-if(path==='/api/leaderboard')return leaderboardRoute(req,env,await authorized(req,env));
+if(path==='/api/leaderboard')return leaderboardRoute(req,env,await authorized(req,env),club);
 if(path==='/api/login'&&req.method==='POST'){
  if (!env.DB) return json({error:'กรุณาผูกฐานข้อมูล D1 ชื่อ DB กับ Worker ใน Production'},503);
  if (typeof env.ADMIN_KEY !== 'string' || !env.ADMIN_KEY) return json({error:'Worker ยังไม่พบ ADMIN_KEY ใน Production ตรวจชื่อ Secret ให้เป็นตัวใหญ่ แล้วกด Deploy'},503);
@@ -52,7 +56,7 @@ if (path === '/api/generate' && req.method === 'POST') {
   if (!env.DB) return json({error:'ยังไม่ได้ตั้งค่าฐานข้อมูล'},503);
   const input = await body(req,10000);
   if (!Array.isArray(input.selected) || input.selected.length > 24 || new Set(input.selected).size !== input.selected.length || !Number.isInteger(input.rounds) || input.rounds < 1 || input.rounds > 30 || !Array.isArray(input.locks) || input.locks.length > 30 || !input.locks.every(l => l && Number.isInteger(l.round) && Array.isArray(l.ids) && l.ids.length === 4)) return json({error:'ข้อมูลจัดคู่ไม่ถูกต้อง'},400);
-  const row = await env.DB.prepare('SELECT payload FROM club_state WHERE id=1').first();
+  const row = await env.DB.prepare(`SELECT payload FROM ${stateTable} WHERE id=1`).first();
   const roster = row ? JSON.parse(row.payload) : seed;
   const players = roster.players.filter(p => input.selected.includes(p.id));
   if (players.length !== input.selected.length) return json({error:'รายชื่อเปลี่ยนแล้ว กรุณาโหลดข้อมูลกลางใหม่'},409);
@@ -61,12 +65,12 @@ if (path === '/api/generate' && req.method === 'POST') {
 }
 if(path==='/api/state'){
  const canEdit=await authorized(req,env);
- if(req.method==='GET'){if(!env.DB)return json({state:guestState(seed),revision:0,updatedAt:null,canEdit:false,setupRequired:true});const row=await env.DB.prepare('SELECT revision,payload,updated_at FROM club_state WHERE id=1').first();return json({state:canEdit?(row?JSON.parse(row.payload):seed):guestState(row?JSON.parse(row.payload):seed),revision:row?.revision||0,updatedAt:row?.updated_at||null,canEdit});}
+ if(req.method==='GET'){if(!env.DB)return json({state:guestState(seed),revision:0,updatedAt:null,canEdit:false,setupRequired:true});const row=await env.DB.prepare(`SELECT revision,payload,updated_at FROM ${stateTable} WHERE id=1`).first();return json({state:canEdit?(row?JSON.parse(row.payload):seed):guestState(row?JSON.parse(row.payload):seed),revision:row?.revision||0,updatedAt:row?.updated_at||null,canEdit});}
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
  if(!canEdit)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);if(!env.DB)return json({error:'ยังไม่ได้ผูก DB'},503);
  const input=await body(req,500000);if(!valid(input.state)||!Number.isInteger(input.revision)||input.revision<0)return json({error:'ข้อมูลไม่ถูกต้อง'},400);
  const now=new Date().toISOString(),payload=JSON.stringify(input.state);
- const r=input.revision===0?await env.DB.prepare('INSERT OR IGNORE INTO club_state (id,revision,payload,updated_at) VALUES (1,1,?,?)').bind(payload,now).run():await env.DB.prepare('UPDATE club_state SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?').bind(payload,now,input.revision).run();
+ const r=input.revision===0?await env.DB.prepare(`INSERT OR IGNORE INTO ${stateTable} (id,revision,payload,updated_at) VALUES (1,1,?,?)`).bind(payload,now).run():await env.DB.prepare(`UPDATE ${stateTable} SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?`).bind(payload,now,input.revision).run();
  if(r.meta.changes!==1)return json({error:'มีข้อมูลใหม่จากอีกเครื่อง กรุณาสำรองข้อมูลแล้วโหลดข้อมูลกลางใหม่'},409);return json({revision:input.revision+1,updatedAt:now});
 }
 if(path.startsWith('/api/'))return json({error:'Not found'},404);
