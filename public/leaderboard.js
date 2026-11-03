@@ -10,7 +10,7 @@
   const rows=data.standings;
   document.querySelector('#leaderboardRows').innerHTML=rows.map(p=>`<tr><td class="rank-${p.position}">${p.position}</td><th scope="row">${esc(p.name)}</th><td>${p.played}</td><td>${p.w}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pa}</td><td>${p.diff>0?'+':''}${p.diff}</td><td>${p.winPercent.toFixed(2)}%</td><td>${p.crown||'—'}</td><td>${p.poo||'—'}</td><td class="${typeof p.change==='number'?(p.change>0?'up':p.change<0?'down':''):''}">${esc(changeText(p.change))}</td></tr>`).join('');
   document.querySelector('#manualHistory').hidden=!data.canEdit;
-  document.querySelector('#cupArchiveHint').textContent=data.canEdit?'บันทึกคะแนนครบ แล้วกดจบการแข่งขันเพื่อเพิ่มประวัติและยอดสะสม':'ผู้จัดที่เข้าสู่ระบบสามารถบันทึกจบการแข่งขันได้';
+  document.querySelector('#cupArchiveHint').textContent=data.canEdit?'กรอกคะแนนครบ แล้วกดจบการแข่งขันเพื่อบันทึกประวัติและอัปเดต Leaderboard ได้ทันที ไม่ต้องกดบันทึกออนไลน์':'ผู้จัดที่เข้าสู่ระบบสามารถบันทึกจบการแข่งขันได้';
   document.querySelector('#archiveCup').hidden=!data.canEdit;
   document.querySelector('#historyList').innerHTML=data.history.length?data.history.slice().reverse().map(c=>{
    const standings=Sena.standings(c.teams,c.matches);
@@ -84,18 +84,30 @@
   if(draft&&!confirm('สร้างช่องคะแนนใหม่และล้างคะแนนที่กำลังแก้?'))return;
   draft={teams,matches:Sena.roundRobin(teams)};renderScoreEditor();status('สร้างช่องคะแนนแล้ว กรอกคะแนนให้ครบ '+draft.matches.length+' เกม แล้วกดบันทึกจบการแข่งขัน');
  };
+ document.querySelector('#viewCupLeaderboard').onclick=()=>document.querySelector('[data-tab="leaderboard"]').click();
  document.querySelector('#archiveCup').onclick=async()=>{
+  if(busy||cloudBusy)return;
+  const button=document.querySelector('#archiveCup'),hint=document.querySelector('#cupArchiveHint');
+  busy=true;cloudBusy=true;button.disabled=true;document.querySelector('#cup').inert=true;
   try{
-   if(!state.cup||!state.cup.matches.length||state.cup.matches.some(m=>!Number.isInteger(m.sa)||!Number.isInteger(m.sb)||m.sa===m.sb))throw Error('กรุณาบันทึกคะแนนครบทุกเกมก่อนจบการแข่งขัน');
-   for(const input of document.querySelectorAll('#cupResults input[data-match]')){if(String(state.cup.matches[Number(input.dataset.match)][input.dataset.side])!==input.value)throw Error('กรุณากดบันทึกคะแนนล่าสุดก่อนจบการแข่งขัน');}
-   await load();
-   if(!data.canEdit)throw Error('กรุณาเข้าสู่ระบบผู้จัด');
-   // Older Cups had no id. A stable legacy id prevents duplicate submissions from other devices.
-   if(!state.cup.id){const bytes=new TextEncoder().encode(JSON.stringify(state.cup.teams));const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));state.cup.id='legacy-'+Array.from(hash).map(b=>b.toString(16).padStart(2,'0')).join('');save();}
-   const record=data.history.find(c=>c.id===state.cup.id);
-   openEditor(record||null,true);
-   document.querySelector('[data-tab="leaderboard"]').click();
-  }catch(error){document.querySelector('#cupArchiveHint').textContent=error.message;}
+   if(!state.cup)throw Error('ยังไม่มีตารางการแข่งขัน');
+   const cup=structuredClone(state.cup);
+   for(const input of document.querySelectorAll('#cupResults input[data-match]'))cup.matches[Number(input.dataset.match)][input.dataset.side]=input.value===''?'':Number(input.value);
+   if(!SenaCupHistory.complete(cup))throw Error('กรอกคะแนนให้ครบทุกเกม เป็นจำนวนเต็ม 0–999 และไม่เสมอ แล้วกดจบการแข่งขันอีกครั้ง');
+   hint.textContent='กำลังบันทึกผลการแข่งขันและอัปเดต Leaderboard…';
+   await SenaCupHistory.ensureId(cup);
+   // Keep the same id locally for safe retries, even when online-state Save is skipped.
+   state.cup=cup;save();
+   await SenaCupHistory.sync(cup,{
+    title:cupName,date:today(),
+    request:async(path,body)=>{const response=await venueFetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});const result=await response.json();if(!response.ok)throw Error(result.error);return result;}
+   });
+   renderCup();refreshAwards();
+   cloudStatus('ประวัติและ Leaderboard บันทึกออนไลน์แล้ว ✓ • ปุ่มบันทึกออนไลน์ใช้แชร์รายชื่อและตารางปัจจุบันเพิ่มเติม');
+   try{await load();hint.textContent='จบการแข่งขันแล้ว ✓ บันทึกประวัติและอัปเดต Leaderboard แล้ว กด “ดู Leaderboard” ได้เลย';}
+   catch{hint.textContent='บันทึกประวัติแล้ว ✓ แต่โหลดตารางล่าสุดไม่สำเร็จ กดดู Leaderboard เพื่อลองโหลดอีกครั้ง';}
+  }catch(error){hint.textContent=error.message;}
+  finally{busy=false;cloudBusy=false;button.disabled=false;document.querySelector('#cup').inert=false;hint.scrollIntoView({block:'center',behavior:'smooth'});}
  };
  document.querySelector('#historyForm').onsubmit=async event=>{
   event.preventDefault();if(busy)return;
