@@ -62,3 +62,17 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid #
   .rosterrow { flex-wrap:wrap; }
   .panel input,.panel textarea,.panel select { font-size:16px; }
 }
+
+.leaderboard-head h1 {font-size:clamp(28px,6vw,58px);font-style:italic;margin:12px 0;letter-spacing:-2px;overflow-wrap:anywhere}
+.leaderboard-scroll {overflow-x:auto;max-width:100%}
+.leaderboard-scroll table {white-space:nowrap;margin:12px 0;min-width:790px}
+.leaderboard-scroll th {font-weight:800}
+.leaderboard-scroll td:first-child {font-weight:900}
+.rank-1 {background:#e9d44b}.rank-2 {background:#d6dfd3}.rank-3 {background:#cd9d66}
+.up {color:#235f28;background:#e0f4b9}.down {color:#9a2a24;background:#ffe0d4}
+.board-status,.history-heading {color:var(--paper)}
+#historyForm>label {display:block;margin:15px 0}
+#historyForm>label>input:not([type=checkbox]) {display:block;width:100%;box-sizing:border-box}
+#historyScores input {width:70px}
+.baseline-option {font-weight:700}
+@media(max-width:760px){nav{flex-wrap:wrap}.tab{flex:1 0 40%}.leaderboard-scroll th,.leaderboard-scroll td {padding:10px 8px}.leaderboard-scroll th:nth-child(2){position:sticky;left:0;background:var(--paper)}}

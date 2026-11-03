@@ -48,3 +48,33 @@ test('round robin covers every pair once and separates consecutive teams',()=>{
   if(n===3 || n===4)assert.equal(globalThis.Sena.cupRestConflicts(matches),2);
  }
 });
+
+import {cleanCup,standings as leaderboardStandings,leaderboardRoute} from './leaderboard.js';
+const historyFixture=()=>({title:'Cup test',date:'2026-11-03',inBaseline:false,teams:[['Nut','Pete'],['Bomb','Tom']],matches:[{a:0,b:1,sa:21,sb:10}]});
+test('leaderboard baseline exactly preserves supplied historical totals',()=>{
+ const rows=leaderboardStandings([]);assert.equal(rows.length,15);
+ assert.deepEqual(rows.find(p=>p.name==='Nut'),{name:'Nut',played:12,w:10,l:2,pf:239,pa:189,crown:1,poo:0,change:2,position:1,diff:50,winPercent:10/12*100});
+ assert.equal(rows.find(p=>p.name==='Beau').w,9);assert.equal(rows.find(p=>p.name==='Bua').w,5);assert.equal(rows.find(p=>p.name==='Zong').crown,1);
+});
+test('history adds totals once, excluded imports do not add, editing recomputes',()=>{
+ const c={...historyFixture(),sequence:1};let rows=leaderboardStandings([c]);
+ assert.equal(rows.find(p=>p.name==='Nut').w,11);assert.equal(rows.find(p=>p.name==='Nut').pf,260);assert.equal(rows.find(p=>p.name==='Tom').poo,4);
+ rows=leaderboardStandings([{...c,inBaseline:true}]);assert.equal(rows.find(p=>p.name==='Nut').w,10);
+ rows=leaderboardStandings([{...c,matches:[{a:0,b:1,sa:10,sb:21}]}]);assert.equal(rows.find(p=>p.name==='Nut').w,10);assert.equal(rows.find(p=>p.name==='Nut').l,3);assert.equal(rows.find(p=>p.name==='Bomb').w,7);
+});
+test('history rejects missing games, duplicate players, ties and private extra fields',()=>{
+ const c=historyFixture();assert.throws(()=>cleanCup({...c,matches:[]}));assert.throws(()=>cleanCup({...c,teams:[['Nut','Pete'],['nut','Tom']]}));assert.throws(()=>cleanCup({...c,matches:[{a:0,b:1,sa:21,sb:21}]}));
+ assert(!('lv' in cleanCup({...c,lv:99})));
+});
+test('history API is public read, admin only write and uses revision for retries and concurrent edits',async()=>{
+ const db=new DatabaseSync(':memory:');const env={DB:{prepare(sql){const stmt=db.prepare(sql);let args=[];return {bind(...v){args=v;return this;},first(){return stmt.get(...args);},all(){return {results:stmt.all(...args)};},run(){const r=stmt.run(...args);return {meta:{changes:r.changes}};}};}}};
+ const get=()=>new Request('https://example.com/api/leaderboard');
+ let r=await leaderboardRoute(get(),env,false);assert.equal(r.status,200);assert.equal((await r.json()).standings.length,15);
+ const post=(revision=0,cup=historyFixture())=>new Request('https://example.com/api/leaderboard',{method:'POST',body:JSON.stringify({id:'cup-1',revision,cup})});
+ assert.equal((await leaderboardRoute(post(),env,false)).status,401);
+ assert.equal((await leaderboardRoute(post(),env,true)).status,200);
+ assert.equal((await leaderboardRoute(post(),env,true)).status,409);
+ assert.equal((await leaderboardRoute(post(1,{...historyFixture(),inBaseline:true}),env,true)).status,200);
+ assert.equal((await leaderboardRoute(post(1),env,true)).status,409);
+ r=await leaderboardRoute(get(),env,false);const result=await r.json();assert.equal(result.history.length,1);assert.equal(result.standings.find(p=>p.name==='Nut').w,10);assert.equal(result.canEdit,false);assert(!JSON.stringify(result).includes('"lv"'));
+});

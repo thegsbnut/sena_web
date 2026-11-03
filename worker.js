@@ -1,3 +1,4 @@
+import {leaderboardRoute} from './leaderboard.js';
 import './public/engine.js';
 import seed from './seed.json' with {type:'json'};
 const enc=new TextEncoder();
@@ -34,6 +35,7 @@ function guestResult(result) {
 export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
+if(path==='/api/leaderboard')return leaderboardRoute(req,env,await authorized(req,env));
 if(path==='/api/login'&&req.method==='POST'){
  if (!env.DB) return json({error:'กรุณาผูกฐานข้อมูล D1 ชื่อ DB กับ Worker ใน Production'},503);
  if (typeof env.ADMIN_KEY !== 'string' || !env.ADMIN_KEY) return json({error:'Worker ยังไม่พบ ADMIN_KEY ใน Production ตรวจชื่อ Secret ให้เป็นตัวใหญ่ แล้วกด Deploy'},503);
