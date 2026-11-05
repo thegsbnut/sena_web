@@ -87,3 +87,17 @@ test('historical aliases merge with current Bo and Not without duplicate players
  assert.throws(()=>cleanCup({...old,teams:[['Bo','Beau'],['Not','Tom']]}));
  assert.equal(leaderboardStandings([]).find(p=>p.name==='Bo').pf,231);
 });
+
+
+test('session status exposes role only, checks signed cookies and shares login across clubs',async()=>{
+ const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)');
+ const env={ADMIN_KEY:'abcdef7',DB:{prepare(sql){const stmt=db.prepare(sql);let args=[];return{bind(...v){args=v;return this;},first(){return stmt.get(...args);},run(){return stmt.run(...args);}};}}};
+ const session=(cookie,club='sena')=>worker.fetch(new Request('https://example.com/api/session?club='+club,{headers:cookie?{Cookie:cookie}:{}}),env);
+ const guest=await session();assert.equal(guest.headers.get('Cache-Control'),'no-store');assert.deepEqual(await guest.json(),{canEdit:false});
+ const login=await worker.fetch(new Request('https://example.com/api/login',{method:'POST',headers:{Origin:'https://example.com'},body:JSON.stringify({key:env.ADMIN_KEY})}),env);
+ const cookie=login.headers.get('Set-Cookie').split(';')[0];
+ assert.deepEqual(await(await session(cookie)).json(),{canEdit:true});assert.deepEqual(await(await session(cookie,'88')).json(),{canEdit:true});
+ assert.deepEqual(await(await session(cookie+'x')).json(),{canEdit:false});assert.deepEqual(await(await session('__Host-sena=1.'+'0'.repeat(64))).json(),{canEdit:false});
+ const out=await worker.fetch(new Request('https://example.com/api/logout',{method:'POST',headers:{Origin:'https://example.com',Cookie:cookie}}),env);
+ assert.match(out.headers.get('Set-Cookie'),/Max-Age=0/);assert.deepEqual(await(await session(out.headers.get('Set-Cookie').split(';')[0])).json(),{canEdit:false});
+});
