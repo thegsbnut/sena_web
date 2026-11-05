@@ -3,3 +3,5 @@
 @media(prefers-reduced-motion:reduce){#booking *{scroll-behavior:auto!important}}
 #bookingDates{max-height:560px;overflow:auto;padding-right:3px;scrollbar-color:#829b53 #e3e8d0;scrollbar-width:thin}
 @media(max-width:760px){#bookingDates{max-height:430px}.booking-submit{scroll-margin-top:12px}}
+
+.booking-feedback{width:440px;max-width:calc(100% - 32px);max-height:85vh;overflow:auto;background:#f6f2dd;color:#112a20;border:2px solid #729849;padding:24px;box-shadow:0 15px 70px #001a1155}.booking-feedback h2{font-size:22px}.booking-feedback p{white-space:pre-wrap;font-size:14px;line-height:1.9}.booking-feedback form{display:block}.booking-feedback::backdrop{background:#001c17b3}

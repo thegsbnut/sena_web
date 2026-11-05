@@ -9,6 +9,10 @@
  const displayDate=d=>new Date(d+'T12:00:00+07:00').toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok'});
  const name=id=>data?.roster.find(p=>p.id===id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
  function status(text,error=false){q('#bookingStatus').textContent=text;q('#bookingStatus').className='booking-status'+(error?' is-error':'');}
+ function feedback(title,message){
+  const dialog=q('#bookingFeedback');q('#bookingFeedbackTitle').textContent=title;q('#bookingFeedbackMessage').textContent=message;
+  if(typeof dialog.showModal==='function'){if(!dialog.open)dialog.showModal();}else alert(title+'\n'+message);
+ }
  async function request(body){
   const response=await venueFetch('/api/booking',{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{'X-Booking-Token':token}:{})},...(body?{body:JSON.stringify(body)}:{})});
   const value=await response.json();if(!response.ok)throw Error(value.error||'เชื่อมต่อไม่ได้ กรุณาลองใหม่');return value;
@@ -20,15 +24,20 @@
  }
  async function mutate(body){
   if(busy)return;busy=true;root.classList.add('booking-busy');status('กำลังบันทึก…');
-  try{data=await request(body);if(body.action==='settings')dirty=false;if(body.action==='book')selected.clear();render();status(data.result?.message||'บันทึกแล้ว');}
-  catch(e){status(e.message,true);}finally{busy=false;root.classList.remove('booking-busy');}
+  try{data=await request(body);if(body.action==='settings')dirty=false;if(body.action==='book')selected.clear();render();status(data.result?.message||'บันทึกแล้ว');
+   if(body.action==='book'){
+    const result=data.result||{},title=result.added>0?(result.duplicate?'จองสำเร็จบางรายการ':'จองคิวสำเร็จ ✓'):'มีชื่ออยู่แล้ว';
+    const details=data.sessions.filter(s=>body.sessionIds.includes(s.id)).map(s=>{const r=s.registrations.find(r=>r.playerId===body.playerId);return displayDate(s.date)+' • '+s.start+'–'+s.end+' น. • '+(r?.status==='confirmed'?'ตัวจริง':r?'สำรอง #'+r.position:'กรุณาตรวจรายชื่ออีกครั้ง');});
+    feedback(title,(result.message||'ตรวจสอบรายชื่อในวันที่เลือกได้ด้านล่าง')+'\n\n'+details.join('\n'));
+   }}
+  catch(e){const message=e instanceof TypeError?'เชื่อมต่อไม่ได้ กรุณาตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง':e.message;status(message,true);if(body.action==='book')feedback('จองไม่สำเร็จ',message);}finally{busy=false;root.classList.remove('booking-busy');}
  }
  root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>01 <span>เลือกวันที่จะมา</span></h2><span class="booking-chip">เลือกได้หลายสัปดาห์</span></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div></section>
  <section class="panel booking-submit"><h2>02 <span>ลงชื่อให้พร้อม</span></h2><label for="bookingPlayer">ชื่อผู้ลงตี</label><select id="bookingPlayer"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint">ไม่มีชื่อในก๊วน? ให้ผู้จัดเพิ่มรายชื่อก่อน</p><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection" id="bookingSelection">ยังไม่ได้เลือกวัน</div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><p class="hint">เต็มแล้วจะเข้าคิวสำรองตามลำดับ • ถอนชื่อได้จากเครื่องที่ใช้จอง หรือให้ผู้จัดช่วย</p></section>
  <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่ารอบประจำ &amp; ขาประจำ <span>สำหรับผู้จัด</span></summary><form id="bookingSettings"></form></details></div>
  <div><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div>
- <p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p>`;
+ <p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog>`;
  function render(){
   const cfg=data.settings;
   q('#bookingPattern').textContent=cfg.enabled?`ทุกวัน${cfg.weekdays.map(d=>days[d]).join(' / ')} • ${cfg.start}–${cfg.end} น. • เปิดล่วงหน้า ${cfg.weeks} สัปดาห์`:'ผู้จัดยังไม่เปิดรับจอง • เข้าสู่ระบบผู้จัดเพื่อตั้งวัน เวลา และขาประจำ';
@@ -101,11 +110,11 @@
   if(button.dataset.bookFocus){focusId=button.dataset.bookFocus;render();q('.booking-detail').scrollIntoView({behavior:'smooth',block:'nearest'});}
   if(button.dataset.bookCancel){const s=data.sessions.find(s=>s.id===focusId),r=s?.registrations.find(r=>r.id===button.dataset.bookCancel);if(r&&confirm(`ถอนชื่อ ${name(r.playerId)} วันที่ ${displayDate(s.date)}?`))mutate({action:'cancel',sessionId:s.id,registrationId:r.id});}
   if(button.id==='bookingClose'){const s=data.sessions.find(s=>s.id===focusId);if(s&&confirm(`${s.closed?'เปิด':'ปิด'}รับจองรอบ ${displayDate(s.date)}? รายชื่อเดิมยังเก็บไว้`))mutate({action:'close',sessionId:s.id,closed:!s.closed});}
-  if(button.id==='bookingConfirm'){if(!q('#bookingHolidayConfirm').hidden&&!q('#bookingAcceptHoliday').checked){status('กรุณารับทราบวันหยุดก่อนยืนยันจอง',true);return;}mutate({action:'book',playerId,sessionIds:[...selected],acceptHoliday:q('#bookingAcceptHoliday').checked});}
+  if(button.id==='bookingConfirm'){if(!q('#bookingHolidayConfirm').hidden&&!q('#bookingAcceptHoliday').checked){status('กรุณารับทราบวันหยุดก่อนยืนยันจอง',true);feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}mutate({action:'book',playerId,sessionIds:[...selected],acceptHoliday:q('#bookingAcceptHoliday').checked});}
   if(button.id==='bookingCopy')copy();
  });
  document.querySelector('[data-tab="booking"]').addEventListener('click',()=>{if(!dirty)load();});
  // Poll only while this tab is visible; leave unfinished admin edits intact.
  setInterval(()=>{if(!root.hidden&&!document.hidden&&!dirty)load(true);},60000);
- if(location.hash==='#booking'){document.querySelector('[data-tab="booking"]').click();}
+ const initialTab=[...document.querySelectorAll('nav .tab')].find(t=>t.dataset.tab===location.hash.slice(1)&&!t.hidden)||document.querySelector('[data-tab="booking"]');initialTab.click();
 })();
