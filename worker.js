@@ -1,3 +1,4 @@
+import {bookingRoute,scheduledBookings} from './booking.js';
 import {backupsRoute,prepareBackups} from './backups.js';
 import {leaderboardRoute} from './leaderboard.js';
 import './public/engine.js';
@@ -33,13 +34,14 @@ export function guestState(state) {
 function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
-export default {async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+export default {async scheduled(event,env,ctx){ctx.waitUntil(scheduledBookings(env));},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 const club=url.searchParams.get('club')||'sena';
 if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วนที่เลือก'},400);
 const stateTable=club==='88'?'club_state_88':'club_state';
 if(club==='88'&&env.DB&&['/api/state','/api/generate'].includes(path))await env.DB.prepare('CREATE TABLE IF NOT EXISTS club_state_88 (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
+if(path==='/api/booking')return await bookingRoute(req,env,await authorized(req,env),club);
 if(path==='/api/backups')return await backupsRoute(req,env,await authorized(req,env),club,valid);
 if(path==='/api/leaderboard'){const admin=await authorized(req,env);if(admin&&env.DB&&req.method==='POST')await prepareBackups(env.DB,club);return await leaderboardRoute(req,env,admin,club);}
 if(path==='/api/login'&&req.method==='POST'){
@@ -79,4 +81,5 @@ if(path==='/api/state'){
 if(path.startsWith('/api/'))return json({error:'Not found'},404);
 return env.ASSETS.fetch(req);
 }catch{return json({error:'ยังใช้บริการนี้ไม่ได้ ตรวจการตั้งค่า D1 และรัน schema.sql ก่อน หรือทดลองใหม่อีกครั้ง'},503);}}};
+
 
