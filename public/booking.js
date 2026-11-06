@@ -144,7 +144,7 @@
   const booked=new Map();
   for(const session of chosen)for(const {playerId:id} of session.registrations)booked.set(id,(booked.get(id)||0)+1);
   const picker=q('#bookingPlayer');
-  const options=data.roster.filter(p=>chosen.length!==1||!booked.has(p.id));
+  const options=data.roster.filter(p=>!chosen.length||(booked.get(p.id)||0)<chosen.length);
   picker.innerHTML='<option value="">เลือกชื่อของคุณ…</option>'+options.map(p=>{
    const count=booked.get(p.id)||0;
    const note=chosen.length>1&&count?` · จองแล้ว ${count}/${chosen.length} วัน`:'';
@@ -153,10 +153,8 @@
   const eligible=options.some(p=>p.id===playerId);
   picker.value=eligible?playerId:'';
   picker.disabled=!options.length;
-  const allBooked=chosen.length>0&&booked.get(picker.value)===chosen.length;
   q('#bookingPlayerHint').textContent=!data.roster.length?'ไม่มีชื่อในก๊วน? ให้ผู้จัดเพิ่มรายชื่อก่อน'
-   :!options.length?'ทุกคนในรายชื่อจองวันนี้แล้ว'
-   :allBooked?'ชื่อนี้จองครบทุกวันที่เลือกแล้ว'
+   :!options.length?'ทุกคนในรายชื่อจองครบทุกวันที่เลือกแล้ว'
    :chosen.length===1?'แสดงเฉพาะคนที่ยังไม่ได้จองวันนี้'
    :'ระบบจะจองเฉพาะวันที่ชื่อนี้ยังไม่ได้จอง';
   q('#bookingAction').hidden=!chosen.length;
@@ -167,7 +165,7 @@
    return `<li>${displayDate(s.date)} · ${html(s.start)}–${html(s.end)} น.${s.isCup?' · 🏆 '+html(cupName):''}${note}</li>`;
   }).join('');
   q('#bookingHolidayConfirm').hidden=!chosen.some(s=>s.holiday);
-  q('#bookingConfirm').disabled=!chosen.length||!picker.value||allBooked||!token||!data.settings.enabled;
+  q('#bookingConfirm').disabled=!chosen.length||!picker.value||!token||!data.settings.enabled;
   if(!token)status('เบราว์เซอร์ไม่ให้เก็บรหัสจัดการการจอง กรุณาเปิดเว็บใน Safari / Chrome โดยตรง',true);
  }
  function renderDetail(){
