@@ -18,3 +18,15 @@ main:has(#booking:not([hidden])) > .venue-picker small { display:none }
 #booking:has(.booking-action:not([hidden])) { padding-bottom:80px }
 #bookingReviewDates { padding-left:20px; line-height:1.7 }
 #bookingReview select { width:100%; min-height:44px }
+
+.booking-date.availability-open { --availability:#237342; --availability-ink:#14542e; --availability-bg:#e1f4e7 }
+.booking-date.availability-near { --availability:#b57b08; --availability-ink:#674300; --availability-bg:#fff1bf }
+.booking-date.availability-full { --availability:#b63f43; --availability-ink:#85232b; --availability-bg:#fae5e5 }
+.booking-date.availability-closed { --availability:#74786e; --availability-ink:#41443c; --availability-bg:#e7e8e2 }
+.booking-date[class*="availability-"] { border-color:var(--availability); border-inline-start-width:5px }
+.booking-date[class*="availability-"].is-focus { box-shadow:0 0 0 1px var(--availability) }
+.booking-availability { display:flex; flex-wrap:wrap; align-items:center; gap:6px }
+.booking-availability-label, .booking-waitlist-label { padding:3px 8px; border-radius:6px; font-size:13px; font-weight:800 }
+.booking-availability-label { background:var(--availability-bg); color:var(--availability-ink) }
+.booking-waitlist-label { background:#273d28; color:#fff }
+.booking-availability small { flex-basis:100%; font-size:12px }

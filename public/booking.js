@@ -54,16 +54,18 @@
    const available=Math.max(0,s.capacity-s.confirmedCount);
    const closed=s.closed||s.skipped||!cfg.enabled;
    const mine=s.registrations.find(r=>r.playerId===playerId);
+   const tone=closed?'closed':available===0?'full':available<=2?'near':'open';
    const availability=closed
     ? (s.skipped?'งดจองวันหยุด':'ปิดรับจอง')
-    : available ? `เหลือ ${available} ที่ · ${s.confirmedCount}/${s.capacity} คน` : 'เต็ม · รับสำรอง';
+    : available ? `เหลือ ${available} ที่ · ${s.confirmedCount}/${s.capacity} คน` : 'ตัวจริงเต็ม';
+   const waitlist=tone==='full'?(s.canJoinWaitlist===false?'คิวสำรองเต็ม':'ยังรับสำรอง'):'';
    const personal=mine ? (mine.status==='confirmed'?'คุณได้ตัวจริง':'คุณอยู่สำรอง #'+mine.position) : '';
-   return `<article class="booking-date ${focusId===s.id?'is-focus':''} ${closed?'is-closed':''}">
+   return `<article class="booking-date availability-${tone} ${focusId===s.id?'is-focus':''} ${closed?'is-closed':''}">
     <label class="booking-date-label">
      <input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id)?'checked':''} ${closed?'disabled':''} aria-label="เลือก ${displayDate(s.date)}">
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.</small></span>
     </label>
-    <div class="booking-date-bottom"><span>${availability}${personal?' · '+personal:''}</span><button type="button" class="textbtn" data-book-focus="${html(s.id)}">ดูรายชื่อ / ตาราง</button></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist?`<strong class="booking-waitlist-label">${waitlist}</strong>`: ''}${personal?`<small>${personal}</small>`: ''}</div><button type="button" class="textbtn" data-book-focus="${html(s.id)}">ดูรายชื่อ / ตาราง</button></div>
     ${s.holiday?`<p class="booking-holiday">☀ ${html(s.holiday)}</p>`:''}
     ${!data.holidayYears.includes(Number(s.date.slice(0,4)))?'<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>':''}
    </article>`;

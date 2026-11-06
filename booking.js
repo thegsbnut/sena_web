@@ -87,7 +87,7 @@ async function ownerHash(req) {
 export function publicBooking(doc,revision,players,admin,owner,now=new Date()) {
  const cfg=doc.settings;
  return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai})=>({id,name,thai})),serverNow:now.toISOString(),sessions:doc.sessions.filter(s=>startsAt(s)>+now).map(s=>({
-  id:s.id,date:s.date,start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
+  id:s.id,date:s.date,start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
   registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:admin||!!owner&&r.ownerHash===owner}))
  }))};
 }
