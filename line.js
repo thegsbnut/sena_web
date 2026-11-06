@@ -105,13 +105,19 @@ function alertText(changes,last,summarySent,summaryTime){
   const key=change.club+change.date;
   if(!grouped.has(key))grouped.set(key,{...change,items:[]});
   const group=grouped.get(key);
-  group.items.push((change.action==='book'?'＋ ':'− ')+change.name.replace(/\s+/g,' '));
+  group.items.push((change.action==='book'?'จอง: ':'ถอน: ')+change.name.replace(/\s+/g,' '));
   Object.assign(group,change);
  }
  const lines=['🏸 อัปเดตการจอง Sena / 88'];
  for(const group of grouped.values()){
   const date=new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',timeZone:'Asia/Bangkok'}).format(new Date(group.date+'T12:00:00+07:00'));
-  lines.push('',(group.club==='88'?'88':'Sena')+' · '+date,...group.items,`ตัวจริง ${group.confirmed}/${group.capacity} · สำรอง ${group.waiting}`);
+  const names=list=>list.map(name=>name.replace(/\s+/g,' ')).join(', ')||'ไม่มี';
+  lines.push('',(group.club==='88'?'88':'Sena')+' · '+date,...group.items);
+  if(group.confirmedNames&&group.waitingNames){
+   lines.push(`ตัวจริง ${group.confirmed}/${group.capacity}: ${names(group.confirmedNames)}`,`สำรอง ${group.waiting}: ${names(group.waitingNames)}`);
+  }else{
+   lines.push(`ตัวจริง ${group.confirmed}/${group.capacity} · สำรอง ${group.waiting}`, 'ดูรายชื่อ: '+publicOrigin+'/court'+(group.club==='88'?'?club=88':'')+'#booking');
+  }
  }
  const notice=last?'\n\nครบโควตาแจ้งเตือนวันนี้แล้ว '+(summarySent?'ดูยอดล่าสุดได้ที่เว็บ':'กันไว้ 1 ครั้งสำหรับสรุป '+summaryTime+' น.'):'';
  return limitedText(lines.join('\n'))+notice;
