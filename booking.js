@@ -148,13 +148,15 @@ export async function bookingRoute(req,env,admin,club) {
     const sessions=input.sessionIds.map(session);
     if(sessions.some(s=>s.closed||s.skipped))fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่',409);
     if(sessions.some(s=>s.holiday)&&input.acceptHoliday!==true)fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง',409);
-    let added=0,duplicate=0;
+    let added=0;
+    const duplicateIds=[];
     for(const s of sessions){
-     if(s.registrations.some(r=>r.playerId===input.playerId)){duplicate++;continue;}
+     if(s.registrations.some(r=>r.playerId===input.playerId)){duplicateIds.push(s.id);continue;}
      if(s.registrations.length>=200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
      s.registrations.push({id:crypto.randomUUID(),playerId:input.playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString()});added++;
     }
-    return {added,duplicate,message:added?`จองเรียบร้อย ${added} วัน${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
+    const duplicate=duplicateIds.length;
+    return {added,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
    }
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);

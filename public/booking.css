@@ -5,3 +5,16 @@
 @media(max-width:760px){#bookingDates{max-height:430px}.booking-submit{scroll-margin-top:12px}}
 
 .booking-feedback{width:440px;max-width:calc(100% - 32px);max-height:85vh;overflow:auto;background:#f6f2dd;color:#112a20;border:2px solid #729849;padding:24px;box-shadow:0 15px 70px #001a1155}.booking-feedback h2{font-size:22px}.booking-feedback p{white-space:pre-wrap;font-size:14px;line-height:1.9}.booking-feedback form{display:block}.booking-feedback::backdrop{background:#001c17b3}
+
+main:has(#booking:not([hidden])) > .rally-hero { display:none }
+main:has(#booking:not([hidden])) > .venue-picker { padding:6px 12px; margin:4px 0 8px }
+main:has(#booking:not([hidden])) > .venue-picker small { display:none }
+#bookingDates { max-height:none; overflow:visible }
+.booking-date-label { display:flex; align-items:center; gap:12px; min-height:48px }
+.booking-date-label small { display:block; font-size:13px; margin-top:4px }
+.booking-more, .booking-back { width:100%; min-height:44px; margin-top:10px }
+.booking-action { position:fixed; bottom:0; left:0; right:0; z-index:90; display:flex; align-items:center; justify-content:center; gap:16px; padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:#08281e; color:#fff; border-top:1px solid #597346; box-shadow:0 -4px 20px #001a1144 }
+.booking-action button { min-height:44px }
+#booking:has(.booking-action:not([hidden])) { padding-bottom:80px }
+#bookingReviewDates { padding-left:20px; line-height:1.7 }
+#bookingReview select { width:100%; min-height:44px }
