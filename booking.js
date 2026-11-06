@@ -73,6 +73,8 @@ export function materialize(doc,players,now=new Date()) {
  }
  doc.sessions.sort((a,b)=>a.date.localeCompare(b.date));
 }
+const womensDoubles=team=>team.every(player=>player.gender==='F');
+const bookingMatchAllowed=(a,b)=>womensDoubles(a)===womensDoubles(b);
 export function refreshSchedules(doc,players,now=new Date()) {
  // Identical weekly rosters can share a draw; avoid repeating expensive work
  // when materializing several weeks of regular bookings in one request.
@@ -82,7 +84,7 @@ export function refreshSchedules(doc,players,now=new Date()) {
   const ids=s.registrations.slice(0,s.capacity).map(r=>r.playerId);
   if(ids.length===s.capacity)s.hasFilled=true;
   const chosen=ids.map(id=>players.find(p=>p.id===id)).filter(Boolean);
-  const fingerprint=JSON.stringify([ids,s.rounds,chosen.map(p=>[p.lv,p.gender]),s.skipped,s.closed,doc.settings.enabled]);
+  const fingerprint=JSON.stringify(['booking-v2',ids,s.rounds,chosen.map(p=>[p.lv,p.gender]),s.skipped,s.closed,doc.settings.enabled]);
   if(fingerprint===s.fingerprint)continue;
   s.fingerprint=fingerprint;
   if(!s.hasFilled){s.schedule=null;s.scheduleStatus='waiting';continue;}
@@ -91,7 +93,7 @@ export function refreshSchedules(doc,players,now=new Date()) {
   if(chosen.length<8){s.schedule=null;s.scheduleStatus='insufficient';continue;}
   try {
    if(draws.has(fingerprint))s.schedule=draws.get(fingerprint);
-   else {const result=globalThis.Sena.generate(chosen,s.rounds,[],1,40);
+   else {const result=globalThis.Sena.generate(chosen,s.rounds,[],3,40,{matchAllowed:bookingMatchAllowed,randomWeight:3});
     s.schedule={schedule:result.schedule.map(({round,ids})=>({round,ids})),counts:result.counts};draws.set(fingerprint,s.schedule);}
    s.scheduleStatus='ready';
   } catch {s.schedule=null;s.scheduleStatus='failed';}
@@ -103,11 +105,11 @@ async function ownerHash(req) {
  if(!/^[a-f0-9]{64}$/.test(token))fail('รหัสจัดการการจองไม่ถูกต้อง');
  return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token)))].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
-export function publicBooking(doc,revision,players,admin,owner,now=new Date(),club='sena') {
+export function publicBooking(doc,revision,players,admin,now=new Date(),club='sena') {
  const cfg=doc.settings,cupWeek=cupWeekFor(doc,club);
- return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai})=>({id,name,thai})),serverNow:now.toISOString(),sessions:doc.sessions.filter(s=>startsAt(s)>+now).map(s=>({
+ return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai,lv})=>({id,name,thai,...(admin?{lv}:{})})),serverNow:now.toISOString(),sessions:doc.sessions.filter(s=>startsAt(s)>+now).map(s=>({
   id:s.id,date:s.date,isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
-  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:admin||!!owner&&r.ownerHash===owner}))
+  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:true}))
  }))};
 }
 export async function mutateBooking(env,club,operation,now=new Date()) {
@@ -201,12 +203,11 @@ export async function bookingRoute(req,env,admin,club) {
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
-    if(!admin&&(!owner||r.ownerHash!==owner))fail('ถอนการจองได้จากเครื่องที่จอง หรือให้ผู้จัดช่วยถอน',403);
     s.registrations=s.registrations.filter(x=>x.id!==r.id);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);
-  return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,owner,now,club),venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
+  return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,now,club),venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
  }catch(e){if(e instanceof BookingError)return reply({error:e.message},e.status);throw e;}
 }
 export async function scheduledBookings(env) {

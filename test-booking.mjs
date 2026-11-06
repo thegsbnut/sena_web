@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
-import {defaultSettings,materialize,bangkokDate,publicBooking} from './booking.js';
+import {defaultSettings,materialize,bangkokDate,publicBooking,refreshSchedules} from './booking.js';
 import {holidayOn} from './booking-holidays.js';
 const origin='https://example.com';
 const token='a'.repeat(64),otherToken='b'.repeat(64);
@@ -36,8 +36,11 @@ test('multiweek bookings are atomic, idempotent and ownership tokens never leak'
  d=await(await f.call({action:'book',playerId:'p0',sessionIds:ids,acceptHoliday:true})).json();assert.equal(d.result.added,0);assert.equal(d.result.duplicate,3);
  assert.equal((await f.call({action:'book',playerId:'p1',sessionIds:[ids[0],'1900-01-01'],acceptHoliday:true})).status,409);
  d=await(await f.call()).json();assert.equal(d.sessions.find(s=>s.id===ids[0]).registrations.length,1);
- const other=await(await f.call(null,{owner:otherToken})).json();assert.equal(other.sessions[0].registrations[0].canCancel,false);
- const reg=d.sessions[0].registrations[0];assert.equal((await f.call({action:'cancel',sessionId:ids[0],registrationId:reg.id},{owner:otherToken})).status,403);
+ const other=await(await f.call(null,{owner:null})).json();assert.equal(other.sessions[0].registrations[0].canCancel,true);
+ const reg=d.sessions[0].registrations[0],cancel={action:'cancel',sessionId:ids[0],registrationId:reg.id};
+ assert.equal((await f.call(cancel,{owner:null,headers:{Origin:'https://evil.example'}})).status,403);
+ assert.equal((await f.call(cancel,{owner:otherToken})).status,200);
+ assert.equal((await f.call(cancel,{owner:null})).status,409);
 });
 test('concurrent final slots, automatic promotion, rejoin at tail and stale draw removal',async()=>{
  const f=fixture(),{data}=await f.open(),id=data.sessions[0].id;
@@ -56,8 +59,7 @@ test('concurrent final slots, automatic promotion, rejoin at tail and stale draw
 test('weekly regulars do not duplicate or reappear after cancellation; future weeks roll forward',async()=>{
  const f=fixture(),{cookie,settings,data}=await f.open(['p0','p1']);const s=data.sessions[0];assert.equal(s.registrations.length,2);assert(s.registrations.every(r=>r.source==='regular'));
  for(let i=0;i<2;i++)assert.equal((await(await f.call()).json()).sessions[0].registrations.length,2);
- assert.equal((await f.call({action:'cancel',sessionId:s.id,registrationId:s.registrations[0].id})).status,403);
- assert.equal((await f.call({action:'cancel',sessionId:s.id,registrationId:s.registrations[0].id},{cookie})).status,200);
+ assert.equal((await f.call({action:'cancel',sessionId:s.id,registrationId:s.registrations[0].id},{owner:null})).status,200);
  assert.equal((await(await f.call()).json()).sessions[0].registrations.length,1);
  let r=await f.call({action:'settings',settingsVersion:1,settings:{...settings,regularIds:['p0','p1','p2']}},{cookie});assert.equal(r.status,200);assert.deepEqual((await r.json()).sessions[0].registrations.map(r=>r.playerId),['p1','p2']);
  const now=new Date('2026-11-03T05:00:00Z'),doc={settings:{...settings,weekdays:[2,4],weeks:2,regularIds:['p0']},settingsVersion:0,sessions:[],seq:0};materialize(doc,players,now);assert.equal(doc.sessions.length,4);
@@ -80,6 +82,7 @@ test('a full regular roster saves schedules respecting rest and mixed-gender rul
   const ids=rounds[i].ids;assert.equal(new Set(ids).size,4);if(i)assert(!ids.some(id=>rounds[i-1].ids.includes(id)));
   assert(globalThis.Sena.valid(ids.slice(0,2).map(id=>players.find(p=>p.id===id)),ids.slice(2).map(id=>players.find(p=>p.id===id))));
  }}
+ assert.deepEqual(data.roster.map(p=>p.lv),players.map(p=>p.lv));
  const d=await(await f.call()).json();assert(!JSON.stringify(d).includes('"lv"'));assert(!JSON.stringify(d).includes('"gender"'));assert(!JSON.stringify(d).includes('fingerprint'));
 });
 
@@ -108,7 +111,7 @@ test('venue maps default for existing clubs, are editable only by organizers and
 test('Cup dates use calendar-month boundaries with distinct defaults for Sena and 88',()=>{
  const dates=['2027-03-07','2027-03-08','2027-03-14','2027-03-15','2027-03-21','2027-03-22','2027-03-28','2027-03-29','2027-04-08'];
  const doc={settings:defaultSettings(),sessions:dates.map(date=>({id:date,date,start:'19:00',capacity:10,registrations:[]}))};
- const read=club=>publicBooking(doc,0,[],false,null,new Date('2027-03-01'),club);
+ const read=club=>publicBooking(doc,0,[],false,new Date('2027-03-01'),club);
  assert.deepEqual(read('sena').sessions.filter(s=>s.isCup).map(s=>s.date),['2027-03-08','2027-03-14','2027-04-08']);
  assert.deepEqual(read('88').sessions.filter(s=>s.isCup).map(s=>s.date),['2027-03-22','2027-03-28']);
  doc.sessions[1].skipped=true;
@@ -142,4 +145,27 @@ test('organizers can move Cup dates without rewriting bookings, and overrides su
  assert.equal(guest.cupWeek,undefined);
  assert(guest.sessions.every(s=>!('cupOverride' in s)));
  assert.equal((await(await f.call(null,{cookie,club:'88'})).json()).cupWeek,4);
+});
+
+
+test('updated booking draw balances levels, preserves rest and pairs women’s doubles only with women’s doubles',()=>{
+ const now=new Date('2027-03-01T01:00:00Z'),date='2027-03-02';
+ const run=gender=> {
+  const roster=gender.map((g,i)=>({id:'x'+i,gender:g,lv:i<4?2:12}));
+  const registrations=roster.map(p=>({playerId:p.id}));
+  const session={date,start:'19:00',rounds:4,capacity:8,registrations,scheduleVersion:2,fingerprint:'old'};
+  refreshSchedules({settings:{enabled:true},sessions:[session]},roster,now);
+  assert.equal(session.scheduleStatus,'ready');
+  assert.equal(session.scheduleVersion,3);
+  for(const [i,round] of session.schedule.schedule.entries()){
+   const ids=round.ids;
+   const women=team=>team.every(id=>roster.find(p=>p.id===id).gender==='F');
+   assert.equal(women(ids.slice(0,2)),women(ids.slice(2)));
+   if(i)assert(!ids.some(id=>session.schedule.schedule[i-1].ids.includes(id)));
+  }
+  return session.schedule.schedule;
+ };
+ const even=run(['F','F','F','F','M','M','M','M']);
+ assert(even.every(({ids})=>ids.slice(0,2).filter(id=>Number(id.slice(1))<4).length===ids.slice(2).filter(id=>Number(id.slice(1))<4).length));
+ run(['F','F','F','F','F','M','M','M']);
 });

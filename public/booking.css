@@ -87,3 +87,7 @@ main:has(#booking:not([hidden])) > .venue-picker small { display:none }
 #bookingDetailsStatus:empty { display:none }
 #bookingDetailsStatus.is-error { color:#85232b; background:#fae5e5 }
 #booking.booking-busy #bookingDetailsClose { pointer-events:auto; opacity:1 }
+
+.booking-lv { display:inline-block; padding:1px 5px; border-radius:5px; background:#e6edcf; color:#26462f; font-size:11px; font-weight:700; white-space:nowrap }
+.booking-match-team { display:grid; gap:3px; min-width:0; text-align:center }
+.booking-match-team small { color:#385747; font-size:11px }

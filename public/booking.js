@@ -11,7 +11,20 @@
  let data=null,busy=false,dirty=false,focusId='',selected=new Set(),playerId='',token=null;
  try{token=localStorage.getItem(clubStorage('booking-token'));if(!/^[a-f0-9]{64}$/.test(token||'')){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem(clubStorage('booking-token'),token);}playerId=localStorage.getItem(clubStorage('booking-player'))||'';}catch{token=null;}
  const displayDate=d=>new Date(d+'T12:00:00+07:00').toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok'});
- const name=id=>data?.roster.find(p=>p.id===id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+ const player=id=>data?.roster.find(p=>p.id===id);
+ const name=id=>player(id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+ const level=id=>player(id)?.lv;
+ const formatLevel=new Intl.NumberFormat('th-TH',{maximumFractionDigits:2});
+ function levelBadge(id){
+  const lv=level(id);
+  return data.canEdit&&Number.isFinite(lv)?`<span class="booking-lv">Lv ${formatLevel.format(lv)}</span>`:'';
+ }
+ function matchTeam(ids){
+  if(!data.canEdit)return `<span>${html(ids.map(name).join(' / '))}</span>`;
+  const levels=ids.map(level);
+  const average=levels.every(Number.isFinite)?`<small>Lv เฉลี่ย ${formatLevel.format((levels[0]+levels[1])/2)}</small>`:'';
+  return `<div class="booking-match-team">${ids.map(id=>`<span>${html(name(id))} ${levelBadge(id)}</span>`).join('')}${average}</div>`;
+ }
  function status(text,error=false){q('#bookingStatus').textContent=text;q('#bookingStatus').className='booking-status'+(error?' is-error':'');}
  function feedback(title,message){
   const dialog=q('#bookingFeedback');q('#bookingFeedbackTitle').textContent=title;q('#bookingFeedbackMessage').textContent=message;
@@ -144,10 +157,10 @@
   q('#bookingDetailsMeta').textContent=s?`${displayDate(s.date)} · ${sessionTime}`:'';
   q('#bookingDetailBadge').textContent=s?`${s.confirmedCount} / ${s.capacity} คน`:'';
   if(!s){q('#bookingDetail').innerHTML='<div class="booking-empty">เลือกวัน แล้วพบก๊วนของคุณที่นี่ 🏸</div>';q('#bookingSchedule').innerHTML='<p class="hint">เมื่อคนครบ ระบบจะบันทึกตารางคู่ให้อัตโนมัติ</p>';return;}
-  const row=r=>`<div class="booking-person"><span class="booking-avatar">${html(name(r.playerId).slice(0,2))}</span><div><strong>${html(name(r.playerId))}</strong><small>${r.source==='regular'?'↻ ขาประจำ':r.status==='waitlist'?'สำรอง #'+r.position:'ลงชื่อออนไลน์'}</small></div>${r.canCancel?`<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>`:''}</div>`;
+  const row=r=>`<div class="booking-person"><span class="booking-avatar">${html(name(r.playerId).slice(0,2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source==='regular'?'↻ ขาประจำ':r.status==='waitlist'?'สำรอง #'+r.position:'ลงชื่อออนไลน์'}</small></div>${r.canCancel?`<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>`:''}</div>`;
   q('#bookingDetail').innerHTML=`${s.isCup?cupBadge:''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${s.registrations.filter(r=>r.status==='confirmed').map(row).join('')||'<p class="hint">มาเปิดก๊วนเป็นคนแรกกัน!</p>'}<div class="booking-waitlist"><h4>คิวสำรอง <span>${s.waitlistCount} คน</span></h4>${s.registrations.filter(r=>r.status==='waitlist').map(row).join('')||'<p class="hint">ยังไม่มีคิวสำรอง</p>'}<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${data.canEdit?`<button type="button" class="secondary" id="bookingClose">${s.closed?'เปิดรับจองรอบนี้':'ปิดรับจองรอบนี้'}</button>`:''}`;
   const messages={waiting:`รออีก ${Math.max(0,s.capacity-s.confirmedCount)} คนให้ครบก๊วน แล้วจัดคู่ทันที`,insufficient:'เหลือน้อยกว่า 8 คน จึงพักตารางไว้ก่อน เพื่อให้ทุกคนได้พักอย่างน้อย 1 เกม',closed:'รอบนี้ปิดรับจอง / ข้ามวันหยุด จึงพักตารางไว้ก่อน',failed:'เงื่อนไขผู้เล่นยังจัดคู่ไม่ได้ ให้ผู้จัดตรวจรายชื่อและตั้งค่าอีกครั้ง'};
-  q('#bookingSchedule').innerHTML=s.schedule&&data.settings.enabled&&!s.closed&&!s.skipped?`<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button><p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m=>`<div class="booking-match"><b>GAME ${String(m.round).padStart(2,'0')}</b><div><span>${html(m.ids.slice(0,2).map(name).join(' / '))}</span><em>VS</em><span>${html(m.ids.slice(2).map(name).join(' / '))}</span></div></div>`).join('')}<div class="booking-counts">${Object.entries(s.schedule.counts).map(([id,n])=>`<span>${html(name(id))} <b>${n} เกม</b></span>`).join('')}</div></details>`:`<div class="booking-empty">🏸<p>${messages[s.scheduleStatus]||'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
+  q('#bookingSchedule').innerHTML=s.schedule&&data.settings.enabled&&!s.closed&&!s.skipped?`<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button><p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m=>`<div class="booking-match"><b>GAME ${String(m.round).padStart(2,'0')}</b><div>${matchTeam(m.ids.slice(0,2))}<em>VS</em>${matchTeam(m.ids.slice(2))}</div></div>`).join('')}<div class="booking-counts">${Object.entries(s.schedule.counts).map(([id,n])=>`<span>${html(name(id))} <b>${n} เกม</b></span>`).join('')}</div></details>`:`<div class="booking-empty">🏸<p>${messages[s.scheduleStatus]||'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
  }
  function renderCupSettings(){
   q('#bookingCupSettings').dataset.version=String(data.cupVersion);
