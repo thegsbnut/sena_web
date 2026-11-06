@@ -1,3 +1,4 @@
+import {lineAdmin,lineWebhook} from './line.js';
 import {bookingRoute,scheduledBookings} from './booking.js';
 import {backupsRoute,prepareBackups} from './backups.js';
 import {leaderboardRoute} from './leaderboard.js';
@@ -40,8 +41,10 @@ if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วน
 const stateTable=club==='88'?'club_state_88':'club_state';
 if(club==='88'&&env.DB&&['/api/state','/api/generate'].includes(path))await env.DB.prepare('CREATE TABLE IF NOT EXISTS club_state_88 (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
 if(path==='/')return Response.redirect(url.origin+'/court.html',302);
+if(path==='/api/line/webhook')return await lineWebhook(req,env);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
 if(path==='/api/session')return req.method==='GET'?json({canEdit:await authorized(req,env)}):json({error:'Method not allowed'},405);
+if(path==='/api/line')return await lineAdmin(req,env,await authorized(req,env),club);
 if(path==='/api/booking')return await bookingRoute(req,env,await authorized(req,env),club);
 if(path==='/api/backups')return await backupsRoute(req,env,await authorized(req,env),club,valid);
 if(path==='/api/leaderboard'){const admin=await authorized(req,env);if(admin&&env.DB&&req.method==='POST')await prepareBackups(env.DB,club);return await leaderboardRoute(req,env,admin,club);}

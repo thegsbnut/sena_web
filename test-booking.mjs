@@ -203,3 +203,33 @@ test('reroll is organizer-only and replaces the selected schedule without changi
  assert.equal((await f.call(body,{cookie})).status,409);
  assert.deepEqual((await(await f.call()).json()).sessions[0].schedule,changed.schedule);
 });
+
+test('Badbot links only via a signed one-time group command and sends only for organizers',async t=>{
+ const f=fixture(),{cookie,data}=await f.open(['p0']);
+ Object.assign(f.env,{LINE_CHANNEL_SECRET:'test-only-secret',LINE_CHANNEL_ACCESS_TOKEN:'test-only-token'});
+ const call=(body,auth=cookie)=>worker.fetch(new Request(origin+'/api/line',{method:body?'POST':'GET',headers:{Origin:origin,Cookie:auth},...(body?{body:JSON.stringify(body)}:{})}),f.env);
+ assert.equal((await call({action:'pair'},'')).status,401);
+ const {code}=await(await call({action:'pair'})).json();
+ const groupId='C'+'a'.repeat(32);
+ const event=group=>JSON.stringify({events:[{type:'message',source:{type:'group',groupId:group},message:{type:'text',text:'/badbot '+code}}]});
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(f.env.LINE_CHANNEL_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+ const signed=async raw=>Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(raw))).toString('base64');
+ const hook=(body,signature)=>worker.fetch(new Request(origin+'/api/line/webhook',{method:'POST',headers:{'x-line-signature':signature},body}),f.env);
+ const raw=event(groupId);
+ assert.equal((await hook(raw,await signed('{}'))).status,401);
+ assert.equal((await(await call()).json()).connected,false);
+ assert.equal((await hook(raw,await signed(raw))).status,200);
+ assert.equal((await(await call()).json()).connected,true);
+ const other=event('C'+'b'.repeat(32));
+ assert.equal((await hook(other,await signed(other))).status,200);
+ let sent;
+ t.mock.method(globalThis,'fetch',async(url,{body})=>{assert.equal(url,'https://api.line.me/v2/bot/message/push');sent=JSON.parse(body);return Response.json({});});
+ const payload={action:'send',sessionId:data.sessions[0].id};
+ assert.equal((await call(payload,'')).status,401);
+ assert.equal((await call(payload)).status,200);
+ assert.equal(sent.to,groupId);
+ assert.match(sent.messages[0].text,/ตัวจริง 1\/8 คน/);
+ assert.match(sent.messages[0].text,/Player 0/);
+ assert.match(sent.messages[0].text,/สำรอง 0 คน/);
+ assert.doesNotMatch(sent.messages[0].text,/\bLv\b/);
+});

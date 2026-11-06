@@ -75,6 +75,12 @@
  <fieldset><legend>เลือกวันแข่งเป็นรายรอบ</legend><p class="hint">ติ๊กเพื่อกำหนดให้เป็นวันแข่ง หรือเอาติ๊กออกเพื่อให้เป็นรอบปกติ รอบที่ไม่ได้ปรับจะใช้สัปดาห์ประจำเดือน</p><div id="bookingCupDates"></div></fieldset>
  <button class="secondary" type="submit">บันทึกวันแข่งขัน</button> <button class="textbtn" id="bookingCupReload" type="button" hidden>โหลดค่าล่าสุด</button><p id="bookingCupStatus" role="status"></p></form></details>
  <details class="booking-map-settings"><summary>แผนที่สนาม ${html(venueLabel)}</summary><form id="bookingMapSettings"><label for="bookingMapUrl">ลิงก์ Google Maps</label><input id="bookingMapUrl" name="mapUrl" type="url" inputmode="url" maxlength="2048" required placeholder="https://maps.app.goo.gl/…"><button class="secondary" type="submit">บันทึกแผนที่สนาม</button> <button class="textbtn" id="bookingMapReload" type="button" hidden>โหลดลิงก์ล่าสุด</button><p id="bookingMapStatus" role="status"></p></form></details>
+ <details class="booking-map-settings"><summary>🔔 เชื่อม Badbot กับกลุ่ม LINE</summary>
+ <p class="hint">สร้างคำสั่งแล้วส่งในกลุ่ม LINE ที่ต้องการรับสรุป รหัสใช้ได้ครั้งเดียวใน 10 นาที</p>
+ <button type="button" class="secondary" id="bookingLinePair">สร้างคำสั่งเชื่อมกลุ่ม</button>
+ <button type="button" class="secondary" id="bookingLineCheck">ตรวจการเชื่อมต่อ</button>
+ <textarea id="bookingLineCommand" aria-label="คำสั่งเชื่อม Badbot" rows="2" readonly hidden></textarea>
+ <p id="bookingLineSetupStatus" role="status" class="hint"></p></details>
  <form id="bookingSettings"></form></details></div>
  <div id="bookingInlineDetails"><div id="bookingDetailPanels"><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div></div>
  <dialog id="bookingDetailsDialog" class="booking-details-dialog" aria-labelledby="bookingDetailsTitle" aria-describedby="bookingDetailsMeta">
@@ -175,7 +181,7 @@
   q('#bookingDetailBadge').textContent=s?`${s.confirmedCount} / ${s.capacity} คน`:'';
   if(!s){q('#bookingDetail').innerHTML='<div class="booking-empty">เลือกวัน แล้วพบก๊วนของคุณที่นี่ 🏸</div>';q('#bookingSchedule').innerHTML='<p class="hint">เมื่อคนครบ ระบบจะบันทึกตารางคู่ให้อัตโนมัติ</p>';return;}
   const row=r=>`<div class="booking-person"><span class="booking-avatar">${html(rawName(r.playerId).slice(0,2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source==='regular'?'↻ ขาประจำ':r.status==='waitlist'?'สำรอง #'+r.position:'ลงชื่อออนไลน์'}</small></div>${r.canCancel?`<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>`:''}</div>`;
-  q('#bookingDetail').innerHTML=`${s.isCup?cupBadge:''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button><p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${s.registrations.filter(r=>r.status==='confirmed').map(row).join('')||'<p class="hint">มาเปิดก๊วนเป็นคนแรกกัน!</p>'}<div class="booking-waitlist"><h4>คิวสำรอง <span>${s.waitlistCount} คน</span></h4>${s.registrations.filter(r=>r.status==='waitlist').map(row).join('')||'<p class="hint">ยังไม่มีคิวสำรอง</p>'}<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${data.canEdit?`<button type="button" class="secondary" id="bookingClose">${s.closed?'เปิดรับจองรอบนี้':'ปิดรับจองรอบนี้'}</button>`:''}`;
+  q('#bookingDetail').innerHTML=`${s.isCup?cupBadge:''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button>${data.canEdit&&!s.skipped?` <button type="button" class="secondary" id="bookingLineSend">ส่งสรุปผ่าน Badbot</button><p id="bookingLineSendStatus" role="status" class="hint"></p>`:''}<p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${s.registrations.filter(r=>r.status==='confirmed').map(row).join('')||'<p class="hint">มาเปิดก๊วนเป็นคนแรกกัน!</p>'}<div class="booking-waitlist"><h4>คิวสำรอง <span>${s.waitlistCount} คน</span></h4>${s.registrations.filter(r=>r.status==='waitlist').map(row).join('')||'<p class="hint">ยังไม่มีคิวสำรอง</p>'}<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${data.canEdit?`<button type="button" class="secondary" id="bookingClose">${s.closed?'เปิดรับจองรอบนี้':'ปิดรับจองรอบนี้'}</button>`:''}`;
   const messages={waiting:`รออีก ${Math.max(0,s.capacity-s.confirmedCount)} คนให้ครบก๊วน แล้วจัดคู่ทันที`,insufficient:'เหลือน้อยกว่า 8 คน จึงพักตารางไว้ก่อน เพื่อให้ทุกคนได้พักอย่างน้อย 1 เกม',closed:'รอบนี้ปิดรับจอง / ข้ามวันหยุด จึงพักตารางไว้ก่อน',failed:'เงื่อนไขผู้เล่นยังจัดคู่ไม่ได้ ให้ผู้จัดตรวจรายชื่อและตั้งค่าอีกครั้ง'};
   q('#bookingSchedule').innerHTML=s.schedule&&data.settings.enabled&&!s.closed&&!s.skipped?`<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button>${data.canEdit?`<button type="button" class="secondary booking-primary" id="bookingReroll">↻ จัดคู่ใหม่</button><p id="bookingRerollStatus" role="status" class="hint"></p>`:''}<p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m=>`<div class="booking-match"><b>GAME ${String(m.round).padStart(2,'0')}</b><div>${matchTeam(m.ids.slice(0,2))}<em>VS</em>${matchTeam(m.ids.slice(2))}</div></div>`).join('')}<div class="booking-counts">${Object.entries(s.schedule.counts).map(([id,n])=>`<span>${html(name(id))} <b>${n} เกม</b></span>`).join('')}</div></details>`:`<div class="booking-empty">🏸<p>${messages[s.scheduleStatus]||'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
  }
@@ -215,6 +221,22 @@
    output.textContent=ok?'คัดลอกแล้ว พร้อมวางใน LINE ✓':'กดค้างในช่องข้อความ แล้วเลือกคัดลอก';
    if(ok)box.remove();
   }
+ }
+ async function lineAction(button,body,output){
+  button.disabled=true;output.textContent='กำลังเชื่อมต่อ LINE…';
+  try{
+   const response=await venueFetch('/api/line',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error);
+   if(result.code){
+    const command=q('#bookingLineCommand');command.value='/badbot '+result.code;command.hidden=false;
+    output.textContent='คัดลอกคำสั่งด้านบนไปส่งในกลุ่ม แล้วกดตรวจการเชื่อมต่อ';
+   }else if(body)output.textContent=result.message;
+   else{
+    output.textContent=result.connected?'สนามนี้เชื่อมกลุ่ม LINE แล้ว':'สนามนี้ยังไม่ได้เชื่อมกลุ่ม LINE';
+   }
+  }catch(e){output.textContent=e.message||'เชื่อมต่อ LINE ไม่สำเร็จ';}
+  finally{button.disabled=false;}
  }
  root.addEventListener('change',e=>{
   if(e.target.matches('[data-book-date]')){e.target.checked?selected.add(e.target.dataset.bookDate):selected.delete(e.target.dataset.bookDate);focusId=e.target.dataset.bookDate;renderSelection();renderDetail();}
@@ -303,6 +325,14 @@
    if(s?.schedule&&confirm('จัดคู่ใหม่และแทนตารางเดิมของรอบนี้?'))mutate({action:'reroll',sessionId:s.id,scheduleVersion:s.scheduleVersion});
   }
   if(button.id==='bookingCopy')copy(lineText(),q('#bookingCopyStatus'),'ตารางสำหรับคัดลอกลง LINE');
+  if(button.id==='bookingLinePair'&&confirm('สร้างคำสั่งสำหรับเชื่อมหรือเปลี่ยนกลุ่ม LINE ของสนามนี้?'))lineAction(button,{action:'pair'},q('#bookingLineSetupStatus'));
+  if(button.id==='bookingLineCheck')lineAction(button,null,q('#bookingLineSetupStatus'));
+  if(button.id==='bookingLineSend'){
+   const s=data.sessions.find(item=>item.id===focusId);
+   if(s&&confirm('ส่งสรุปรายชื่อวันที่ '+displayDate(s.date)+' เข้ากลุ่ม LINE ของ '+venueLabel+'?')){
+    lineAction(button,{action:'send',sessionId:s.id},q('#bookingLineSendStatus'));
+   }
+  }
   if(button.id==='bookingCopyRoster')copy(rosterText(),q('#bookingRosterCopyStatus'),'รายชื่อสำหรับคัดลอกลง LINE');
  });
  document.querySelector('[data-tab="booking"]').addEventListener('click',()=>{if(!dirty&&!cupDirty)load();});
