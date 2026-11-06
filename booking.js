@@ -140,6 +140,13 @@ export async function mutateBooking(env,club,operation,now=new Date()) {
  }
  fail('มีผู้จองพร้อมกันหลายคน กรุณาลองอีกครั้ง',409);
 }
+function recordLineChange(doc,s,player,action,now){
+ const since=+now-48*60*60*1000;
+ doc.lineChanges=(doc.lineChanges||[]).filter(change=>change.at>=since).slice(-499);
+ doc.lineChanges.push({at:+now,date:s.date,name:player?.name||'ผู้เล่น',action,
+  confirmed:Math.min(s.capacity,s.registrations.length),capacity:s.capacity,
+  waiting:Math.max(0,s.registrations.length-s.capacity)});
+}
 export async function bookingRoute(req,env,admin,club) {
  try {
   if(!['GET','POST'].includes(req.method))return reply({error:'Method not allowed'},405);
@@ -210,7 +217,8 @@ export async function bookingRoute(req,env,admin,club) {
    if(input.action==='book'){
     if(!doc.settings.enabled)fail('ผู้จัดยังไม่เปิดรับจอง',409);
     if(!owner)fail('กรุณาเปิดใช้พื้นที่จัดเก็บในเบราว์เซอร์เพื่อจัดการการจอง');
-    if(!players.some(p=>p.id===input.playerId))fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
+    const player=players.find(p=>p.id===input.playerId);
+    if(!player)fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
     if(!Array.isArray(input.sessionIds)||input.sessionIds.length<1||input.sessionIds.length>56||new Set(input.sessionIds).size!==input.sessionIds.length)fail('เลือกวันที่ต้องการจองอย่างน้อย 1 วัน');
     const sessions=input.sessionIds.map(session);
     if(sessions.some(s=>s.closed||s.skipped))fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่',409);
@@ -221,6 +229,7 @@ export async function bookingRoute(req,env,admin,club) {
      if(s.registrations.some(r=>r.playerId===input.playerId)){duplicateIds.push(s.id);continue;}
      if(s.registrations.length>=200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
      s.registrations.push({id:crypto.randomUUID(),playerId:input.playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString()});added++;
+     if(env.LINE_CHANNEL_ACCESS_TOKEN)recordLineChange(doc,s,player,'book',now);
     }
     const duplicate=duplicateIds.length;
     return {added,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
@@ -229,6 +238,7 @@ export async function bookingRoute(req,env,admin,club) {
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
     s.registrations=s.registrations.filter(x=>x.id!==r.id);
+    if(env.LINE_CHANNEL_ACCESS_TOKEN)recordLineChange(doc,s,players.find(p=>p.id===r.playerId),'cancel',now);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);

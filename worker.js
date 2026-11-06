@@ -1,4 +1,4 @@
-import {lineAdmin,lineWebhook} from './line.js';
+import {lineAdmin,lineWebhook,scheduledLine} from './line.js';
 import {bookingRoute,scheduledBookings} from './booking.js';
 import {backupsRoute,prepareBackups} from './backups.js';
 import {leaderboardRoute} from './leaderboard.js';
@@ -35,7 +35,7 @@ export function guestState(state) {
 function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
-export default {async scheduled(event,env,ctx){ctx.waitUntil(scheduledBookings(env));},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+export default {async scheduled(event,env,ctx){ctx.waitUntil(event.cron==='*/5 * * * *'?scheduledLine(env,new Date(event.scheduledTime)):scheduledBookings(env));},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 const club=url.searchParams.get('club')||'sena';
 if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วนที่เลือก'},400);
 const stateTable=club==='88'?'club_state_88':'club_state';

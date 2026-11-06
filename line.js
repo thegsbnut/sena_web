@@ -1,4 +1,4 @@
-import {bookingRoute} from './booking.js';
+import {bookingRoute,bangkokDate} from './booking.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const encode=new TextEncoder();
@@ -85,6 +85,104 @@ async function diagnoseLine(req,env,expiresAt){
  }catch{return 'ติดต่อ LINE เพื่อตรวจการตั้งค่าไม่สำเร็จ กรุณาลองอีกครั้ง';}
 }
 
+const autoDefaults={dailyLimit:3,summaryTime:'17:00'};
+const publicOrigin='https://sena-web.thegsbnut.workers.dev';
+const venues=['sena','88'];
+const minute=60*1000;
+const day=24*60*minute;
+async function autoSettings(db){
+ await db.prepare('CREATE TABLE IF NOT EXISTS line_auto_settings (id INTEGER PRIMARY KEY, daily_limit INTEGER NOT NULL, summary_time TEXT NOT NULL)').run();
+ const row=await db.prepare('SELECT daily_limit,summary_time FROM line_auto_settings WHERE id=1').first();
+ return row?{dailyLimit:row.daily_limit,summaryTime:row.summary_time}:autoDefaults;
+}
+
+function limitedText(text){
+ return text.length<=4800?text:text.slice(0,4600).replace(/[\uD800-\uDBFF]$/,'')+'\n… ดูรายการทั้งหมดที่ '+publicOrigin+'/court';
+}
+function alertText(changes,last,summarySent,summaryTime){
+ const grouped=new Map();
+ for(const change of changes){
+  const key=change.club+change.date;
+  if(!grouped.has(key))grouped.set(key,{...change,items:[]});
+  const group=grouped.get(key);
+  group.items.push((change.action==='book'?'＋ ':'− ')+change.name.replace(/\s+/g,' '));
+  Object.assign(group,change);
+ }
+ const lines=['🏸 อัปเดตการจอง Sena / 88'];
+ for(const group of grouped.values()){
+  const date=new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',timeZone:'Asia/Bangkok'}).format(new Date(group.date+'T12:00:00+07:00'));
+  lines.push('',(group.club==='88'?'88':'Sena')+' · '+date,...group.items,`ตัวจริง ${group.confirmed}/${group.capacity} · สำรอง ${group.waiting}`);
+ }
+ const notice=last?'\n\nครบโควตาแจ้งเตือนวันนี้แล้ว '+(summarySent?'ดูยอดล่าสุดได้ที่เว็บ':'กันไว้ 1 ครั้งสำหรับสรุป '+summaryTime+' น.'):'';
+ return limitedText(lines.join('\n'))+notice;
+}
+async function combinedSummary(env,now){
+ const sections=await Promise.all(venues.map(async club=>{
+  const response=await bookingRoute(new Request(publicOrigin+'/api/booking'),env,false,club);
+  if(!response.ok)throw Error('Cannot read booking summary');
+  const data=await response.json();
+  const session=data.settings.enabled&&data.sessions.find(s=>!s.skipped&&Date.parse(s.date+'T'+s.start+':00+07:00')>+now);
+  if(!session)return (club==='88'?'88':'Sena')+' · ยังไม่มีรอบถัดไป';
+  return rosterMessages(data,session,club,publicOrigin).map(item=>item.text).join('\n');
+ }));
+ return limitedText('📋 สรุปรอบถัดไป Sena + 88\n\n'+sections.join('\n\n━━━━━━━━━━\n\n'));
+}
+async function availableQuota(token,group,reserve){
+ const headers={Authorization:'Bearer '+token};
+ const api='https://api.line.me/v2/bot';
+ const paths=['/message/quota','/message/quota/consumption','/group/'+encodeURIComponent(group)+'/members/count'];
+ const [quota,usage,members]=await Promise.all(paths.map(async path=>{
+  const response=await fetch(api+path,{headers});
+  if(!response.ok)throw Error('Cannot check LINE quota');
+  return response.json();
+ }));
+ if(quota.type==='none')return true;
+ return Number.isFinite(quota.value)&&Number.isFinite(usage.totalUsage)&&members.count>0&&
+  quota.value-usage.totalUsage>=members.count*(reserve?2:1);
+}
+
+export async function scheduledLine(env,now=new Date()){
+ if(!env.DB||!env.LINE_CHANNEL_SECRET||!env.LINE_CHANNEL_ACCESS_TOKEN)return;
+ const db=env.DB;
+ await prepare(db);
+ const {results:groups}=await db.prepare('SELECT club,group_id FROM line_groups WHERE group_id IS NOT NULL').all();
+ const group=groups.find(row=>row.club==='sena')?.group_id;
+ if(!group||groups.find(row=>row.club==='88')?.group_id!==group)return;
+ const cfg=await autoSettings(db);
+ const date=bangkokDate(now),start=Date.parse(date+'T00:00:00+07:00');
+ const summaryAt=Date.parse(date+'T'+cfg.summaryTime+':00+07:00');
+ await db.prepare('CREATE TABLE IF NOT EXISTS line_auto_jobs (date TEXT, slot TEXT, retry_key TEXT NOT NULL, group_id TEXT NOT NULL, content TEXT NOT NULL, cutoff INTEGER NOT NULL, sent INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(date,slot))').run();
+ const {results:jobs}=await db.prepare('SELECT * FROM line_auto_jobs WHERE date=? ORDER BY cutoff').bind(date).all();
+ const summary=jobs.find(job=>job.slot==='summary');
+ const alerts=jobs.filter(job=>job.slot!=='summary');
+ const {results:docs}=await db.prepare("SELECT club,payload FROM booking_clubs WHERE club IN ('sena','88')").all();
+ const changes=docs.flatMap(row=>(JSON.parse(row.payload).lineChanges||[]).map(item=>({...item,club:row.club}))).sort((a,b)=>a.at-b.at);
+ const summaryDue=+now>=summaryAt&&!summary?.sent&&changes.some(item=>item.at>=summaryAt-day&&item.at<summaryAt);
+ const pending=changes.filter(item=>item.at>=start&&item.at>(alerts.at(-1)?.cutoff??start-1));
+ let job=summaryDue?summary:alerts.find(item=>!item.sent);
+ if(!summaryDue&&job&&alerts.length>cfg.dailyLimit-1)return;
+ if(!summaryDue&&!job&&(alerts.length>=cfg.dailyLimit-1||!pending.length||+now-pending[0].at<10*minute))return;
+ if(job&&job.group_id!==group)return;
+ if(!await availableQuota(env.LINE_CHANNEL_ACCESS_TOKEN,group,!summaryDue&&!summary?.sent))return;
+ if(!job){
+  const slot=summaryDue?'summary':'alert-'+(alerts.length+1);
+  const batch=summaryDue?[]:pending.filter(item=>item.at<=pending[0].at+10*minute);
+  const cutoff=summaryDue?summaryAt:batch.at(-1).at;
+  const content=summaryDue?await combinedSummary(env,now):alertText(batch,alerts.length===cfg.dailyLimit-2,!!summary?.sent,cfg.summaryTime);
+  await db.prepare('INSERT OR IGNORE INTO line_auto_jobs (date,slot,retry_key,group_id,content,cutoff) VALUES (?,?,?,?,?,?)')
+   .bind(date,slot,crypto.randomUUID(),group,content,cutoff).run();
+  job=await db.prepare('SELECT * FROM line_auto_jobs WHERE date=? AND slot=?').bind(date,slot).first();
+ }
+ if(job.sent||job.group_id!==group)return;
+ const response=await fetch('https://api.line.me/v2/bot/message/push',{
+  method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json','X-Line-Retry-Key':job.retry_key},
+  body:JSON.stringify({to:group,messages:[{type:'text',text:job.content}]})
+ });
+ if(response.ok||(response.status===409&&response.headers.has('x-line-accepted-request-id'))){
+  await db.prepare('UPDATE line_auto_jobs SET sent=1 WHERE date=? AND slot=?').bind(date,job.slot).run();
+  await db.prepare('DELETE FROM line_auto_jobs WHERE date<?').bind(bangkokDate(new Date(+now-7*day))).run();
+ }
+}
 export async function lineAdmin(req,env,admin,club){
  if(!admin)return reply({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
  if(!env.DB)return reply({error:'ยังไม่ได้ผูกฐานข้อมูล DB'},503);
@@ -96,10 +194,18 @@ export async function lineAdmin(req,env,admin,club){
   const row=await env.DB.prepare('SELECT group_id,expires_at FROM line_groups WHERE club=?').bind(club).first();
   const connected=!!row?.group_id;
   const diagnosis=!connected&&new URL(req.url).searchParams.has('diagnose')?await diagnoseLine(req,env,row?.expires_at):null;
-  return reply({connected,diagnosis});
+  return reply({connected,diagnosis,auto:await autoSettings(env.DB)});
  }
  let input;
  try{input=await req.json();}catch{return reply({error:'ข้อมูลไม่ถูกต้อง'},400);}
+ if(input?.action==='autoSettings'){
+  const {dailyLimit,summaryTime}=input;
+  if(!Number.isInteger(dailyLimit)||dailyLimit<1||dailyLimit>10||typeof summaryTime!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(summaryTime))return reply({error:'กรอกโควตา 1–10 ครั้งและเวลาสรุปให้ถูกต้อง'},400);
+  await autoSettings(env.DB);
+  await env.DB.prepare('INSERT INTO line_auto_settings (id,daily_limit,summary_time) VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET daily_limit=excluded.daily_limit,summary_time=excluded.summary_time')
+   .bind(dailyLimit,summaryTime).run();
+  return reply({message:'บันทึกการส่งอัตโนมัติสำหรับทั้งสองสนามแล้ว'});
+ }
  if(input?.action==='pair'){
   const code=crypto.randomUUID().replaceAll('-','');
   await env.DB.prepare('INSERT INTO line_groups (club,pair_code,expires_at) VALUES (?,?,?) ON CONFLICT(club) DO UPDATE SET pair_code=excluded.pair_code,expires_at=excluded.expires_at')

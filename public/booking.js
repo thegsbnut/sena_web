@@ -80,7 +80,11 @@
  <button type="button" class="secondary" id="bookingLinePair">สร้างคำสั่งเชื่อมกลุ่ม</button>
  <button type="button" class="secondary" id="bookingLineCheck">ตรวจการเชื่อมต่อ</button>
  <textarea id="bookingLineCommand" aria-label="คำสั่งเชื่อม Badbot" rows="2" readonly hidden></textarea>
- <p id="bookingLineSetupStatus" role="status" class="hint"></p></details>
+ <p id="bookingLineSetupStatus" role="status" class="hint"></p>
+ <details id="bookingLineAuto"><summary>ตั้งค่าการส่งอัตโนมัติ</summary>
+ <form id="bookingLineAutoForm"><p class="hint">ใช้ร่วมกันทั้ง Sena และ 88 ที่ผูกกลุ่มเดียวกัน กัน 1 ครั้งไว้ส่งสรุป โควตานี้นับเฉพาะการส่งอัตโนมัติ</p>
+ <div class="booking-fields"><label>โควตาต่อวัน (ครั้ง)<input name="dailyLimit" type="number" min="1" max="10" required></label><label>เวลาสรุป (เวลาไทย)<input name="summaryTime" type="time" required></label></div>
+ <button type="submit" class="secondary">บันทึกการส่งอัตโนมัติ</button><p id="bookingLineAutoStatus" role="status" class="hint"></p></form></details></details>
  <form id="bookingSettings"></form></details></div>
  <div id="bookingInlineDetails"><div id="bookingDetailPanels"><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div></div>
  <dialog id="bookingDetailsDialog" class="booking-details-dialog" aria-labelledby="bookingDetailsTitle" aria-describedby="bookingDetailsMeta">
@@ -222,13 +226,18 @@
    if(ok)box.remove();
   }
  }
- async function lineAction(button,body,output){
+ async function lineAction(button,body,output,loadAuto=false){
   button.disabled=true;output.textContent='กำลังเชื่อมต่อ LINE…';
   try{
-   const response=await venueFetch(body?'/api/line':'/api/line?diagnose=1',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+   const response=await venueFetch(body||loadAuto?'/api/line':'/api/line?diagnose=1',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
    const result=await response.json();
    if(!response.ok)throw Error(result.error);
-   if(result.code){
+   if(loadAuto){
+    const form=q('#bookingLineAutoForm');
+    form.elements.dailyLimit.value=result.auto.dailyLimit;
+    form.elements.summaryTime.value=result.auto.summaryTime;
+    output.textContent='';
+   }else if(result.code){
     const command=q('#bookingLineCommand');command.value='/badbot '+result.code;command.hidden=false;
     output.textContent='คัดลอกคำสั่งด้านบนไปส่งในกลุ่ม แล้วกดตรวจการเชื่อมต่อ';
    }else if(body)output.textContent=result.message;
@@ -238,6 +247,12 @@
   }catch(e){output.textContent=e.message||'เชื่อมต่อ LINE ไม่สำเร็จ';}
   finally{button.disabled=false;}
  }
+ q('#bookingLineAuto').addEventListener('toggle',event=>{
+  if(event.target.open){
+   const form=q('#bookingLineAutoForm');
+   lineAction(form.querySelector('button'),null,q('#bookingLineAutoStatus'),true);
+  }
+ });
  root.addEventListener('change',e=>{
   if(e.target.matches('[data-book-date]')){e.target.checked?selected.add(e.target.dataset.bookDate):selected.delete(e.target.dataset.bookDate);focusId=e.target.dataset.bookDate;renderSelection();renderDetail();}
   if(e.target.id==='bookingPlayer'){playerId=e.target.value;try{localStorage.setItem(clubStorage('booking-player'),playerId);}catch{}render();}
@@ -257,6 +272,12 @@
  });
  root.addEventListener('input',e=>{if(e.target.closest('#bookingSettings'))dirty=true;});
  root.addEventListener('submit',e=>{
+  if(e.target.id==='bookingLineAutoForm'){
+   e.preventDefault();
+   const form=new FormData(e.target);
+   lineAction(e.target.querySelector('button'),{action:'autoSettings',dailyLimit:Number(form.get('dailyLimit')),summaryTime:form.get('summaryTime')},q('#bookingLineAutoStatus'));
+   return;
+  }
   if(e.target.id==='bookingCupSettings'){
    e.preventDefault();
    const changed=[...e.target.querySelectorAll('[data-cup-date]')].filter(checkbox=>checkbox.dataset.override!==checkbox.dataset.original);
