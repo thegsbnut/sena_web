@@ -22,14 +22,14 @@ export async function lineWebhook(req,env){
  if(!Array.isArray(body?.events))return reply({error:'Invalid events'},400);
  for(const event of body.events){
   const group=event?.source?.groupId;
-  if(event?.source?.type!=='group'||!/^C[a-f0-9]{32}$/i.test(group))continue;
+  if(event?.source?.type!=='group'||typeof group!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(group))continue;
   if(event.type==='leave'){
    await prepare(env.DB);
    await env.DB.prepare('UPDATE line_groups SET group_id=NULL WHERE group_id=?').bind(group).run();
    continue;
   }
   if(event.type!=='message'||event.message?.type!=='text')continue;
-  const match=/^\/badbot\s+([a-f0-9]{32})$/i.exec(event.message.text.trim());
+  const match=/^\/badbot\s+([a-f0-9]{32})$/i.exec(String(event.message.text??'').normalize('NFKC').replace(/[\u200b\u200e\u200f\ufeff]/g,'').trim());
   if(!match)continue;
   await prepare(env.DB);
   await env.DB.prepare('UPDATE line_groups SET group_id=?, pair_code=NULL, expires_at=NULL WHERE pair_code=? AND expires_at>?')
@@ -57,14 +57,46 @@ function rosterMessages(data,s,club,origin){
  return chunks.map(text=>({type:'text',text}));
 }
 
+async function diagnoseLine(req,env,expiresAt){
+ const headers={Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN};
+ const api='https://api.line.me/v2/bot';
+ try{
+  const bot=await fetch(api+'/info',{headers});
+  if(bot.status===401||bot.status===403)return 'LINE ไม่รับ Access Token กรุณาตรวจ LINE_CHANNEL_ACCESS_TOKEN';
+  if(!bot.ok)return 'ตรวจข้อมูลบอทจาก LINE ไม่สำเร็จ (HTTP '+bot.status+')';
+  const {displayName,basicId}=await bot.json();
+  const label=[displayName,basicId].filter(Boolean).join(' ');
+  const webhook=await fetch(api+'/channel/webhook/endpoint',{headers});
+  if(webhook.status===404)return label+' · ยังไม่ได้ตั้ง Webhook URL';
+  if(!webhook.ok)return label+' · อ่านการตั้งค่า Webhook ไม่ได้ (HTTP '+webhook.status+')';
+  const {endpoint,active}=await webhook.json();
+  const expected=new URL('/api/line/webhook',req.url).href;
+  if(endpoint!==expected)return label+' · Webhook URL ต้องเป็น '+expected;
+  if(!active)return label+' · กรุณาเปิด Use webhook ใน LINE Developers';
+  const test=await fetch(api+'/channel/webhook/test',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:'{}'});
+  if(!test.ok)return label+' · LINE ทดสอบ Webhook ไม่สำเร็จ (HTTP '+test.status+')';
+  const result=await test.json();
+  if(!result.success){
+   if(result.statusCode===401)return label+' · Webhook ตอบ 401 ให้ตรวจว่า LINE_CHANNEL_SECRET ตรงกับ Channel นี้';
+   return label+' · Webhook ทดสอบไม่ผ่าน'+(result.statusCode?' (HTTP '+result.statusCode+')':'');
+  }
+  if(!(expiresAt>Date.now()))return label+' · Webhook ผ่านแล้ว กรุณาสร้างคำสั่งใหม่ รหัสเดิมหมดอายุหรือยังไม่ได้สร้าง';
+  return label+' · Webhook ผ่านแล้ว ให้เช็กว่าบอท @'+String(basicId||'').replace(/^@/,'')+' อยู่ในกลุ่ม แล้วคัดลอกคำสั่งเต็มไปส่งในกลุ่มนั้น';
+ }catch{return 'ติดต่อ LINE เพื่อตรวจการตั้งค่าไม่สำเร็จ กรุณาลองอีกครั้ง';}
+}
+
 export async function lineAdmin(req,env,admin,club){
  if(!admin)return reply({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
- if(!env.DB||!env.LINE_CHANNEL_SECRET||!env.LINE_CHANNEL_ACCESS_TOKEN)return reply({error:'ยังไม่ได้ตั้งค่า LINE Secrets ใน Cloudflare'},503);
+ if(!env.DB)return reply({error:'ยังไม่ได้ผูกฐานข้อมูล DB'},503);
+ if(!env.LINE_CHANNEL_SECRET)return reply({error:'Worker ยังไม่เห็น LINE_CHANNEL_SECRET ใน Cloudflare'},503);
+ if(!env.LINE_CHANNEL_ACCESS_TOKEN)return reply({error:'Worker ยังไม่เห็น LINE_CHANNEL_ACCESS_TOKEN ใน Cloudflare'},503);
  if(!['GET','POST'].includes(req.method))return reply({error:'Method not allowed'},405);
  await prepare(env.DB);
  if(req.method==='GET'){
-  const row=await env.DB.prepare('SELECT group_id FROM line_groups WHERE club=?').bind(club).first();
-  return reply({connected:!!row?.group_id});
+  const row=await env.DB.prepare('SELECT group_id,expires_at FROM line_groups WHERE club=?').bind(club).first();
+  const connected=!!row?.group_id;
+  const diagnosis=!connected&&new URL(req.url).searchParams.has('diagnose')?await diagnoseLine(req,env,row?.expires_at):null;
+  return reply({connected,diagnosis});
  }
  let input;
  try{input=await req.json();}catch{return reply({error:'ข้อมูลไม่ถูกต้อง'},400);}

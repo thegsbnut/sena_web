@@ -225,7 +225,7 @@
  async function lineAction(button,body,output){
   button.disabled=true;output.textContent='กำลังเชื่อมต่อ LINE…';
   try{
-   const response=await venueFetch('/api/line',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+   const response=await venueFetch(body?'/api/line':'/api/line?diagnose=1',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
    const result=await response.json();
    if(!response.ok)throw Error(result.error);
    if(result.code){
@@ -233,7 +233,7 @@
     output.textContent='คัดลอกคำสั่งด้านบนไปส่งในกลุ่ม แล้วกดตรวจการเชื่อมต่อ';
    }else if(body)output.textContent=result.message;
    else{
-    output.textContent=result.connected?'สนามนี้เชื่อมกลุ่ม LINE แล้ว':'สนามนี้ยังไม่ได้เชื่อมกลุ่ม LINE';
+    output.textContent=result.connected?'สนามนี้เชื่อมกลุ่ม LINE แล้ว':'สนามนี้ยังไม่ได้เชื่อมกลุ่ม LINE'+(result.diagnosis?' · '+result.diagnosis:'');
    }
   }catch(e){output.textContent=e.message||'เชื่อมต่อ LINE ไม่สำเร็จ';}
   finally{button.disabled=false;}

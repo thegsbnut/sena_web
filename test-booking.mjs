@@ -211,7 +211,20 @@ test('Badbot links only via a signed one-time group command and sends only for o
  assert.equal((await call({action:'pair'},'')).status,401);
  const {code}=await(await call({action:'pair'})).json();
  const groupId='C'+'a'.repeat(32);
- const event=group=>JSON.stringify({events:[{type:'message',source:{type:'group',groupId:group},message:{type:'text',text:'/badbot '+code}}]});
+ const check=()=>worker.fetch(new Request(origin+'/api/line?diagnose=1',{headers:{Cookie:cookie}}),f.env);
+ let active=false,signatureWorks=false,sent;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(url.endsWith('/info'))return Response.json({displayName:'Badbot',basicId:'@badbot'});
+  if(url.endsWith('/endpoint'))return Response.json({endpoint:origin+'/api/line/webhook',active});
+  if(url.endsWith('/test'))return Response.json({success:signatureWorks,statusCode:signatureWorks?200:401});
+  assert.equal(url,'https://api.line.me/v2/bot/message/push');sent=JSON.parse(options.body);return Response.json({});
+ });
+ assert.match((await(await check()).json()).diagnosis,/Use webhook/);
+ active=true;
+ assert.match((await(await check()).json()).diagnosis,/LINE_CHANNEL_SECRET/);
+ signatureWorks=true;
+ assert.match((await(await check()).json()).diagnosis,/Webhook ผ่านแล้ว/);
+ const event=group=>JSON.stringify({events:[{type:'message',source:{type:'group',groupId:group},message:{type:'text',text:'／badbot '+String.fromCharCode(8203)+code}}]});
  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(f.env.LINE_CHANNEL_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);
  const signed=async raw=>Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(raw))).toString('base64');
  const hook=(body,signature)=>worker.fetch(new Request(origin+'/api/line/webhook',{method:'POST',headers:{'x-line-signature':signature},body}),f.env);
@@ -222,8 +235,6 @@ test('Badbot links only via a signed one-time group command and sends only for o
  assert.equal((await(await call()).json()).connected,true);
  const other=event('C'+'b'.repeat(32));
  assert.equal((await hook(other,await signed(other))).status,200);
- let sent;
- t.mock.method(globalThis,'fetch',async(url,{body})=>{assert.equal(url,'https://api.line.me/v2/bot/message/push');sent=JSON.parse(body);return Response.json({});});
  const payload={action:'send',sessionId:data.sessions[0].id};
  assert.equal((await call(payload,'')).status,401);
  assert.equal((await call(payload)).status,200);
