@@ -2,6 +2,7 @@
  'use strict';
  const root=document.getElementById('booking');if(!root)return;
  const q=s=>root.querySelector(s);
+ const mobileDetails=matchMedia('(max-width: 760px)');
  const html=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const days=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
  let showAllDates=false,cupDirty=false;
@@ -28,15 +29,20 @@
  async function mutate(body){
   if(busy)return;busy=true;root.classList.add('booking-busy');
   const isMap=body.action==='venueMap',isCup=body.action==='cupCalendar',mapInput=q('#bookingMapUrl');
-  const report=isMap||isCup?(message,error=false)=>{
-   const output=q(isMap?'#bookingMapStatus':'#bookingCupStatus');output.textContent=message;output.classList.toggle('is-error',error);
-  }:status;
+  const detailDialog=q('#bookingDetailsDialog');
+  const inDetails=detailDialog.open;
+  const report=(message,error=false)=>{
+   if(!isMap&&!isCup)status(message,error);
+   const output=isMap?q('#bookingMapStatus'):isCup?q('#bookingCupStatus'):inDetails&&detailDialog.open?q('#bookingDetailsStatus'):null;
+   if(output){output.textContent=message;output.classList.toggle('is-error',error);}
+  };
   if(isMap)q('#bookingMapReload').hidden=true;
   const cupInputs=isCup?[...q('#bookingCupSettings').querySelectorAll('select,input')]:[];
   for(const input of cupInputs)input.disabled=true;
   if(isCup)q('#bookingCupReload').hidden=true;
   report('กำลังบันทึก…');
   try{data=await request(body);if(body.action==='settings')dirty=false;if(isCup)cupDirty=false;if(isMap&&mapInput.value.trim()===body.url)mapInput.value=mapInput.defaultValue;if(body.action==='book'){selected.clear();q('#bookingReview').close();}render();report(data.result?.message||'บันทึกแล้ว');
+   if(detailDialog.open&&!detailDialog.contains(document.activeElement))q('#bookingDetailsClose').focus({preventScroll:true});
    if(body.action==='book'){
     const result=data.result||{},title=result.added>0?(result.duplicate?'จองสำเร็จบางรายการ':'จองคิวสำเร็จ ✓'):'มีชื่ออยู่แล้ว';
     const details=data.sessions.filter(s=>body.sessionIds.includes(s.id)).map(s=>{const r=s.registrations.find(r=>r.playerId===body.playerId);const existing=result.duplicateIds?.includes(s.id)?' • มีชื่ออยู่ก่อนแล้ว':'';return displayDate(s.date)+' • '+s.start+'–'+s.end+' น. • '+(r?.status==='confirmed'?'ตัวจริง':r?'สำรอง #'+r.position:'กรุณาตรวจรายชื่ออีกครั้ง')+existing;});
@@ -55,8 +61,21 @@
  <button class="secondary" type="submit">บันทึกวันแข่งขัน</button> <button class="textbtn" id="bookingCupReload" type="button" hidden>โหลดค่าล่าสุด</button><p id="bookingCupStatus" role="status"></p></form></details>
  <details class="booking-map-settings"><summary>แผนที่สนาม ${html(venueLabel)}</summary><form id="bookingMapSettings"><label for="bookingMapUrl">ลิงก์ Google Maps</label><input id="bookingMapUrl" name="mapUrl" type="url" inputmode="url" maxlength="2048" required placeholder="https://maps.app.goo.gl/…"><button class="secondary" type="submit">บันทึกแผนที่สนาม</button> <button class="textbtn" id="bookingMapReload" type="button" hidden>โหลดลิงก์ล่าสุด</button><p id="bookingMapStatus" role="status"></p></form></details>
  <form id="bookingSettings"></form></details></div>
- <div><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div>
+ <div id="bookingInlineDetails"><div id="bookingDetailPanels"><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div></div>
+ <dialog id="bookingDetailsDialog" class="booking-details-dialog" aria-labelledby="bookingDetailsTitle">
+ <header class="booking-details-header"><h2 id="bookingDetailsTitle">รายชื่อ / ตาราง</h2><form method="dialog"><button id="bookingDetailsClose" class="secondary" autofocus>ปิด <span aria-hidden="true">×</span></button></form></header>
+ <p id="bookingDetailsStatus" role="status"></p><div id="bookingDetailsContent"></div></dialog>
  <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog>`;
+ const detailsDialog=q('#bookingDetailsDialog');
+ const supportsDetailsPopup=typeof detailsDialog.showModal==='function';
+ root.classList.toggle('booking-details-popup',supportsDetailsPopup);
+ let detailsTriggerId='';
+ detailsDialog.addEventListener('close',()=>{
+  q('#bookingInlineDetails').append(q('#bookingDetailPanels'));
+  const trigger=[...root.querySelectorAll('[data-book-focus]')].find(button=>button.dataset.bookFocus===detailsTriggerId);
+  if(mobileDetails.matches)trigger?.focus({preventScroll:true});
+ });
+ mobileDetails.addEventListener('change',()=>{if(!mobileDetails.matches&&detailsDialog.open)detailsDialog.close();});
  function render(){
   const cfg=data.settings,map=q('#bookingVenueMap'),mapInput=q('#bookingMapUrl');
   const mapUrl=data.venueMapUrl??'';
@@ -90,7 +109,7 @@
      <input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id)?'checked':''} ${closed?'disabled':''} aria-label="เลือก ${displayDate(s.date)}${s.isCup?' · '+html(cupName):''}">
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.</small></span>
     </label>
-    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist?`<strong class="booking-waitlist-label">${waitlist}</strong>`: ''}${personal?`<small>${personal}</small>`: ''}</div><button type="button" class="textbtn" data-book-focus="${html(s.id)}">ดูรายชื่อ / ตาราง</button></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist?`<strong class="booking-waitlist-label">${waitlist}</strong>`: ''}${personal?`<small>${personal}</small>`: ''}</div><button type="button" class="textbtn" ${mobileDetails.matches&&supportsDetailsPopup?'aria-haspopup="dialog"':''} data-book-focus="${html(s.id)}">ดูรายชื่อ / ตาราง</button></div>
     ${s.holiday?`<p class="booking-holiday">☀ ${html(s.holiday)}</p>`:''}
     ${!data.holidayYears.includes(Number(s.date.slice(0,4)))?'<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>':''}
    </article>`;
@@ -209,7 +228,21 @@
    q('#bookingReview').showModal();
   }
   if(button.id==='bookingRefresh'){if(dirty||cupDirty){status('มีการตั้งค่าที่ยังไม่บันทึก กรุณาบันทึกก่อนอัปเดตคิว',true);return;}load();}
-  if(button.dataset.bookFocus){focusId=button.dataset.bookFocus;render();q('.booking-detail').scrollIntoView({behavior:'smooth',block:'nearest'});}
+  if(button.dataset.bookFocus){
+   focusId=button.dataset.bookFocus;
+   for(const trigger of root.querySelectorAll('[data-book-focus]')){
+    trigger.closest('.booking-date').classList.toggle('is-focus',trigger.dataset.bookFocus===focusId);
+   }
+   renderDetail();
+   if(mobileDetails.matches&&supportsDetailsPopup){
+    detailsTriggerId=focusId;
+    const content=q('#bookingDetailsContent');
+    q('#bookingDetailsStatus').textContent='';
+    content.append(q('#bookingDetailPanels'));
+    detailsDialog.showModal();
+    content.scrollTop=0;
+   }else q('.booking-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
   if(button.dataset.bookCancel){const s=data.sessions.find(s=>s.id===focusId),r=s?.registrations.find(r=>r.id===button.dataset.bookCancel);if(r&&confirm(`ถอนชื่อ ${name(r.playerId)} วันที่ ${displayDate(s.date)}?`))mutate({action:'cancel',sessionId:s.id,registrationId:r.id});}
   if(button.id==='bookingClose'){const s=data.sessions.find(s=>s.id===focusId);if(s&&confirm(`${s.closed?'เปิด':'ปิด'}รับจองรอบ ${displayDate(s.date)}? รายชื่อเดิมยังเก็บไว้`))mutate({action:'close',sessionId:s.id,closed:!s.closed});}
   if(button.id==='bookingConfirm'){if(!q('#bookingHolidayConfirm').hidden&&!q('#bookingAcceptHoliday').checked){status('กรุณารับทราบวันหยุดก่อนยืนยันจอง',true);feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}mutate({action:'book',playerId,sessionIds:[...selected],acceptHoliday:q('#bookingAcceptHoliday').checked});}
@@ -217,6 +250,6 @@
  });
  document.querySelector('[data-tab="booking"]').addEventListener('click',()=>{if(!dirty&&!cupDirty)load();});
  // Poll only while this tab is visible; leave unfinished admin edits intact.
- setInterval(()=>{if(!root.hidden&&!document.hidden&&!dirty&&!cupDirty&&!q('#bookingReview').open&&!q('#bookingFeedback').open)load(true);},60000);
+ setInterval(()=>{if(!root.hidden&&!document.hidden&&!dirty&&!cupDirty&&!detailsDialog.open&&!q('#bookingReview').open&&!q('#bookingFeedback').open)load(true);},60000);
  const initialTab=[...document.querySelectorAll('nav .tab')].find(t=>t.dataset.tab===location.hash.slice(1)&&!t.hidden)||document.querySelector('[data-tab="booking"]');initialTab.click();
 })();

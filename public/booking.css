@@ -49,3 +49,22 @@ main:has(#booking:not([hidden])) > .venue-picker small { display:none }
 #bookingCupDates label { min-height:40px; padding:4px; cursor:pointer }
 #bookingCupStatus { font-size:13px; color:#385747; margin-bottom:0 }
 #bookingCupStatus.is-error { color:#85232b }
+
+@media (max-width:760px) {
+ .booking-details-popup #bookingInlineDetails { display:none }
+ html:has(#bookingDetailsDialog[open]) { overflow:hidden }
+}
+.booking-details-dialog { position:fixed; inset:auto 0 0; margin:0 auto; padding:0; width:min(100%, 540px); max-width:100%; max-height:88vh; max-height:88dvh; background:var(--paper); color:var(--ink); border:1px solid #78956a; border-radius:18px 18px 0 0 }
+.booking-details-dialog[open] { display:flex; flex-direction:column }
+.booking-details-dialog::backdrop { background:#001c17b3 }
+.booking-details-header { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:12px; padding:10px 16px; border-bottom:1px solid #d7dec4 }
+.booking-details-header h2 { margin:0; font-size:18px }
+.booking-details-header form { margin:0 }
+.booking-details-header button { min-height:44px }
+#bookingDetailsContent { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:12px 12px calc(12px + env(safe-area-inset-bottom)) }
+#bookingDetailsContent .panel { margin-bottom:12px }
+#bookingDetailsContent .panel:last-child { margin-bottom:0 }
+#bookingDetailsStatus { margin:0; padding:8px 16px; font-size:13px; color:#244b30; background:#e1f4e7 }
+#bookingDetailsStatus:empty { display:none }
+#bookingDetailsStatus.is-error { color:#85232b; background:#fae5e5 }
+#booking.booking-busy #bookingDetailsClose { pointer-events:auto; opacity:1 }
