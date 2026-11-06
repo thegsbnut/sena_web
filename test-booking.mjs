@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
-import {defaultSettings,materialize,bangkokDate} from './booking.js';
+import {defaultSettings,materialize,bangkokDate,publicBooking} from './booking.js';
 import {holidayOn} from './booking-holidays.js';
 const origin='https://example.com';
 const token='a'.repeat(64),otherToken='b'.repeat(64);
@@ -102,4 +102,44 @@ test('venue maps default for existing clubs, are editable only by organizers and
  assert.equal((await f.call({...body,url:'https://maps.google.com/?q=Other'},{cookie})).status,409);
  assert.equal((await(await f.call()).json()).venueMapUrl,body.url);
  assert.equal((await(await f.call(null,{club:'88'})).json()).venueMapUrl,court88);
+});
+
+
+test('Cup dates use calendar-month boundaries with distinct defaults for Sena and 88',()=>{
+ const dates=['2027-03-07','2027-03-08','2027-03-14','2027-03-15','2027-03-21','2027-03-22','2027-03-28','2027-03-29','2027-04-08'];
+ const doc={settings:defaultSettings(),sessions:dates.map(date=>({id:date,date,start:'19:00',capacity:10,registrations:[]}))};
+ const read=club=>publicBooking(doc,0,[],false,null,new Date('2027-03-01'),club);
+ assert.deepEqual(read('sena').sessions.filter(s=>s.isCup).map(s=>s.date),['2027-03-08','2027-03-14','2027-04-08']);
+ assert.deepEqual(read('88').sessions.filter(s=>s.isCup).map(s=>s.date),['2027-03-22','2027-03-28']);
+ doc.sessions[1].skipped=true;
+ assert.equal(read('sena').sessions[1].isCup,false);
+});
+
+test('organizers can move Cup dates without rewriting bookings, and overrides survive weekly changes',async()=>{
+ const f=fixture(),{cookie,settings}=await f.open(['p0']);
+ const set=await f.call({action:'settings',settingsVersion:1,settings:{...settings,weeks:5}},{cookie});
+ assert.equal(set.status,200);
+ const before=await set.json(),from=before.sessions.find(s=>s.isCup),to=before.sessions.find(s=>!s.isCup&&!s.skipped);
+ assert.equal(before.cupWeek,2);
+ const changes=[{date:from.date,isCup:false},{date:to.date,isCup:true}];
+ const body={action:'cupCalendar',cupVersion:0,week:2,changes};
+ assert.equal((await f.call(body)).status,401);
+ assert.equal((await f.call({...body,week:6},{cookie})).status,400);
+ assert.equal((await f.call({...body,changes:[...changes,{date:'1900-01-01',isCup:true}]},{cookie})).status,409);
+ const r=await f.call(body,{cookie});
+ assert.equal(r.status,200);
+ const saved=await r.json();
+ assert.equal(saved.cupVersion,1);
+ assert.equal(saved.settingsVersion,before.settingsVersion);
+ const strip=sessions=>sessions.map(({isCup,cupOverride,...session})=>session);
+ assert.deepEqual(strip(saved.sessions),strip(before.sessions));
+ assert.equal((await f.call(body,{cookie})).status,409);
+ const next=await(await f.call({...body,week:0,cupVersion:1,changes:[]},{cookie})).json();
+ assert.deepEqual(next.sessions.filter(s=>s.isCup).map(s=>s.date),[to.date]);
+ const reset=await(await f.call({...body,week:2,cupVersion:2,changes:changes.map(c=>({...c,isCup:null}))},{cookie})).json();
+ assert.deepEqual(reset.sessions.filter(s=>s.isCup).map(s=>s.date),before.sessions.filter(s=>s.isCup).map(s=>s.date));
+ const guest=await(await f.call()).json();
+ assert.equal(guest.cupWeek,undefined);
+ assert(guest.sessions.every(s=>!('cupOverride' in s)));
+ assert.equal((await(await f.call(null,{cookie,club:'88'})).json()).cupWeek,4);
 });
