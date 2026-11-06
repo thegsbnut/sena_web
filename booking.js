@@ -3,6 +3,23 @@ import {holidayOn,HOLIDAY_YEARS} from './booking-holidays.js';
 const reply=(v,status=200)=>Response.json(v,{status,headers:{'Cache-Control':'no-store'}});
 export class BookingError extends Error {constructor(message,status=400){super(message);this.status=status;}}
 const fail=(message,status=400)=>{throw new BookingError(message,status);};
+const defaultVenueMaps={
+ sena:'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6',
+ '88':'https://maps.app.goo.gl/9AwoUgdYb4gjNw2w8'
+};
+const venueMapFor=(doc,club)=>doc.venueMapUrl??defaultVenueMaps[club];
+function validateVenueMap(value) {
+ const link=typeof value==='string'?value.trim():'';
+ const url=link.length<=2048?URL.parse(link):null;
+ const isMapsPath=/^\/maps(?:\/|$)/;
+ if(!url||url.protocol!=='https:'||url.username||url.password||url.port||
+    !(url.hostname==='maps.app.goo.gl'&&url.pathname.length>1||
+      url.hostname==='maps.google.com'||
+      ['www.google.com','google.com','goo.gl'].includes(url.hostname)&&isMapsPath.test(url.pathname))){
+  fail('กรุณาใส่ลิงก์ Google Maps ที่ขึ้นต้นด้วย https://');
+ }
+ return url.href;
+}
 export const defaultSettings=()=>({enabled:false,weekdays:[2,4],start:'18:00',end:'21:00',capacity:12,rounds:10,weeks:4,regularIds:[],holidayPolicy:'warn',holidays:[]});
 export const bangkokDate=(now=new Date())=>new Date(+now+7*3600000).toISOString().slice(0,10);
 const addDays=(date,n)=>new Date(Date.parse(date+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
@@ -116,10 +133,17 @@ export async function bookingRoute(req,env,admin,club) {
    const text=await req.text();if(text.length>30000)fail('ข้อมูลยาวเกินไป');
    try{input=JSON.parse(text);}catch{fail('ข้อมูลไม่ถูกต้อง');}
    if(!input||typeof input!=='object')fail('ข้อมูลไม่ถูกต้อง');
-   if(['settings','close'].includes(input.action)&&!admin)fail('กรุณาเข้าสู่ระบบผู้จัด',401);
-   if(!['settings','close','book','cancel'].includes(input.action))fail('ไม่พบคำสั่ง');
+   if(['settings','close','venueMap'].includes(input.action)&&!admin)fail('กรุณาเข้าสู่ระบบผู้จัด',401);
+   if(!['settings','close','book','cancel','venueMap'].includes(input.action))fail('ไม่พบคำสั่ง');
   }
   const outcome=await mutateBooking(env,club,input?(doc,players)=>{
+   if(input.action==='venueMap'){
+    const next=validateVenueMap(input.url),current=venueMapFor(doc,club);
+    if(next===current)return {message:'บันทึกลิงก์แผนที่แล้ว'};
+    if(input.previousUrl!==current)fail('ลิงก์แผนที่ถูกแก้จากอีกเครื่อง กรุณาอัปเดตคิวแล้วลองใหม่',409);
+    doc.venueMapUrl=next;
+    return {message:'บันทึกลิงก์แผนที่แล้ว'};
+   }
    if(input.action==='settings'){
     if(input.settingsVersion!==doc.settingsVersion)fail('ผู้จัดอีกเครื่องแก้การตั้งค่าแล้ว กรุณาโหลดใหม่',409);
     const cfg=validateSettings(input.settings,players);
@@ -166,7 +190,7 @@ export async function bookingRoute(req,env,admin,club) {
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);
-  return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,owner,now),result:outcome.result});
+  return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,owner,now),venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
  }catch(e){if(e instanceof BookingError)return reply({error:e.message},e.status);throw e;}
 }
 export async function scheduledBookings(env) {

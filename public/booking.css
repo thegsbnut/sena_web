@@ -30,3 +30,12 @@ main:has(#booking:not([hidden])) > .venue-picker small { display:none }
 .booking-availability-label { background:var(--availability-bg); color:var(--availability-ink) }
 .booking-waitlist-label { background:#273d28; color:#fff }
 .booking-availability small { flex-basis:100%; font-size:12px }
+
+.booking-dates .sectionhead { align-items:center; gap:4px 12px }
+.booking-map-link { display:inline-flex; align-items:center; min-height:44px; margin-inline-start:auto; color:#385747; font-size:13px; font-weight:650; text-underline-offset:3px }
+.booking-map-link:focus-visible { outline:2px solid #385747; outline-offset:3px }
+.booking-map-settings { margin-bottom:16px }
+#bookingMapSettings label { display:block; font-size:13px; margin-top:10px }
+#bookingMapUrl { width:100%; min-height:44px; margin:6px 0 8px }
+#bookingMapStatus { font-size:13px; color:#385747; margin-bottom:0 }
+#bookingMapStatus.is-error { color:#85232b }

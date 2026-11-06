@@ -82,3 +82,24 @@ test('a full regular roster saves schedules respecting rest and mixed-gender rul
  }}
  const d=await(await f.call()).json();assert(!JSON.stringify(d).includes('"lv"'));assert(!JSON.stringify(d).includes('"gender"'));assert(!JSON.stringify(d).includes('fingerprint'));
 });
+
+test('venue maps default for existing clubs, are editable only by organizers and stay club-specific',async()=>{
+ const f=fixture(),{cookie,data}=await f.open(['p0']);
+ const sena=data.venueMapUrl;
+ const court88=(await(await f.call(null,{club:'88'})).json()).venueMapUrl;
+ assert.equal(sena,'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6');
+ assert.equal(court88,'https://maps.app.goo.gl/9AwoUgdYb4gjNw2w8');
+ const body={action:'venueMap',previousUrl:sena,url:'https://www.google.com/maps/search/?api=1&query=Sena'};
+ assert.equal((await f.call(body)).status,401);
+ for(const url of ['javascript:alert(1)','http://maps.google.com/','https://maps.app.goo.gl.evil.test/x','https://www.google.com/url?q=https://evil.test','https://name@maps.google.com/','']){
+  assert.equal((await f.call({...body,url},{cookie})).status,400);
+ }
+ const saved=await(await f.call(body,{cookie})).json();
+ assert.equal(saved.venueMapUrl,body.url);
+ assert.equal(saved.settingsVersion,data.settingsVersion);
+ assert.deepEqual(saved.sessions,data.sessions);
+ assert.equal((await f.call(body,{cookie})).status,200);
+ assert.equal((await f.call({...body,url:'https://maps.google.com/?q=Other'},{cookie})).status,409);
+ assert.equal((await(await f.call()).json()).venueMapUrl,body.url);
+ assert.equal((await(await f.call(null,{club:'88'})).json()).venueMapUrl,court88);
+});

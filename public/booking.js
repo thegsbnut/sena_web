@@ -16,7 +16,7 @@
  }
  async function request(body){
   const response=await venueFetch('/api/booking',{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{'X-Booking-Token':token}:{})},...(body?{body:JSON.stringify(body)}:{})});
-  const value=await response.json();if(!response.ok)throw Error(value.error||'เชื่อมต่อไม่ได้ กรุณาลองใหม่');return value;
+  const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error||'เชื่อมต่อไม่ได้ กรุณาลองใหม่'),{status:response.status});return value;
  }
  async function load(silent=false){
   if(busy)return;busy=true;if(!silent)status('กำลังโหลดคิวจากออนไลน์…');
@@ -24,23 +24,36 @@
   catch(e){status(e.message,true);}finally{busy=false;}
  }
  async function mutate(body){
-  if(busy)return;busy=true;root.classList.add('booking-busy');status('กำลังบันทึก…');
-  try{data=await request(body);if(body.action==='settings')dirty=false;if(body.action==='book'){selected.clear();q('#bookingReview').close();}render();status(data.result?.message||'บันทึกแล้ว');
+  if(busy)return;busy=true;root.classList.add('booking-busy');
+  const isMap=body.action==='venueMap',mapInput=q('#bookingMapUrl');
+  const report=isMap?(message,error=false)=>{
+   const output=q('#bookingMapStatus');output.textContent=message;output.classList.toggle('is-error',error);
+  }:status;
+  if(isMap)q('#bookingMapReload').hidden=true;
+  report('กำลังบันทึก…');
+  try{data=await request(body);if(body.action==='settings')dirty=false;if(isMap&&mapInput.value.trim()===body.url)mapInput.value=mapInput.defaultValue;if(body.action==='book'){selected.clear();q('#bookingReview').close();}render();report(data.result?.message||'บันทึกแล้ว');
    if(body.action==='book'){
     const result=data.result||{},title=result.added>0?(result.duplicate?'จองสำเร็จบางรายการ':'จองคิวสำเร็จ ✓'):'มีชื่ออยู่แล้ว';
     const details=data.sessions.filter(s=>body.sessionIds.includes(s.id)).map(s=>{const r=s.registrations.find(r=>r.playerId===body.playerId);const existing=result.duplicateIds?.includes(s.id)?' • มีชื่ออยู่ก่อนแล้ว':'';return displayDate(s.date)+' • '+s.start+'–'+s.end+' น. • '+(r?.status==='confirmed'?'ตัวจริง':r?'สำรอง #'+r.position:'กรุณาตรวจรายชื่ออีกครั้ง')+existing;});
     feedback(title,('ผู้ตี: '+name(body.playerId)+'\n'+(result.message||'ตรวจสอบรายชื่อในวันที่เลือกได้ด้านล่าง'))+'\n\n'+details.join('\n'));
    }}
-  catch(e){const message=e instanceof TypeError?'เชื่อมต่อไม่ได้ กรุณาตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง':e.message;status(message,true);if(body.action==='book')feedback('จองไม่สำเร็จ',message);}finally{busy=false;root.classList.remove('booking-busy');}
+  catch(e){const message=e instanceof TypeError?'เชื่อมต่อไม่ได้ กรุณาตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง':e.message;report(message,true);if(isMap&&e.status===409)q('#bookingMapReload').hidden=false;if(body.action==='book')feedback('จองไม่สำเร็จ',message);}finally{busy=false;root.classList.remove('booking-busy');}
  }
  root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
- <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
+ <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อผู้ตี</label><select id="bookingPlayer"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint">ไม่มีชื่อในก๊วน? ให้ผู้จัดเพิ่มรายชื่อก่อน</p><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
- <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่ารอบประจำ &amp; ขาประจำ <span>สำหรับผู้จัด</span></summary><form id="bookingSettings"></form></details></div>
+ <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่าการจองและสนาม <span>สำหรับผู้จัด</span></summary>
+ <details class="booking-map-settings"><summary>แผนที่สนาม ${html(venueLabel)}</summary><form id="bookingMapSettings"><label for="bookingMapUrl">ลิงก์ Google Maps</label><input id="bookingMapUrl" name="mapUrl" type="url" inputmode="url" maxlength="2048" required placeholder="https://maps.app.goo.gl/…"><button class="secondary" type="submit">บันทึกแผนที่สนาม</button> <button class="textbtn" id="bookingMapReload" type="button" hidden>โหลดลิงก์ล่าสุด</button><p id="bookingMapStatus" role="status"></p></form></details>
+ <form id="bookingSettings"></form></details></div>
  <div><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div>
  <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog>`;
  function render(){
-  const cfg=data.settings;
+  const cfg=data.settings,map=q('#bookingVenueMap'),mapInput=q('#bookingMapUrl');
+  const mapUrl=data.venueMapUrl??'';
+  map.hidden=!mapUrl;
+  if(mapUrl)map.href=mapUrl;else map.removeAttribute('href');
+  map.setAttribute('aria-label','เปิดแผนที่สนาม '+venueLabel+' ใน Google Maps (แท็บใหม่)');
+  if(data.canEdit&&(mapInput.value===mapInput.defaultValue||mapInput.value.trim()===mapUrl)){mapInput.defaultValue=mapUrl;mapInput.value=mapUrl;}
   q('#bookingPattern').textContent=cfg.enabled?`ทุกวัน${cfg.weekdays.map(d=>days[d]).join(' / ')} • ${cfg.start}–${cfg.end} น. • เปิดล่วงหน้า ${cfg.weeks} สัปดาห์`:'ผู้จัดยังไม่เปิดรับจอง • เข้าสู่ระบบผู้จัดเพื่อตั้งวัน เวลา และขาประจำ';
   const sessions=data.sessions;
   selected=new Set([...selected].filter(id=>sessions.some(s=>s.id===id&&!s.closed&&!s.skipped)&&cfg.enabled));
@@ -119,6 +132,12 @@
  });
  root.addEventListener('input',e=>{if(e.target.closest('#bookingSettings'))dirty=true;});
  root.addEventListener('submit',e=>{
+  if(e.target.id==='bookingMapSettings'){
+   e.preventDefault();
+   const input=q('#bookingMapUrl');
+   mutate({action:'venueMap',url:input.value.trim(),previousUrl:input.defaultValue});
+   return;
+  }
   if(e.target.id!=='bookingSettings')return;e.preventDefault();
   const form=new FormData(e.target),holidays=[];
   for(const line of String(form.get('holidays')||'').split('\n').map(s=>s.trim()).filter(Boolean)){
@@ -131,6 +150,10 @@
  });
  root.addEventListener('click',e=>{
   const button=e.target.closest('button');if(!button||busy)return;
+  if(button.id==='bookingMapReload'){
+   q('#bookingMapUrl').value=q('#bookingMapUrl').defaultValue;
+   q('#bookingMapStatus').textContent='';button.hidden=true;load(true);
+  }
   if(button.id==='bookingMore'){
    showAllDates=!showAllDates;
    render();
