@@ -1,7 +1,19 @@
 import {baseline} from './leaderboard-data.js';
 import './public/engine.js';
-const canonicalName = (name,club='sena') => club==='88'?name.trim():({nott:'Not',not:'Not',beau:'Bo',bo:'Bo'}[name.trim().toLowerCase()] || name.trim());
+const senaAliases=new Map([['nott','Not'],['not','Not'],['beau','Bo'],['bo','Bo']]);
+const canonicalName = (name,club='sena') => club==='88'?name.trim():(senaAliases.get(name.trim().toLowerCase()) || name.trim());
 const key = (name,club='sena') => canonicalName(name,club).toLowerCase();
+export {key as cupPlayerKey};
+async function cupHistoryTable(db,club){
+ const table=club==='88'?'cup_history_88':'cup_history';
+ await db.prepare(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL)`).run();
+ return table;
+}
+export async function latestCup(db,club){
+ const table=await cupHistoryTable(db,club);
+ const row=await db.prepare(`SELECT payload FROM ${table} ORDER BY json_extract(payload,'$.date') DESC, sequence DESC LIMIT 1`).first();
+ return row?JSON.parse(row.payload):null;
+}
 export function cleanCup(value,club='sena') {
  if(!value || typeof value.title!=='string' || !value.title.trim() || value.title.length>100 || !/^\d{4}-\d{2}-\d{2}$/.test(value.date) || (Number.isNaN(Date.parse(value.date+'T00:00:00Z')) || new Date(value.date+'T00:00:00Z').toISOString().slice(0,10)!==value.date) || typeof value.inBaseline!=='boolean') throw Error('กรอกชื่อรายการ วันที่ และสถานะยอดตั้งต้นให้ครบ');
  const teams=value.teams;
@@ -42,11 +54,10 @@ export function standings(history,club='sena'){
  return ordered(counted,club).map((p,i)=>({...p,position:i+1,diff:p.pf-p.pa,winPercent:p.played?p.w/p.played*100:0,change:ranks.has(key(p.name,club))?ranks.get(key(p.name,club))-(i+1):'NEW'}));
 }
 export async function leaderboardRoute(req,env,isAdmin,club='sena'){
- const table=club==='88'?'cup_history_88':'cup_history';
  const reply=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store'}});
  if(req.method!=='GET'&&!isAdmin)return reply({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
  if(!env.DB)return reply({error:'ยังไม่ได้ตั้งค่าฐานข้อมูล'},503);
- await env.DB.prepare(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL)`).run();
+ const table=await cupHistoryTable(env.DB,club);
  if(req.method==='POST'){
   let input;
   try{const text=await req.text();if(text.length>100000)throw Error('ข้อมูลใหญ่เกินไป');input=JSON.parse(text);input.cup=cleanCup(input.cup,club);if(club==='88'&&input.cup.inBaseline)throw Error('ก๊วน 88 ยังไม่มียอดสะสมตั้งต้น กรุณานับรายการนี้เป็นผลใหม่');if(typeof input.id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(input.id)||!Number.isInteger(input.revision)||input.revision<0)throw Error('ข้อมูลรายการไม่ถูกต้อง');}

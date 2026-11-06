@@ -12,7 +12,8 @@
  try{token=localStorage.getItem(clubStorage('booking-token'));if(!/^[a-f0-9]{64}$/.test(token||'')){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem(clubStorage('booking-token'),token);}playerId=localStorage.getItem(clubStorage('booking-player'))||'';}catch{token=null;}
  const displayDate=d=>new Date(d+'T12:00:00+07:00').toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok'});
  const player=id=>data?.roster.find(p=>p.id===id);
- const name=id=>player(id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+ const rawName=id=>player(id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+ const name=id=>{const award=player(id)?.award;return award?award+' '+rawName(id):rawName(id);};
  const level=id=>player(id)?.lv;
  const formatLevel=new Intl.NumberFormat('th-TH',{maximumFractionDigits:2});
  function levelBadge(id){
@@ -43,10 +44,10 @@
   if(busy)return;busy=true;root.classList.add('booking-busy');
   const isMap=body.action==='venueMap',isCup=body.action==='cupCalendar',mapInput=q('#bookingMapUrl');
   const detailDialog=q('#bookingDetailsDialog');
-  const inDetails=detailDialog.open;
+  const inDetails=detailDialog.open,isReroll=body.action==='reroll';
   const report=(message,error=false)=>{
    if(!isMap&&!isCup)status(message,error);
-   const output=isMap?q('#bookingMapStatus'):isCup?q('#bookingCupStatus'):inDetails&&detailDialog.open?q('#bookingDetailsStatus'):null;
+   const output=isMap?q('#bookingMapStatus'):isCup?q('#bookingCupStatus'):inDetails&&detailDialog.open?q('#bookingDetailsStatus'):isReroll?q('#bookingRerollStatus'):null;
    if(output){output.textContent=message;output.classList.toggle('is-error',error);}
   };
   if(isMap)q('#bookingMapReload').hidden=true;
@@ -55,6 +56,7 @@
   if(isCup)q('#bookingCupReload').hidden=true;
   report('กำลังบันทึก…');
   try{data=await request(body);if(body.action==='settings')dirty=false;if(isCup)cupDirty=false;if(isMap&&mapInput.value.trim()===body.url)mapInput.value=mapInput.defaultValue;if(body.action==='book'){selected.clear();q('#bookingReview').close();}render();report(data.result?.message||'บันทึกแล้ว');
+   if(isReroll){const draw=q('.booking-draw');if(draw)draw.open=true;}
    if(detailDialog.open&&!detailDialog.contains(document.activeElement))q('#bookingDetailsClose').focus({preventScroll:true});
    if(body.action==='book'){
     const result=data.result||{},title=result.added>0?(result.duplicate?'จองสำเร็จบางรายการ':'จองคิวสำเร็จ ✓'):'มีชื่ออยู่แล้ว';
@@ -131,7 +133,7 @@
    </article>`;
 
   }).join(''):'<div class="booking-empty">ยังไม่มีรอบเปิดจอง<br><small>ผู้จัดตั้งวันและเวลาได้ในเมนูด้านล่าง</small></div>';
-  q('#bookingPlayer').innerHTML='<option value="">เลือกชื่อของคุณ…</option>'+data.roster.map(p=>`<option value="${html(p.id)}">${html(p.name)}${p.thai?' · '+html(p.thai):''}</option>`).join('');q('#bookingPlayer').value=playerId;playerId=q('#bookingPlayer').value;
+  q('#bookingPlayer').innerHTML='<option value="">เลือกชื่อของคุณ…</option>'+data.roster.map(p=>`<option value="${html(p.id)}">${html(name(p.id))}${p.thai?' · '+html(p.thai):''}</option>`).join('');q('#bookingPlayer').value=playerId;playerId=q('#bookingPlayer').value;
   q('#bookingAdmin').hidden=!data.canEdit;
   if(data.canEdit&&!dirty)renderSettings();
   if(data.canEdit&&!cupDirty)renderCupSettings();
@@ -157,10 +159,10 @@
   q('#bookingDetailsMeta').textContent=s?`${displayDate(s.date)} · ${sessionTime}`:'';
   q('#bookingDetailBadge').textContent=s?`${s.confirmedCount} / ${s.capacity} คน`:'';
   if(!s){q('#bookingDetail').innerHTML='<div class="booking-empty">เลือกวัน แล้วพบก๊วนของคุณที่นี่ 🏸</div>';q('#bookingSchedule').innerHTML='<p class="hint">เมื่อคนครบ ระบบจะบันทึกตารางคู่ให้อัตโนมัติ</p>';return;}
-  const row=r=>`<div class="booking-person"><span class="booking-avatar">${html(name(r.playerId).slice(0,2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source==='regular'?'↻ ขาประจำ':r.status==='waitlist'?'สำรอง #'+r.position:'ลงชื่อออนไลน์'}</small></div>${r.canCancel?`<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>`:''}</div>`;
-  q('#bookingDetail').innerHTML=`${s.isCup?cupBadge:''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${s.registrations.filter(r=>r.status==='confirmed').map(row).join('')||'<p class="hint">มาเปิดก๊วนเป็นคนแรกกัน!</p>'}<div class="booking-waitlist"><h4>คิวสำรอง <span>${s.waitlistCount} คน</span></h4>${s.registrations.filter(r=>r.status==='waitlist').map(row).join('')||'<p class="hint">ยังไม่มีคิวสำรอง</p>'}<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${data.canEdit?`<button type="button" class="secondary" id="bookingClose">${s.closed?'เปิดรับจองรอบนี้':'ปิดรับจองรอบนี้'}</button>`:''}`;
+  const row=r=>`<div class="booking-person"><span class="booking-avatar">${html(rawName(r.playerId).slice(0,2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source==='regular'?'↻ ขาประจำ':r.status==='waitlist'?'สำรอง #'+r.position:'ลงชื่อออนไลน์'}</small></div>${r.canCancel?`<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>`:''}</div>`;
+  q('#bookingDetail').innerHTML=`${s.isCup?cupBadge:''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button><p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${s.registrations.filter(r=>r.status==='confirmed').map(row).join('')||'<p class="hint">มาเปิดก๊วนเป็นคนแรกกัน!</p>'}<div class="booking-waitlist"><h4>คิวสำรอง <span>${s.waitlistCount} คน</span></h4>${s.registrations.filter(r=>r.status==='waitlist').map(row).join('')||'<p class="hint">ยังไม่มีคิวสำรอง</p>'}<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${data.canEdit?`<button type="button" class="secondary" id="bookingClose">${s.closed?'เปิดรับจองรอบนี้':'ปิดรับจองรอบนี้'}</button>`:''}`;
   const messages={waiting:`รออีก ${Math.max(0,s.capacity-s.confirmedCount)} คนให้ครบก๊วน แล้วจัดคู่ทันที`,insufficient:'เหลือน้อยกว่า 8 คน จึงพักตารางไว้ก่อน เพื่อให้ทุกคนได้พักอย่างน้อย 1 เกม',closed:'รอบนี้ปิดรับจอง / ข้ามวันหยุด จึงพักตารางไว้ก่อน',failed:'เงื่อนไขผู้เล่นยังจัดคู่ไม่ได้ ให้ผู้จัดตรวจรายชื่อและตั้งค่าอีกครั้ง'};
-  q('#bookingSchedule').innerHTML=s.schedule&&data.settings.enabled&&!s.closed&&!s.skipped?`<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button><p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m=>`<div class="booking-match"><b>GAME ${String(m.round).padStart(2,'0')}</b><div>${matchTeam(m.ids.slice(0,2))}<em>VS</em>${matchTeam(m.ids.slice(2))}</div></div>`).join('')}<div class="booking-counts">${Object.entries(s.schedule.counts).map(([id,n])=>`<span>${html(name(id))} <b>${n} เกม</b></span>`).join('')}</div></details>`:`<div class="booking-empty">🏸<p>${messages[s.scheduleStatus]||'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
+  q('#bookingSchedule').innerHTML=s.schedule&&data.settings.enabled&&!s.closed&&!s.skipped?`<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button>${data.canEdit?`<button type="button" class="secondary booking-primary" id="bookingReroll">↻ จัดคู่ใหม่</button><p id="bookingRerollStatus" role="status" class="hint"></p>`:''}<p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m=>`<div class="booking-match"><b>GAME ${String(m.round).padStart(2,'0')}</b><div>${matchTeam(m.ids.slice(0,2))}<em>VS</em>${matchTeam(m.ids.slice(2))}</div></div>`).join('')}<div class="booking-counts">${Object.entries(s.schedule.counts).map(([id,n])=>`<span>${html(name(id))} <b>${n} เกม</b></span>`).join('')}</div></details>`:`<div class="booking-empty">🏸<p>${messages[s.scheduleStatus]||'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
  }
  function renderCupSettings(){
   q('#bookingCupSettings').dataset.version=String(data.cupVersion);
@@ -177,10 +179,27 @@
   const s=data.sessions.find(s=>s.id===focusId);if(!s?.schedule)return '';
   return [`🏸 ${venueLabel} • ก๊วนพร้อมลุย!`,`${displayDate(s.date)} | ${s.start}–${s.end} น.`,`ตัวจริง ${s.confirmedCount}/${s.capacity} คน • ตาราง v${s.scheduleVersion}`,'',...s.schedule.schedule.map(m=>`เกม ${m.round} ⚡ ${m.ids.slice(0,2).map(name).join(' / ')} VS ${m.ids.slice(2).map(name).join(' / ')}`),'','จำนวนเกมแต่ละคน',...Object.entries(s.schedule.counts).map(([id,n])=>`${name(id)}: ${n} เกม`),...(s.waitlistCount?['','สำรอง: '+s.registrations.filter(r=>r.status==='waitlist').map(r=>`${r.position}. ${name(r.playerId)}`).join(', ')]:[]),'','พักอย่างน้อย 1 เกม • รายชื่อเปลี่ยน ระบบจัดคู่ใหม่','ตรวจตารางล่าสุด: '+location.origin+venueUrl('/court')+'#booking'].join('\n');
  }
- async function copy(){
-  const text=lineText();if(!text)return;
-  try{await navigator.clipboard.writeText(text);q('#bookingCopyStatus').textContent='คัดลอกแล้ว พร้อมวางใน LINE ✓';}
-  catch{const box=document.createElement('textarea');box.value=text;box.setAttribute('aria-label','ตารางสำหรับคัดลอกลง LINE');q('#bookingSchedule').append(box);box.focus();box.select();let ok=false;try{ok=document.execCommand('copy');}catch{}q('#bookingCopyStatus').textContent=ok?'คัดลอกแล้ว พร้อมวางใน LINE ✓':'กดค้างในช่องข้อความ แล้วเลือกคัดลอก';if(ok)box.remove();}
+ function rosterText(){
+  const s=data.sessions.find(s=>s.id===focusId);if(!s)return '';
+  const list=status=>s.registrations.filter(r=>r.status===status).map(r=>`${r.position}. ${name(r.playerId)}`);
+  const confirmed=list('confirmed'),waitlist=list('waitlist');
+  return [`🏸 ${s.isCup?cupName:venueLabel+' Court'} • รายชื่อนักตีแบด`,
+   `${displayDate(s.date)} | ${s.start}–${s.end} น.`,'',
+   `ตัวจริง ${s.confirmedCount}/${s.capacity} คน`,...(confirmed.length?confirmed:['ยังไม่มีรายชื่อ']),'',
+   `สำรอง ${s.waitlistCount} คน`,...(waitlist.length?waitlist:['ยังไม่มีคิวสำรอง']),
+   '', 'ดูคิวล่าสุด: '+location.origin+venueUrl('/court')+'#booking'
+  ].join('\n');
+ }
+ async function copy(text,output,label){
+  if(!text||!output)return;
+  try{await navigator.clipboard.writeText(text);output.textContent='คัดลอกแล้ว พร้อมวางใน LINE ✓';}
+  catch{
+   const box=document.createElement('textarea');box.value=text;box.readOnly=true;box.setAttribute('aria-label',label);
+   output.after(box);box.focus();box.select();let ok=false;
+   try{ok=document.execCommand('copy');}catch{}
+   output.textContent=ok?'คัดลอกแล้ว พร้อมวางใน LINE ✓':'กดค้างในช่องข้อความ แล้วเลือกคัดลอก';
+   if(ok)box.remove();
+  }
  }
  root.addEventListener('change',e=>{
   if(e.target.matches('[data-book-date]')){e.target.checked?selected.add(e.target.dataset.bookDate):selected.delete(e.target.dataset.bookDate);focusId=e.target.dataset.bookDate;renderSelection();renderDetail();}
@@ -264,7 +283,12 @@
   if(button.dataset.bookCancel){const s=data.sessions.find(s=>s.id===focusId),r=s?.registrations.find(r=>r.id===button.dataset.bookCancel);if(r&&confirm(`ถอนชื่อ ${name(r.playerId)} วันที่ ${displayDate(s.date)}?`))mutate({action:'cancel',sessionId:s.id,registrationId:r.id});}
   if(button.id==='bookingClose'){const s=data.sessions.find(s=>s.id===focusId);if(s&&confirm(`${s.closed?'เปิด':'ปิด'}รับจองรอบ ${displayDate(s.date)}? รายชื่อเดิมยังเก็บไว้`))mutate({action:'close',sessionId:s.id,closed:!s.closed});}
   if(button.id==='bookingConfirm'){if(!q('#bookingHolidayConfirm').hidden&&!q('#bookingAcceptHoliday').checked){status('กรุณารับทราบวันหยุดก่อนยืนยันจอง',true);feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}mutate({action:'book',playerId,sessionIds:[...selected],acceptHoliday:q('#bookingAcceptHoliday').checked});}
-  if(button.id==='bookingCopy')copy();
+  if(button.id==='bookingReroll'){
+   const s=data.sessions.find(s=>s.id===focusId);
+   if(s?.schedule&&confirm('จัดคู่ใหม่และแทนตารางเดิมของรอบนี้?'))mutate({action:'reroll',sessionId:s.id,scheduleVersion:s.scheduleVersion});
+  }
+  if(button.id==='bookingCopy')copy(lineText(),q('#bookingCopyStatus'),'ตารางสำหรับคัดลอกลง LINE');
+  if(button.id==='bookingCopyRoster')copy(rosterText(),q('#bookingRosterCopyStatus'),'รายชื่อสำหรับคัดลอกลง LINE');
  });
  document.querySelector('[data-tab="booking"]').addEventListener('click',()=>{if(!dirty&&!cupDirty)load();});
  // Poll only while this tab is visible; leave unfinished admin edits intact.

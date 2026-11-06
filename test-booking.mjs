@@ -169,3 +169,37 @@ test('updated booking draw balances levels, preserves rest and pairs women’s d
  assert(even.every(({ids})=>ids.slice(0,2).filter(id=>Number(id.slice(1))<4).length===ids.slice(2).filter(id=>Number(id.slice(1))<4).length));
  run(['F','F','F','F','F','M','M','M']);
 });
+
+test('booking shows latest completed Cup awards for the selected club without exposing levels',async()=>{
+ const f=fixture();
+ await f.call();
+ const add=f.db.prepare('INSERT INTO cup_history VALUES (?,1,?,?)');
+ const match={a:0,b:1,sa:21,sb:12};
+ add.run('latest',1,JSON.stringify({date:'2026-11-01',teams:[['Player 0','Player 1'],['Player 2','Player 3']],matches:[match]}));
+ add.run('older',2,JSON.stringify({date:'2026-10-01',teams:[['Player 4','Player 5'],['Player 6','Player 7']],matches:[match]}));
+ const data=await(await f.call(null,{owner:null})).json();
+ assert.deepEqual(data.roster.slice(0,8).map(p=>p.award),['🥇','🥇','💩','💩','','','','']);
+ assert(!data.roster.some(p=>'lv' in p));
+ await f.call(null,{club:'88'});
+ f.db.exec('INSERT INTO club_state_88 SELECT * FROM club_state');
+ const other=await(await f.call(null,{club:'88'})).json();
+ assert(other.roster.length>0&&other.roster.every(p=>!p.award));
+});
+
+test('reroll is organizer-only and replaces the selected schedule without changing registrations or other dates',async()=>{
+ const f=fixture();
+ f.db.prepare('UPDATE club_state SET payload=?').run(JSON.stringify({players:players.map(p=>({...p,lv:5,gender:'M'})),cup:null}));
+ const {data,cookie}=await f.open(players.slice(0,8).map(p=>p.id));
+ const [first,second]=data.sessions;
+ const body={action:'reroll',sessionId:first.id,scheduleVersion:first.scheduleVersion};
+ assert.equal((await f.call(body,{owner:null})).status,401);
+ const r=await f.call(body,{cookie});
+ assert.equal(r.status,200);
+ const saved=await r.json(),changed=saved.sessions[0];
+ assert.equal(changed.scheduleVersion,first.scheduleVersion+1);
+ assert.deepEqual(changed.registrations,first.registrations);
+ assert.notDeepEqual(changed.schedule.schedule,first.schedule.schedule);
+ assert.deepEqual(saved.sessions[1],second);
+ assert.equal((await f.call(body,{cookie})).status,409);
+ assert.deepEqual((await(await f.call()).json()).sessions[0].schedule,changed.schedule);
+});

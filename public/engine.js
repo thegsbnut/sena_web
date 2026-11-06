@@ -1,7 +1,7 @@
 (function(root){
 function valid(a,b){const f=t=>t.filter(p=>p.gender==='F').length;return !((f(a)===2&&f(b)===1)||(f(b)===2&&f(a)===1));}
 const pairings=([a,b,c,d])=>[[a,b,c,d],[a,c,b,d],[a,d,b,c]];
-function generate(players,rounds=10,locks=[],trials=90,candidateLimit=0,{matchAllowed=valid,randomWeight=22}={}){
+function generate(players,rounds=10,locks=[],trials=90,candidateLimit=0,{matchAllowed=valid,randomWeight=22,acceptSchedule}={}){
  const allowed=q=>matchAllowed(q.slice(0,2),q.slice(2));
  const sampleAbove=matchAllowed!==valid&&players.length>8?7:8;
  if(players.length>24)throw Error('รองรับผู้เล่นที่เลือกสูงสุด 24 คนต่อครั้ง');
@@ -30,7 +30,7 @@ function generate(players,rounds=10,locks=[],trials=90,candidateLimit=0,{matchAl
  for(const q of candidates){if(!allowed(q))continue;const diff=Math.abs(q[0].lv+q[1].lv-q[2].lv-q[3].lv);const key=(a,b)=>[a.id,b.id].sort().join('|');let s=q.reduce((s,p)=>s+counts[p.id]*30,0)+diff*4+(pairs[key(q[0],q[1])]||0)*4+(pairs[key(q[2],q[3])]||0)*4+Math.random()*randomWeight;if(s<min){min=s;chosen=q;}}
  if(!chosen){failed=true;break;}prev=chosen;chosen.forEach(p=>counts[p.id]++);for(const t of [chosen.slice(0,2),chosen.slice(2)]){let k=t.map(p=>p.id).sort().join('|');pairs[k]=(pairs[k]||0)+1;}const diff=Math.abs(chosen[0].lv+chosen[1].lv-chosen[2].lv-chosen[3].lv);cost+=diff*diff;schedule.push({round:r,ids:chosen.map(p=>p.id),diff,locked:!!lm[r]});
  }
- if(failed)continue;let score=Object.values(counts).reduce((s,n)=>s+(n-rounds*4/players.length)**2,0)*1000+cost*5+Object.values(pairs).reduce((s,n)=>s+n*n,0);if(score<bestScore){bestScore=score;best={schedule,counts};}
+ if(failed||acceptSchedule&&!acceptSchedule(schedule))continue;let score=Object.values(counts).reduce((s,n)=>s+(n-rounds*4/players.length)**2,0)*1000+cost*5+Object.values(pairs).reduce((s,n)=>s+n*n,0);if(score<bestScore){bestScore=score;best={schedule,counts};}
  }
  if(!best)throw Error('ยังจัดตารางตามเงื่อนไขนี้ไม่ได้ ลองเพิ่มผู้เล่นหรือลดคู่ล็อก');return best;
 }
