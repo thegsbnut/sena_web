@@ -96,42 +96,76 @@ async function autoSettings(db){
  return row?{dailyLimit:row.daily_limit,summaryTime:row.summary_time}:autoDefaults;
 }
 
-function limitedText(text){
- return text.length<=4800?text:text.slice(0,4600).replace(/[\uD800-\uDBFF]$/,'')+'\n… ดูรายการทั้งหมดที่ '+publicOrigin+'/court';
+const venueName=club=>club==='88'?'THE 88':'SENA COURT';
+const separator='\n\n━━━━━━━━━━\n\n';
+const sessionDate=new Intl.DateTimeFormat('th-TH',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Bangkok'});
+const cleanName=name=>name.replace(/\s+/g,' ').trim();
+
+function sessionLabel({date,start,end}){
+ const label=sessionDate.format(new Date(date+'T12:00:00+07:00'));
+ return start&&end?`${label} · ${start}–${end} น.`:label;
 }
+
+function venueLink(club){
+ return '🔗 เช็กคิว '+(club==='88'?'88':'Sena')+'\n'+publicOrigin+'/court'+(club==='88'?'?club=88':'')+'#booking';
+}
+
+function rosterText({confirmed,capacity,waiting,confirmedNames,waitingNames}){
+ const numbered=names=>names?.map((name,i)=>`${i+1}. ${cleanName(name)}`)||[];
+ const vacancy=confirmed>=capacity?'เต็ม':`ว่าง ${capacity-confirmed} ที่`;
+ return [
+  `🟢 ตัวจริง ${confirmed}/${capacity} · ${vacancy}`,...numbered(confirmedNames),
+  '',waiting?`🟡 สำรอง ${waiting} คน`:'🟡 สำรอง: ไม่มี',...numbered(waitingNames)
+ ].join('\n');
+}
+
+function autoMessage(title,sections,notice=''){
+ const body=title+'\n\n'+sections.map(({text,club})=>text+'\n\n'+venueLink(club)).join(separator);
+ if(body.length+notice.length<=4800)return body+notice;
+ const footer='\n\n… ดูรายชื่อและรอบทั้งหมดบนเว็บ\n\n'+sections.map(({club})=>venueLink(club)).join('\n\n')+notice;
+ return body.slice(0,4800-footer.length).replace(/[\uD800-\uDBFF]$/,'')+footer;
+}
+
 function alertText(changes,last,summarySent,summaryTime){
- const grouped=new Map();
- for(const change of changes){
-  const key=change.club+change.date;
-  if(!grouped.has(key))grouped.set(key,{...change,items:[]});
-  const group=grouped.get(key);
-  group.items.push((change.action==='book'?'จอง: ':'ถอน: ')+change.name.replace(/\s+/g,' '));
-  Object.assign(group,change);
- }
- const lines=['🏸 อัปเดตการจอง Sena / 88'];
- for(const group of grouped.values()){
-  const date=new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',timeZone:'Asia/Bangkok'}).format(new Date(group.date+'T12:00:00+07:00'));
-  const names=list=>list.map(name=>name.replace(/\s+/g,' ')).join(', ')||'ไม่มี';
-  lines.push('',(group.club==='88'?'88':'Sena')+' · '+date,...group.items);
-  if(group.confirmedNames&&group.waitingNames){
-   lines.push(`ตัวจริง ${group.confirmed}/${group.capacity}: ${names(group.confirmedNames)}`,`สำรอง ${group.waiting}: ${names(group.waitingNames)}`);
-  }else{
-   lines.push(`ตัวจริง ${group.confirmed}/${group.capacity} · สำรอง ${group.waiting}`, 'ดูรายชื่อ: '+publicOrigin+'/court'+(group.club==='88'?'?club=88':'')+'#booking');
+ const sections=[];
+ for(const club of venues){
+  const byDate=new Map();
+  for(const change of changes.filter(item=>item.club===club)){
+   if(!byDate.has(change.date))byDate.set(change.date,[]);
+   byDate.get(change.date).push(change);
   }
+  if(!byDate.size)continue;
+  const rounds=[...byDate.keys()].sort().map(date=>{
+   const events=byDate.get(date),latest=events.at(-1);
+   const updates=[
+    ['➕ ลงชื่อ',events.filter(item=>item.action==='book').map(item=>item.name)],
+    ['➖ ถอนชื่อ',events.filter(item=>item.action==='cancel').map(item=>item.name)],
+    ['⬆️ เลื่อนขึ้นตัวจริง',events.map(item=>item.promoted).filter(Boolean)]
+   ].filter(([,names])=>names.length).map(([label,names])=>label+': '+names.map(cleanName).join(', '));
+   return ['📅 '+sessionLabel(latest),updates.join('\n'),rosterText(latest)].join('\n\n');
+  });
+  sections.push({club,text:'📍 '+venueName(club)+'\n'+rounds.join('\n\n')});
  }
+ const count=sections.length===2?'2 สนาม':`${new Set(changes.map(item=>item.date)).size} รอบ`;
  const notice=last?'\n\nครบโควตาแจ้งเตือนวันนี้แล้ว '+(summarySent?'ดูยอดล่าสุดได้ที่เว็บ':'กันไว้ 1 ครั้งสำหรับสรุป '+summaryTime+' น.'):'';
- return limitedText(lines.join('\n'))+notice;
+ return autoMessage('🏸 BADBOT · อัปเดตคิว '+count,sections,notice);
 }
-async function combinedSummary(env,now){
+
+async function combinedSummary(env,now,summaryTime){
  const sections=await Promise.all(venues.map(async club=>{
   const response=await bookingRoute(new Request(publicOrigin+'/api/booking'),env,false,club);
   if(!response.ok)throw Error('Cannot read booking summary');
   const data=await response.json();
   const session=data.settings.enabled&&data.sessions.find(s=>!s.skipped&&Date.parse(s.date+'T'+s.start+':00+07:00')>+now);
-  if(!session)return (club==='88'?'88':'Sena')+' · ยังไม่มีรอบถัดไป';
-  return rosterMessages(data,session,club,publicOrigin).map(item=>item.text).join('\n');
+  const heading='📍 '+venueName(club);
+  if(!session)return {club,text:heading+'\nยังไม่มีรอบถัดไป'};
+  const names=new Map(data.roster.map(p=>[p.id,[p.award,p.name].filter(Boolean).join(' ')]));
+  const roster=status=>session.registrations.filter(r=>r.status===status).map(r=>names.get(r.playerId)||'ผู้เล่นที่นำออกจากก๊วน');
+  const queues=rosterText({confirmed:session.confirmedCount,capacity:session.capacity,waiting:session.waitlistCount,
+   confirmedNames:roster('confirmed'),waitingNames:roster('waitlist')});
+  return {club,text:heading+(session.isCup?' · CUP':'')+'\n'+sessionLabel(session)+'\n\n'+queues};
  }));
- return limitedText('📋 สรุปรอบถัดไป Sena + 88\n\n'+sections.join('\n\n━━━━━━━━━━\n\n'));
+ return autoMessage('🏸 BADBOT · สรุปคิว '+summaryTime,sections);
 }
 async function availableQuota(token,group,reserve){
  const headers={Authorization:'Bearer '+token};
@@ -174,7 +208,7 @@ export async function scheduledLine(env,now=new Date()){
   const slot=summaryDue?'summary':'alert-'+(alerts.length+1);
   const batch=summaryDue?[]:pending.filter(item=>item.at<=pending[0].at+10*minute);
   const cutoff=summaryDue?summaryAt:batch.at(-1).at;
-  const content=summaryDue?await combinedSummary(env,now):alertText(batch,alerts.length===cfg.dailyLimit-2,!!summary?.sent,cfg.summaryTime);
+  const content=summaryDue?await combinedSummary(env,now,cfg.summaryTime):alertText(batch,alerts.length===cfg.dailyLimit-2,!!summary?.sent,cfg.summaryTime);
   await db.prepare('INSERT OR IGNORE INTO line_auto_jobs (date,slot,retry_key,group_id,content,cutoff) VALUES (?,?,?,?,?,?)')
    .bind(date,slot,crypto.randomUUID(),group,content,cutoff).run();
   job=await db.prepare('SELECT * FROM line_auto_jobs WHERE date=? AND slot=?').bind(date,slot).first();

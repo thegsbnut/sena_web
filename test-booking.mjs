@@ -260,7 +260,14 @@ test('Badbot batches alerts and reserves the combined summary',async t=>{
  const date=bangkokDate(),at=time=>new Date(date+'T'+time+':00+07:00');
  const doc=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload);
  doc.lineChanges=['13:00','13:04','14:00','15:00'].map((time,i)=>({at:+at(time),date,name:'Player '+i,action:i===2?'cancel':'book',confirmed:3,capacity:8,waiting:0}));
+ Object.assign(doc.lineChanges[1],{start:'19:00',end:'21:00',action:'cancel',promoted:'Noon',
+  confirmedNames:['Nut','Noon','Mew'],waiting:1,waitingNames:['Pete']});
+ const nextDate=bangkokDate(new Date(+at('13:04')+86400000));
+ doc.lineChanges.push({...doc.lineChanges[0],date:nextDate,name:'Mew'});
  f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
+ const other=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='88'").get().payload);
+ other.lineChanges=[{...doc.lineChanges[0],name:'Bank'}];
+ f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='88'").run(JSON.stringify(other));
  let remaining=3;
  const sent=[];
  t.mock.method(globalThis,'fetch',async(url,options)=>{
@@ -280,7 +287,10 @@ test('Badbot batches alerts and reserves the combined summary',async t=>{
  await scheduledLine(f.env,at('13:10'));
  await scheduledLine(f.env,at('13:15'));
  assert.equal(sent.length,1);
- assert.match(sent[0],/Player 0[\s\S]*Player 1/);
+ assert.match(sent[0],/อัปเดตคิว 2 สนาม/);
+ assert.match(sent[0],/SENA COURT[\s\S]*19:00–21:00[\s\S]*ลงชื่อ: Player 0[\s\S]*ถอนชื่อ: Player 1[\s\S]*เลื่อนขึ้นตัวจริง: Noon/);
+ assert.match(sent[0],/1\. Nut\n2\. Noon\n3\. Mew[\s\S]*สำรอง 1 คน\n1\. Pete/);
+ assert.match(sent[0],/ลงชื่อ: Mew[\s\S]*court#booking[\s\S]*THE 88[\s\S]*ลงชื่อ: Bank[\s\S]*court\?club=88#booking/);
  await scheduledLine(f.env,at('14:10'));
  await scheduledLine(f.env,at('15:20'));
  assert.equal(sent.length,2);
@@ -291,5 +301,5 @@ test('Badbot batches alerts and reserves the combined summary',async t=>{
  await scheduledLine(f.env,at('17:00'));
  await scheduledLine(f.env,at('17:05'));
  assert.equal(sent.length,3);
- assert.match(sent[2],/สรุปรอบถัดไป Sena \+ 88/);
+ assert.match(sent[2],/สรุปคิว 17:00[\s\S]*SENA COURT[\s\S]*court#booking[\s\S]*THE 88[\s\S]*court\?club=88#booking/);
 });
