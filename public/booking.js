@@ -37,7 +37,7 @@
  }
  async function load(silent=false){
   if(busy)return;busy=true;if(!silent)status('กำลังโหลดคิวจากออนไลน์…');
-  try{data=await request();render();if(!silent)status('ข้อมูลคิวล่าสุด · เวลาไทย');}
+  try{data=await request();render();if(!silent)status('ข้อมูลล่าสุดจากออนไลน์ • เวลาไทย (UTC+7)');}
   catch(e){status(e.message,true);}finally{busy=false;}
  }
  async function mutate(body){
@@ -65,9 +65,9 @@
    }}
   catch(e){const message=e instanceof TypeError?'เชื่อมต่อไม่ได้ กรุณาตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง':e.message;report(message,true);if(e.status===409){if(isMap)q('#bookingMapReload').hidden=false;if(isCup)q('#bookingCupReload').hidden=false;}if(body.action==='book')feedback('จองไม่สำเร็จ',message);}finally{for(const input of cupInputs)input.disabled=false;busy=false;root.classList.remove('booking-busy');}
  }
- root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} · จองคิวตีแบด</span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
+ root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
- <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อผู้ตี</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
+ <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อผู้ตี</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
  <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่าการจองและสนาม <span>สำหรับผู้จัด</span></summary>
  <details class="booking-cup-settings"><summary>🏆 วันแข่งขัน ${html(cupName)}</summary>
  <form id="bookingCupSettings"><label for="bookingCupWeek">สัปดาห์แข่งขันประจำเดือน</label>
