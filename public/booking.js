@@ -79,6 +79,8 @@
  <p class="hint">สร้างคำสั่งแล้วส่งในกลุ่ม LINE ที่ต้องการรับสรุป รหัสใช้ได้ครั้งเดียวใน 10 นาที</p>
  <button type="button" class="secondary" id="bookingLinePair">สร้างคำสั่งเชื่อมกลุ่ม</button>
  <button type="button" class="secondary" id="bookingLineCheck">ตรวจการเชื่อมต่อ</button>
+  <button type="button" class="secondary" id="bookingLineQuota">เช็กโควต้า LINE</button>
+ <p id="bookingLineQuotaStatus" role="status" class="hint"></p>
  <textarea id="bookingLineCommand" aria-label="คำสั่งเชื่อม Badbot" rows="2" readonly hidden></textarea>
  <p id="bookingLineSetupStatus" role="status" class="hint"></p>
  <details id="bookingLineAuto"><summary>ตั้งค่าการส่งอัตโนมัติ</summary>
@@ -247,6 +249,21 @@
   }catch(e){output.textContent=e.message||'เชื่อมต่อ LINE ไม่สำเร็จ';}
   finally{button.disabled=false;}
  }
+ q('#bookingLineQuota').addEventListener('click',async event=>{
+  const button=event.currentTarget,output=q('#bookingLineQuotaStatus');
+  button.disabled=true;output.textContent='กำลังอ่านยอดจาก LINE…';
+  try{
+   const response=await venueFetch('/api/line?quota=1');
+   const result=await response.json();
+   if(!response.ok)throw Error(result.error);
+   const {used,limit,remaining}=result.quota;
+   const number=value=>value.toLocaleString('th-TH');
+   output.textContent=limit===null
+    ?`เดือนนี้ใช้ ${number(used)} ข้อความ · ไม่จำกัดโควต้า (ข้อมูลจาก LINE)`
+    :`เดือนนี้ใช้ ${number(used)} / ${number(limit)} ข้อความ · เหลือ ${number(remaining)} (ข้อมูลจาก LINE)`;
+  }catch(error){output.textContent=error.message||'อ่านโควต้าจาก LINE ไม่สำเร็จ';}
+  finally{button.disabled=false;}
+ });
  q('#bookingLineAuto').addEventListener('toggle',event=>{
   if(event.target.open){
    const form=q('#bookingLineAutoForm');

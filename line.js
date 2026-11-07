@@ -167,15 +167,20 @@ async function combinedSummary(env,now,summaryTime){
  }));
  return autoMessage('🏸 BADBOT · สรุปคิว '+summaryTime,sections);
 }
+async function lineGet(token,path){
+ const response=await fetch('https://api.line.me/v2/bot'+path,{headers:{Authorization:'Bearer '+token}});
+ if(!response.ok)throw Error('Cannot check LINE quota');
+ return response.json();
+}
+
+function quotaUsage(token){
+ return Promise.all([lineGet(token,'/message/quota'),lineGet(token,'/message/quota/consumption')]);
+}
+
 async function availableQuota(token,group,reserve){
- const headers={Authorization:'Bearer '+token};
- const api='https://api.line.me/v2/bot';
- const paths=['/message/quota','/message/quota/consumption','/group/'+encodeURIComponent(group)+'/members/count'];
- const [quota,usage,members]=await Promise.all(paths.map(async path=>{
-  const response=await fetch(api+path,{headers});
-  if(!response.ok)throw Error('Cannot check LINE quota');
-  return response.json();
- }));
+ const [[quota,usage],members]=await Promise.all([
+  quotaUsage(token),lineGet(token,'/group/'+encodeURIComponent(group)+'/members/count')
+ ]);
  if(quota.type==='none')return true;
  return Number.isFinite(quota.value)&&Number.isFinite(usage.totalUsage)&&members.count>0&&
   quota.value-usage.totalUsage>=members.count*(reserve?2:1);
@@ -229,6 +234,18 @@ export async function lineAdmin(req,env,admin,club){
  if(!env.LINE_CHANNEL_SECRET)return reply({error:'Worker ยังไม่เห็น LINE_CHANNEL_SECRET ใน Cloudflare'},503);
  if(!env.LINE_CHANNEL_ACCESS_TOKEN)return reply({error:'Worker ยังไม่เห็น LINE_CHANNEL_ACCESS_TOKEN ใน Cloudflare'},503);
  if(!['GET','POST'].includes(req.method))return reply({error:'Method not allowed'},405);
+ if(req.method==='GET'&&new URL(req.url).searchParams.has('quota')){
+  try{
+   const [quota,usage]=await quotaUsage(env.LINE_CHANNEL_ACCESS_TOKEN);
+   const used=usage.totalUsage;
+   const limit=quota.type==='none'?null:quota.value;
+   if(!Number.isSafeInteger(used)||used<0||
+    (quota.type!=='none'&&(quota.type!=='limited'||!Number.isSafeInteger(limit)||limit<0)))throw Error('Invalid LINE quota');
+   return reply({quota:{used,limit,remaining:limit===null?null:Math.max(0,limit-used)}});
+  }catch{
+   return reply({error:'อ่านโควต้าจาก LINE ไม่สำเร็จ กรุณาลองใหม่'},502);
+  }
+ }
  await prepare(env.DB);
  if(req.method==='GET'){
   const row=await env.DB.prepare('SELECT group_id,expires_at FROM line_groups WHERE club=?').bind(club).first();

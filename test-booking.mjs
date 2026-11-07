@@ -279,6 +279,12 @@ test('Badbot batches alerts and reserves the combined summary',async t=>{
   sent.push(JSON.parse(options.body).messages[0].text);
   return Response.json({});
  });
+ const checkQuota=auth=>worker.fetch(new Request(origin+'/api/line?quota=1',{headers:{Cookie:auth}}),f.env);
+ assert.equal((await checkQuota('')).status,401);
+ const quotaResponse=await checkQuota(cookie);
+ assert.equal(quotaResponse.status,200);
+ assert.deepEqual((await quotaResponse.json()).quota,{used:297,limit:300,remaining:3});
+ assert.equal(sent.length,0);
  const {scheduledLine}=await import('./line.js');
  await scheduledLine(f.env,at('13:05'));
  await scheduledLine(f.env,at('13:10'));
