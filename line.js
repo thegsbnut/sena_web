@@ -1,4 +1,5 @@
 import {bookingRoute,bangkokDate} from './booking.js';
+import {normalizeLineText,replyToGroupCommand} from './line-reply.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const encode=new TextEncoder();
@@ -20,6 +21,7 @@ export async function lineWebhook(req,env){
  let body;
  try{body=JSON.parse(new TextDecoder().decode(raw));}catch{return reply({error:'Invalid JSON'},400);}
  if(!Array.isArray(body?.events))return reply({error:'Invalid events'},400);
+ let replyFailed=false;
  for(const event of body.events){
   const group=event?.source?.groupId;
   if(event?.source?.type!=='group'||typeof group!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(group))continue;
@@ -28,14 +30,16 @@ export async function lineWebhook(req,env){
    await env.DB.prepare('UPDATE line_groups SET group_id=NULL WHERE group_id=?').bind(group).run();
    continue;
   }
-  if(event.type!=='message'||event.message?.type!=='text')continue;
-  const match=/^\/badbot\s+([a-f0-9]{32})$/i.exec(String(event.message.text??'').normalize('NFKC').replace(/[\u200b\u200e\u200f\ufeff]/g,'').trim());
-  if(!match)continue;
-  await prepare(env.DB);
-  await env.DB.prepare('UPDATE line_groups SET group_id=?, pair_code=NULL, expires_at=NULL WHERE pair_code=? AND expires_at>?')
-   .bind(group,match[1].toLowerCase(),Date.now()).run();
+  const match=event.type==='message'&&event.message?.type==='text'&&/^\/badbot\s+([a-f0-9]{32})$/i.exec(normalizeLineText(event.message.text));
+  if(match){
+   await prepare(env.DB);
+   await env.DB.prepare('UPDATE line_groups SET group_id=?, pair_code=NULL, expires_at=NULL WHERE pair_code=? AND expires_at>?')
+    .bind(group,match[1].toLowerCase(),Date.now()).run();
+   continue;
+  }
+  try{await replyToGroupCommand(event,env);}catch{replyFailed=true;}
  }
- return reply({ok:true});
+ return reply({ok:!replyFailed},replyFailed?503:200);
 }
 
 function rosterMessages(data,s,club,origin){
