@@ -48,16 +48,17 @@ function session(date,{names=2,closed=false,holiday=null,capacity=8}={}){
 }
 const textOf=call=>call.messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
 
-test('signed badbot command replies with exactly two buttons and the existing booking URL',async t=>{
+test('signed badbot command replies with five buttons and distinct existing booking URLs',async t=>{
  const f=fixture(t),before=f.db.prepare('SELECT payload FROM club_state').get().payload;
  assert.equal((await f.hook([f.event('ＢＡＤＢＯＴ')])).status,200);
  assert.equal(f.calls.length,1);
  const [menu]=f.calls[0].messages;
  assert.equal(menu.type,'flex');
  const buttons=menu.contents.footer.contents;
- assert.equal(buttons.length,2);
- assert.deepEqual(buttons[0].action,{type:'uri',label:'🏸 จอง / ถอนชื่อ',uri:'https://sena-web.thegsbnut.workers.dev/court#booking'});
- assert.deepEqual(buttons[1].action,{type:'postback',label:'👥 ดูรายชื่อผู้ตี',data:'badbot:roster'});
+ assert.equal(buttons.length,5);
+ assert.deepEqual(buttons[0].action,{type:'uri',label:'🏸 จอง / ถอน Sena',uri:'https://sena-web.thegsbnut.workers.dev/court#booking'});
+ assert.deepEqual(buttons[1].action,{type:'uri',label:'🏸 จอง / ถอน 88',uri:'https://sena-web.thegsbnut.workers.dev/court?club=88#booking'});
+ assert.deepEqual(buttons.slice(2).map(b=>b.action.data),['badbot:roster:all','badbot:roster:sena','badbot:roster:88']);
  assert.equal(f.db.prepare('SELECT payload FROM club_state').get().payload,before);
  assert.equal(f.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE '%user%'").get().n,0);
 });
@@ -72,13 +73,50 @@ test('roster postback shows the nearest upcoming round for both courts and refre
  assert.match(text,/เสนา[\s\S]*2\/8 คน[\s\S]*1\. Nut\n2\. Bua[\s\S]*88[\s\S]*1\/8 คน[\s\S]*1\. Pete/);
  assert.match(text,/เหลือ 6 ที่/);assert.match(text,/อัปเดต ณ/);
  assert.doesNotMatch(text,/"lv"|gender|ownerHash|never-show-this|LINE-user-not-a-player-id/);
- assert.equal(f.calls[0].messages.at(-1).contents.footer.contents[1].action.label,'🔄 ดูข้อมูลล่าสุด');
+ assert.equal(f.calls[0].messages.at(-1).contents.footer.contents[0].action.label,'🔄 ดูข้อมูลล่าสุด');
  const doc=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload);
  doc.sessions.find(s=>s.date===date).registrations.push({id:'new',playerId:'p2',seq:10,source:'manual'});
  f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
  assert.equal((await f.hook([f.event('badbot รายชื่อ')])).status,200);
  assert.match(textOf(f.calls[1]),/3\/8 คน[\s\S]*3\. Bomb/);
  assert.notEqual(f.calls[0].replyToken,f.calls[1].replyToken);
+});
+
+test('all five menu actions route correctly and single-court refresh keeps its scope',async t=>{
+ const f=fixture(t),date=future(1);
+ f.seed('sena',[session(date)]);
+ f.seed('88',[session(date,{names:1})],true,['Pete','Noon']);
+ await f.hook([f.event()]);
+ const actions=f.calls[0].messages[0].contents.footer.contents.map(button=>button.action);
+ for(const [index,scope] of [[2,'all'],[3,'sena'],[4,'88']]){
+  const beforeOther=f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(scope==='sena'?'88':'sena').payload;
+  await f.hook([f.event('',{type:'postback',postback:{data:actions[index].data}})]);
+  const call=f.calls.at(-1),text=textOf(call),footer=call.messages.at(-1).contents.footer.contents;
+  assert.equal(footer[0].action.data,'badbot:roster:'+scope);
+  assert.match(text,scope==='88'?/1\. Pete/:/1\. Nut/);
+  if(scope==='all')assert.match(text,/📍 เสนา[\s\S]*📍 88/);
+  else{
+   assert.doesNotMatch(text,scope==='sena'?/📍 88|Pete/:/📍 เสนา|Nut/);
+   assert.equal(f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(scope==='sena'?'88':'sena').payload,beforeOther);
+   assert.equal(footer.filter(b=>b.action.type==='uri').length,1);
+  }
+ }
+ const refresh=f.calls.at(-1).messages.at(-1).contents.footer.contents[0].action;
+ await f.hook([f.event('',{type:'postback',postback:{data:refresh.data}})]);
+ assert.match(textOf(f.calls.at(-1)),/1\. Pete/);assert.doesNotMatch(textOf(f.calls.at(-1)),/📍 เสนา|Nut/);
+ const back=f.calls.at(-1).messages.at(-1).contents.footer.contents.at(-1).action;
+ await f.hook([f.event('',{type:'postback',postback:{data:back.data}})]);
+ assert.equal(f.calls.at(-1).messages.length,1);
+ assert.equal(f.calls.at(-1).messages[0].contents.footer.contents.length,5);
+});
+
+test('typed roster shortcuts select Sena, เสนา, 88 or all courts',async t=>{
+ const f=fixture(t),date=future(1);
+ f.seed('sena',[session(date)]);f.seed('88',[session(date,{names:1})],true,['Pete']);
+ for(const [text,scope] of [['badbot รายชื่อ SENA','sena'],['แบดบอต ดูผู้ตี เสนา','sena'],['badbot รายชื่อ 88','88'],['badbot ดูรายชื่อผู้เล่น ทั้งหมด','all']]){
+  assert.equal((await f.hook([f.event(text)])).status,200);
+  assert.equal(f.calls.at(-1).messages.at(-1).contents.footer.contents[0].action.data,'badbot:roster:'+scope);
+ }
 });
 
 test('closed rounds stay visible with an explicit status and skipped rounds are excluded',async t=>{
@@ -113,7 +151,8 @@ test('ordinary chat, unrelated postbacks, private chats, standby, and unlinked g
  const events=[f.event('ไปตีแบดกัน'),f.event('badbotany'),f.event('badbot',{mode:'standby'}),
   f.event('badbot',{source:{type:'user',userId:'someone'}}),
   f.event('badbot',{source:{type:'group',groupId:'C'+'b'.repeat(32)}}),
-  f.event('',{type:'postback',postback:{data:'other:action'}}),f.event('badbot',{replyToken:''})];
+  f.event('',{type:'postback',postback:{data:'other:action'}}),
+  f.event('',{type:'postback',postback:{data:'badbot:roster:unknown'}}),f.event('badbot',{replyToken:''})];
  assert.equal((await f.hook(events)).status,200);assert.equal(f.calls.length,0);
 });
 
@@ -147,4 +186,13 @@ test('booking URL override must be HTTPS and contains no account-link flow',asyn
  assert.equal(f.calls[0].messages[0].contents.footer.contents[0].action.uri,f.env.LINE_BOOKING_URL);
  f.env.LINE_BOOKING_URL='javascript:alert(1)';
  assert.equal((await f.hook([f.event()])).status,503);assert.equal(f.calls.length,1);
+});
+
+test('court links preserve custom query and fragment while overriding a stale club selection',async t=>{
+ const f=fixture(t);f.env.LINE_BOOKING_URL='https://booking.example/court?club=88&from=line#booking';
+ await f.hook([f.event()]);
+ const actions=f.calls[0].messages[0].contents.footer.contents.map(b=>b.action);
+ const sena=new URL(actions[0].uri),other=new URL(actions[1].uri);
+ assert.equal(sena.searchParams.has('club'),false);assert.equal(other.searchParams.get('club'),'88');
+ for(const url of [sena,other]){assert.equal(url.searchParams.get('from'),'line');assert.equal(url.hash,'#booking');}
 });
