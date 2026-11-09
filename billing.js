@@ -51,13 +51,14 @@ const outstanding = bill => bill.payers.reduce((total, p) => total + (p.status =
 function summary(bill) {
  return {
   id: bill.id, club: bill.club, date: bill.session_date, total: bill.total,
+  collection: bill.payers.reduce((total, p) => total + p.amount, 0),
   count: bill.payers.length, paid: paidCount(bill), outstanding: outstanding(bill), cancelled: Boolean(bill.cancelled)
  };
 }
 function paymentView(p, privateView, admin, slipsRemoved) {
  const { id, name, amount, status, shares, note, paidAt, slipKey } = p;
  return {
-  id, name, amount, status, shares: shares.length,
+  id, name, amount, status, shares: shares.length, ...(p.method ? { method: p.method } : {}),
   ...(privateView ? { names: shares.map(x => x.name), note, paidAt, hasSlip: Boolean(slipKey) && !slipsRemoved } : {}),
   ...(admin ? { token: p.token, payerKey: p.payerKey, receiptId: p.slipKey?.split('/').at(-1) } : {})
  };
@@ -66,7 +67,8 @@ function billView(bill, admin, payer) {
  return {
   ...summary(bill), court: bill.court, shuttle: bill.shuttle, people: bill.people,
   ...(admin || !bill.cancelled && (payer || promptPayPattern.test(bill.transfer)) ? { transfer: bill.transfer } : {}),
-  ...(admin ? { revision: bill.revision, editable: !bill.cancelled && !bill.payers.some(p => p.submittedAt) } : {}),
+  ...(admin ? { revision: bill.revision, editable: !bill.cancelled && !bill.payers.some(p => p.submittedAt || p.status === 'paid'),
+   canUndoCash: !bill.cancelled && !bill.slips_removed } : {}),
   payers: (payer ? [payer] : bill.payers).map(p => paymentView(p, admin || Boolean(payer), admin, bill.slips_removed))
  };
 }
@@ -106,9 +108,9 @@ function splitBill(draft, existing = []) {
    byPayer.set(person.payerKey, p);
   }
   const amount = each + Number(i < remainder);
-  p.amount += amount;
   p.shares.push({ name: person.name, amount });
  }
+ for (const p of byPayer.values()) p.amount = Math.ceil(total * p.shares.length / (100 * draft.people.length)) * 100;
  return { court: draft.court, shuttle: draft.shuttle, total, transfer: draft.transfer, people: draft.people.length, payers: [...byPayer.values()] };
 }
 async function recentSessions(db, club) {
@@ -242,7 +244,7 @@ export async function billingRoute(req, env, admin, club) {
    .bind(key, id, type, bytes.length, bytes.buffer, bytes.length, maxStoredSlipBytes).run();
   if (!stored.meta.changes) return fail('พื้นที่เก็บสลิปเต็ม กรุณาแจ้งผู้จัด', 507);
   const oldKey = target.slipKey, now = Date.now();
-  Object.assign(target, { status: 'paid', slipKey: key, note: '', submittedAt: now, paidAt: now });
+  Object.assign(target, { status: 'paid', method: 'transfer', slipKey: key, note: '', submittedAt: now, paidAt: now });
   // A storage/DB error can be ambiguous. Only remove the new object after a
   // definite conflict, so a successfully attached receipt is never erased.
   if (!await updateBill(db, bill, payload)) {
@@ -260,10 +262,21 @@ export async function billingRoute(req, env, admin, club) {
   return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
  }
  if (bill.cancelled) return fail('กรุณาเปิดบิลอีกครั้งก่อนแก้ไข', 409);
+ if (action === 'cash') {
+  const target = payload.payers.find(p => p.id === input?.payer);
+  if (!target || input.revision !== bill.revision || typeof input.received !== 'boolean')
+   return fail('ข้อมูลบิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  if (input.received && ['unpaid', 'rejected'].includes(target.status)) {
+   Object.assign(target, { status: 'paid', method: 'cash', paidAt: Date.now() });
+  } else if (!input.received && !bill.slips_removed && target.status === 'paid' && target.method === 'cash') {
+   Object.assign(target, { status: target.slipKey ? 'rejected' : 'unpaid', method: null, paidAt: null });
+  } else return fail('สถานะการชำระเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+ }
  if (action === 'edit') {
-  if (bill.payers.some(p => p.submittedAt)) {
+  if (bill.payers.some(p => p.submittedAt || p.status === 'paid')) {
    if (input?.revision !== bill.revision || !promptPayPattern.test(input?.transfer || '')) return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
-   if ('court' in input || 'shuttle' in input || 'attendees' in input) return fail('มีผู้ส่งสลิปแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
+   if ('court' in input || 'shuttle' in input || 'attendees' in input) return fail('มีการชำระแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
    payload.transfer = input.transfer;
    return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   }
@@ -273,13 +286,14 @@ export async function billingRoute(req, env, admin, club) {
  }
  if (action === 'review') {
   const target = payload.payers.find(p => p.id === input?.payer);
-  if (!target || (target.status !== 'review' && !(target.status === 'paid' && input.status === 'rejected')) ||
+  if (!target || (target.status !== 'review' && !(target.status === 'paid' && target.method !== 'cash' && input.status === 'rejected')) ||
    bill.slips_removed || !target.slipKey || target.slipKey.split('/').at(-1) !== input.receiptId)
    return fail('สลิปนี้เปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   if (!['paid', 'rejected'].includes(input.status)) return fail('สถานะไม่ถูกต้อง');
   const note = clean(input.note);
   if (input.status === 'rejected' && (!note || note.length > 240)) return fail('กรุณาใส่เหตุผลไม่เกิน 240 ตัวอักษร');
   target.status = input.status;
+  target.method = input.status === 'paid' ? 'transfer' : null;
   target.note = input.status === 'rejected' ? note : '';
   target.paidAt = input.status === 'paid' ? Date.now() : null;
   return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);

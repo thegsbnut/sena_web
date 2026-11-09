@@ -43,7 +43,7 @@ const draft = {
 };
 const slip = Uint8Array.of(255,216,255,224,0,0,0,0,0,0,255,217);
 
-test('billing splits satang exactly, groups guests, and follows outstanding older dates in Badbot', async t => {
+test('billing rounds each payer total up to baht, groups guests, and follows older dates in Badbot', async t => {
  const f = fixture(t), cookie = await f.login();
  const post = (club, payload = draft) => f.request('/api/billing?club=' + club, { method: 'POST', payload, cookie });
  assert.equal((await f.request('/api/billing', { method: 'POST', payload: draft })).status, 401);
@@ -53,14 +53,35 @@ test('billing splits satang exactly, groups guests, and follows outstanding olde
  const path = '/api/billing?bill=' + id;
  const publicBill = await (await f.request(path)).json();
  assert.equal(publicBill.people, 3);
- assert.equal(publicBill.payers.reduce((sum, p) => sum + p.amount, 0), draft.court + draft.shuttle);
- assert.equal(publicBill.payers[0].amount, 80001);
+ assert.equal(publicBill.total, draft.court + draft.shuttle);
+ assert.equal(publicBill.collection, 120200);
+ assert.deepEqual(publicBill.payers.map(p => p.amount), [80100, 40100]);
  assert.equal(publicBill.payers[0].shares, 2);
  assert.equal(publicBill.transfer, draft.transfer);
  assert(publicBill.payers.every(p => !p.token && !p.hasSlip));
  assert.match(await billingLineText(f.env, 'all', origin), /Sena[\s\S]*Nut[\s\S]*Player 88/);
  assert.doesNotMatch(await billingLineText(f.env, 'sena', origin), /Player 88/);
  assert.doesNotMatch(await billingLineText(f.env, '88', origin), /Nut|Bua/);
+});
+
+test('only organizers can record and undo cash, without requiring a slip', async t => {
+ const f = fixture(t), cookie = await f.login();
+ const { id } = await (await f.request('/api/billing', { method: 'POST', payload: draft, cookie })).json();
+ const path = '/api/billing?bill=' + id;
+ const { payers: [nut, bua] } = await (await f.request(path)).json();
+ const cash = (payer, received, revision, auth = cookie) => f.request(path + '&action=cash', {
+  method: 'POST', cookie: auth, payload: { payer, received, revision }
+ });
+ assert.equal((await cash(nut.id, true, 0, '')).status, 401);
+ assert.equal((await cash(nut.id, true, 0)).status, 200);
+ assert.equal((await cash(bua.id, true, 0)).status, 409);
+ assert.equal((await cash(bua.id, true, 1)).status, 200);
+ assert.match(await billingLineText(f.env, 'all', origin), /ไม่มีบิลค้าง/);
+ const paid = await (await f.request(path, { cookie })).json();
+ assert.equal(paid.editable, false);
+ assert(paid.payers.every(p => p.status === 'paid' && p.method === 'cash' && !p.hasSlip));
+ assert.equal((await cash(nut.id, false, 2)).status, 200);
+ assert.match(await billingLineText(f.env, 'all', origin), /Nut/);
 });
 
 test('public uploads auto-pay the selected row, slips stay private, and only closed bills are pruned', async t => {
