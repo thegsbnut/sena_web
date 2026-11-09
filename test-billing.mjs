@@ -34,7 +34,7 @@ function fixture(t) {
  return { db, env, slips, request, login };
 }
 const draft = {
- date: '2026-10-01', court: 80000, shuttle: 40001, transfer: 'บัญชีทดสอบ',
+ date: '2026-10-01', court: 80000, shuttle: 40001, transfer: '0000000000',
  attendees: [
   { name: 'Nut', payer: 'Nut', payerKey: 'member:1' },
   { name: 'Guest', payer: 'Nut', payerKey: 'member:1' },
@@ -56,14 +56,14 @@ test('billing splits satang exactly, groups guests, and follows outstanding olde
  assert.equal(publicBill.payers.reduce((sum, p) => sum + p.amount, 0), draft.court + draft.shuttle);
  assert.equal(publicBill.payers[0].amount, 80001);
  assert.equal(publicBill.payers[0].shares, 2);
- assert(!JSON.stringify(publicBill).includes('บัญชีทดสอบ'));
+ assert.equal(publicBill.transfer, draft.transfer);
  assert(publicBill.payers.every(p => !p.token && !p.hasSlip));
  assert.match(await billingLineText(f.env, 'all', origin), /Sena[\s\S]*Nut[\s\S]*Player 88/);
  assert.doesNotMatch(await billingLineText(f.env, 'sena', origin), /Player 88/);
  assert.doesNotMatch(await billingLineText(f.env, '88', origin), /Nut|Bua/);
 });
 
-test('private slips require payer or admin, approval requires an uploaded slip, and only closed bills are pruned', async t => {
+test('public uploads auto-pay the selected row, slips stay private, and only closed bills are pruned', async t => {
  const f = fixture(t), cookie = await f.login();
  const { id } = await (await f.request('/api/billing', { method: 'POST', payload: draft, cookie })).json();
  const path = '/api/billing?bill=' + id;
@@ -72,13 +72,14 @@ test('private slips require payer or admin, approval requires an uploaded slip, 
  const review = (p, status, note) => f.request(path + '&action=review', {
   method: 'POST', cookie, payload: { payer: p.id, status, note, receiptId: p.receiptId }
  });
- const upload = (p, body = slip) => f.request(path + '&action=upload', { method: 'POST', token: p.token, body });
+ const upload = (p, body = slip) => f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, { method: 'POST', body });
  assert.equal((await review(nut, 'paid')).status, 409);
  assert.equal((await upload({})).status, 403);
  assert.equal((await upload(nut, new Uint8Array(1024*1024+1))).status, 400);
+ assert.equal((await upload({ ...nut, amount: nut.amount - 1 })).status, 409);
  assert.equal((await upload(nut)).status, 200);
  [nut, bua] = await read();
- assert.equal(nut.status, 'review');
+ assert.equal(nut.status, 'paid');
  const privatePath = path + '&action=slip&payer=' + nut.id;
  assert.equal((await f.request(privatePath)).status, 403);
  assert.equal((await f.request(privatePath, { token: bua.token })).status, 404);
@@ -87,14 +88,13 @@ test('private slips require payer or admin, approval requires an uploaded slip, 
  assert.deepEqual(new Uint8Array(await privateSlip.arrayBuffer()), slip);
  assert.equal((await f.request(privatePath, { cookie })).status, 200);
  assert.equal((await f.request(path + '&action=edit', { method: 'POST', payload: draft, cookie })).status, 409);
- assert.equal((await review(nut, 'rejected', 'ยอดไม่ตรง')).status, 200);
- const previous = nut;
- assert.equal((await upload(nut)).status, 200);
- [nut] = await read();
+ assert.equal((await upload(nut)).status, 409);
  const countSlips = () => f.slips.prepare('SELECT COUNT(*) AS count FROM bill_slips').get().count;
  assert.equal(countSlips(), 1);
- assert.equal((await review(previous, 'paid')).status, 409);
- assert.equal((await review(nut, 'paid')).status, 200);
+ assert.equal((await review(nut, 'rejected', 'กรุณาตรวจชื่อ')).status, 200);
+ assert.equal((await read())[0].status, 'rejected');
+ assert.equal((await upload(nut)).status, 200);
+ assert.equal(countSlips(), 1);
  assert.doesNotMatch(await billingLineText(f.env, 'all', origin), /Nut/);
  await prunePaidSlips(f.env);
  assert.equal(countSlips(), 1);
@@ -105,7 +105,7 @@ test('private slips require payer or admin, approval requires an uploaded slip, 
  f.slips.prepare("DELETE FROM bill_slips WHERE key='full'").run();
  assert.equal((await upload(bua)).status, 200);
  [, bua] = await read();
- assert.equal((await review(bua, 'paid')).status, 200);
+ assert.equal(bua.status, 'paid');
  assert.match(await billingLineText(f.env, 'all', origin), /ไม่มีบิลค้าง/);
  f.db.prepare('UPDATE bills SET closed_at=? WHERE id=?').run(Date.now() - 29*86400000, id);
  await prunePaidSlips(f.env);
@@ -115,4 +115,27 @@ test('private slips require payer or admin, approval requires an uploaded slip, 
  assert.equal(countSlips(), 0);
  assert.equal((await read())[0].status, 'paid');
  assert.equal((await f.request(privatePath, { cookie })).status, 404);
+});
+
+
+test('organizers can set a default, edit before payment and cancel or restore an existing bill', async t => {
+ const f = fixture(t), cookie = await f.login();
+ const post = (path, payload, auth = cookie) => f.request(path, { method: 'POST', cookie: auth, payload });
+ const settings = '/api/billing?action=promptpay';
+ const sessions = '/api/billing?action=sessions&date=' + draft.date;
+ assert.equal((await post(settings, { promptpay: draft.transfer }, '')).status, 401);
+ assert.equal((await post(settings, { promptpay: 'invalid' })).status, 400);
+ assert.equal((await post(settings, { promptpay: draft.transfer })).status, 200);
+ assert.equal((await (await f.request(sessions, { cookie })).json()).promptpay, draft.transfer);
+ const { id } = await (await post('/api/billing', draft)).json();
+ const path = '/api/billing?bill=' + id;
+ assert.deepEqual(await (await f.request(sessions, { cookie })).json(), { existing: id });
+ assert.equal((await post(path + '&action=edit', { ...draft, court: 90000, revision: 0 })).status, 200);
+ assert.equal((await post(path + '&action=cancel', { revision: 0 })).status, 409);
+ assert.equal((await post(path + '&action=cancel', { revision: 1 })).status, 200);
+ assert.deepEqual(await (await f.request(path)).json(), { cancelled: true });
+ assert.match(await billingLineText(f.env, 'all', origin), /ไม่มีบิลค้าง/);
+ assert.equal((await post(path + '&action=restore', { revision: 2 })).status, 200);
+ assert.equal((await (await f.request(path)).json()).court, 90000);
+ assert.match(await billingLineText(f.env, 'all', origin), /Nut/);
 });

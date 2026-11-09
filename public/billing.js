@@ -16,6 +16,7 @@
  const states = { unpaid: 'ยังไม่จ่าย', review: 'รอตรวจสลิป', rejected: 'ส่งสลิปใหม่', paid: 'จ่ายแล้ว' };
  const order = { unpaid: 0, rejected: 1, review: 2, paid: 3 };
  let busy = false, slipUrl, bill, adminList, sessions = [], attendees = [], editing = false;
+ const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
  document.querySelector('#back').href = '/court' + (club === '88' ? '?club=88' : '') + '#booking';
  receipt.addEventListener('close', () => {
   if (slipUrl) URL.revokeObjectURL(slipUrl);
@@ -31,10 +32,13 @@
   if (payer) url.searchParams.set('payer', payer);
   return url;
  }
- async function request(action, options = {}, payer) {
+ async function request(action, options = {}, payer, amount) {
   const headers = new Headers(options.headers);
   if (payerToken) headers.set('X-Bill-Token', payerToken);
-  const response = await fetch(endpoint(action, payer), { ...options, headers, cache: 'no-store' });
+  const url = endpoint(action, payer);
+  if (amount !== undefined) url.searchParams.set('amount', amount);
+  if (action === 'sessions' && params.has('date')) url.searchParams.set('date', params.get('date'));
+  const response = await fetch(url, { ...options, headers, cache: 'no-store' });
   if (!response.ok) {
    const error = await response.json().catch(() => ({}));
    throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
@@ -81,9 +85,15 @@
   message('คัดลอกแล้ว');
  }
  function showBill() {
-  const rows = [...bill.payers].sort((a, b) => order[a.status] - order[b.status]);
   const organizer = manage && Number.isInteger(bill.revision);
+  if (bill.cancelled && !organizer) {
+   root.innerHTML = '<h1>บิลนี้ถูกยกเลิกแล้ว</h1>';
+   message('');
+   return;
+  }
+  const rows = [...bill.payers].sort((a, b) => order[a.status] - order[b.status]);
   const who = payerToken ? rows[0] : null;
+  const promptpay = validPromptPay(bill.transfer);
   root.innerHTML = `
    <h1>ค่าใช้จ่าย · ${clubName(bill.club)}</h1>
    <p class="muted">${dateLabel(bill.date)} · ผู้ตีจริง ${bill.people} คน</p>
@@ -91,7 +101,8 @@
     <div class="card-title"><h2>รวม ${money(bill.total)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
     <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
    </section>
-   ${who || organizer ? `<section><h2>ช่องทางโอนเงิน</h2><div class="transfer">${escape(bill.transfer)}</div></section>` : ''}
+   ${bill.cancelled ? '<p class="error">บิลนี้ถูกยกเลิกแล้ว</p>' : ''}
+   ${bill.transfer && !bill.cancelled ? `<section><h2>${promptpay ? 'พร้อมเพย์' : 'ช่องทางโอนเงิน'}</h2><div class="transfer actions"><strong>${escape(bill.transfer)}</strong>${promptpay ? '<button type="button" data-action="copy-promptpay">คัดลอกเลขพร้อมเพย์</button>' : ''}</div></section>` : ''}
    <section>
     <div class="card-title"><h2>${who ? 'ยอดของคุณ' : 'สถานะการชำระ'}</h2><button type="button" data-action="reload">อัปเดต</button></div>
     ${rows.map(p => `
@@ -100,13 +111,14 @@
       ${p.note ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
-       ${organizer && p.status !== 'paid' ? `<button type="button" data-action="payer-link" data-payer="${p.id}">คัดลอกลิงก์จ่าย</button>` : ''}
-       ${organizer && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button><button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
+       ${!bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
+       ${organizer && !bill.cancelled && p.hasSlip && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button>` : ''}
+       ${organizer && !bill.cancelled && p.hasSlip && ['review', 'paid'].includes(p.status) ? `<button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
       </div></div>`).join('')}
-    ${who && ['unpaid', 'rejected'].includes(who.status) ? `<form id="upload"><label>แนบสลิปโอนเงิน<input type="file" name="slip" accept="image/*" required></label><button class="primary" type="submit">ส่งสลิปให้ผู้จัดตรวจ</button></form>` : ''}
-    ${!who && !organizer ? '<p class="muted">ขอลิงก์ชำระเงินส่วนตัวจากผู้จัดเพื่อดูบัญชีและแนบสลิป</p>' : ''}
+    <input type="file" id="paymentSlip" accept="image/*" hidden>
+    ${!bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะบันทึกว่าจ่ายแล้วทันที</p>' : ''}
    </section>
-   ${organizer ? `<div class="actions"><button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button>${bill.editable ? '<button data-action="edit" type="button">แก้ไขบิล</button>' : ''}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
+   ${organizer ? `<div class="actions">${bill.cancelled ? '<button data-action="restore" type="button">เปิดบิลอีกครั้ง</button>' : `<button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button><button data-action="edit" type="button">${bill.editable ? 'แก้ไขบิล' : 'แก้เลขพร้อมเพย์'}</button><button data-action="cancel" type="button">ยกเลิกบิล</button>`}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
   message('');
  }
  function fillAttendees(date) {
@@ -156,7 +168,7 @@
   const date = editing ? bill.date : (/^\d{4}-\d{2}-\d{2}$/.test(suppliedDate || '') ? suppliedDate : sessions.find(s => s.date <= today)?.date || today);
   root.innerHTML = `
    <h1>จบและคิดเงิน · ${clubName(club)}</h1>
-   ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม เปิดบิลได้เมื่อเชื่อมพื้นที่เก็บสลิปแล้ว</p>' : ''}
+   ${!editing && !adminList?.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม เปิดบิลได้เมื่อเชื่อมพื้นที่เก็บสลิปแล้ว</p>' : ''}
    <form id="draft">
     <section>
      <h2>1. เช็กคนที่มาตีจริง</h2>
@@ -172,7 +184,8 @@
      <label id="shuttleLabel">ค่าลูกรวม (บาท)<input name="shuttle" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.shuttle / 100 : 0}"></label></div>
      <label class="attendee"><input type="checkbox" name="perShuttle"> คิดจากจำนวนลูก × ราคาต่อลูก</label>
      <label id="countLabel" hidden>จำนวนลูก<input name="shuttleCount" type="number" min="1" max="999" step="1" value="1"></label>
-     <label>บัญชีรับเงินหรือเลขพร้อมเพย์<textarea name="transfer" required maxlength="500" placeholder="ธนาคาร · เลขบัญชี · ชื่อบัญชี">${editing ? escape(bill.transfer) : ''}</textarea></label>
+     <label>เลขพร้อมเพย์<input name="transfer" required inputmode="numeric" pattern="[0-9]{10}|[0-9]{13}" maxlength="13" value="${escape(editing ? bill.transfer : adminList.promptpay)}"></label>
+     ${editing ? '' : '<label class="attendee"><input type="checkbox" name="savePromptPay"> ใช้เลขนี้เป็นค่าเริ่มต้นสำหรับบิลถัดไป</label>'}
     </section>
     <section class="summary"><h2>3. ตรวจยอดก่อนเปิดบิล</h2><div id="preview"></div></section>
     <div class="actions"><button class="primary" type="submit" ${!editing && !adminList.storageReady ? 'disabled' : ''}>${editing ? 'บันทึกการแก้ไข' : 'เปิดบิล'}</button>
@@ -190,10 +203,10 @@
   const rows = adminList.bills;
   root.innerHTML = `
    <h1>บิลค่าใช้จ่าย</h1>
-   <div class="actions"><button type="button" class="primary" data-action="new">จบและคิดเงิน · ${clubName(club)}</button><button type="button" data-action="reload">อัปเดต</button>
+   <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button>
    <a class="button" href="/billing.html?manage=1&club=${club === '88' ? 'sena' : '88'}">เปิดบิลสนาม ${club === '88' ? 'Sena' : '88'}</a></div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
-   ${[['บิลค้าง', rows.filter(b => b.outstanding)], ['ประวัติบิลที่จ่ายครบ', rows.filter(b => !b.outstanding)]].map(([title, list]) =>
+   ${[['บิลค้าง', rows.filter(b => !b.cancelled && b.outstanding)], ['ประวัติบิลที่จ่ายครบ', rows.filter(b => !b.cancelled && !b.outstanding)], ['บิลที่ยกเลิก', rows.filter(b => b.cancelled)]].map(([title, list]) =>
     `<section><h2>${title}</h2>${list.length ? list.map(b =>
      `<div class="row"><div><strong>${clubName(b.club)} · ${dateLabel(b.date)}</strong><div>จ่ายแล้ว ${b.paid}/${b.count} · ${b.outstanding ? 'ค้าง ' + money(b.outstanding) : 'รวม ' + money(b.total)} บาท</div></div>
      <a class="button" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}">เปิดบิล</a></div>`).join('') : '<p class="muted">ยังไม่มีรายการ</p>'}</section>`).join('')}`;
@@ -201,8 +214,10 @@
  }
  async function openDraft() {
   const draft = await request('sessions');
+  if (draft.existing) { location.replace(linkToBill(draft.existing, true).href); return; }
   sessions = draft.sessions;
   adminList.storageReady = draft.storageReady;
+  adminList.promptpay = draft.promptpay;
   showDraft();
  }
  async function load() {
@@ -246,6 +261,18 @@
   preview();
  });
  root.addEventListener('change', e => {
+  if (e.target.id === 'paymentSlip') {
+   const input = e.target, payer = bill.payers.find(p => p.id === input.dataset.payer);
+   const file = input.files[0];
+   if (file && payer && confirm('แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ '+payer.name+' จำนวน '+money(payer.amount)+' บาท?')) run(async () => {
+    const blob = await compress(file);
+    await request('upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob }, payer.id, payer.amount);
+    await load();
+    message('แนบสลิปแล้ว · จ่ายแล้ว');
+   });
+   input.value = '';
+   return;
+  }
   if (!e.target.closest('#draft') || editing) return;
   if (e.target.id === 'source' && e.target.value) {
    root.querySelector('[name=date]').value = e.target.value;
@@ -257,16 +284,9 @@
  });
  root.addEventListener('submit', e => {
   e.preventDefault();
-  if (e.target.id === 'upload') {
-   const file = new FormData(e.target).get('slip');
-   run(async () => {
-    const blob = await compress(file);
-    await request('upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
-    await load();
-    message('ส่งสลิปแล้ว · รอผู้จัดตรวจ');
-   });
-  } else if (e.target.id === 'draft') {
+  if (e.target.id === 'draft') {
    const draft = costDraft();
+   const savePromptPay = new FormData(e.target).has('savePromptPay');
    if (!draft || !draft.attendees.length || draft.court + draft.shuttle < 1) { message('ตรวจค่าใช้จ่ายและเลือกผู้ตีจริงก่อน', true); return; }
    run(async () => {
     if (editing) {
@@ -274,6 +294,7 @@
      editing = false;
      await load();
     } else {
+     if (savePromptPay) await post('promptpay', { promptpay: draft.transfer });
      const result = await post(null, draft);
      id = result.id;
      location.replace(linkToBill(id, true).href);
@@ -286,9 +307,24 @@
   if (!target || busy) return;
   const action = target.dataset.action;
   const payer = bill?.payers.find(p => p.id === target.dataset.payer);
-  if (action === 'new') return run(openDraft);
   if (action === 'reload') return run(load);
-  if (action === 'edit') { editing = true; return showDraft(); }
+  if (action === 'set-promptpay') {
+   const promptpay = prompt('เลขพร้อมเพย์เริ่มต้น 10 หรือ 13 หลัก', adminList.promptpay)?.trim();
+   if (promptpay === undefined) return;
+   if (!validPromptPay(promptpay)) { message('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก', true); return; }
+   return run(async () => { await post('promptpay', { promptpay }); await load(); message('บันทึกเลขพร้อมเพย์เริ่มต้นแล้ว'); });
+  }
+  if (action === 'edit') {
+   if (bill.editable) { editing = true; return showDraft(); }
+   const transfer = prompt('เลขพร้อมเพย์ 10 หรือ 13 หลัก', bill.transfer)?.trim();
+   if (transfer === undefined) return;
+   if (!validPromptPay(transfer)) { message('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก', true); return; }
+   return run(async () => { await post('edit', { transfer, revision: bill.revision }); await load(); });
+  }
+  if (action === 'cancel' || action === 'restore') {
+   if (action === 'cancel' && !confirm('ยกเลิกบิลนี้และซ่อนจากรายการค้าง? คุณเปิดบิลอีกครั้งได้')) return;
+   return run(async () => { await post(action, { revision: bill.revision }); await load(); });
+  }
   if (action === 'cancel-draft') { editing = false; return bill ? showBill() : showAdminList(); }
   if (action === 'add-attendee') {
    const nameInput = root.querySelector('#addName'), hostInput = root.querySelector('#addHost');
@@ -303,10 +339,11 @@
    nameInput.value = hostInput.value = '';
    return renderAttendees();
   }
-  if (action === 'payer-link' && payer) {
-   const url = linkToBill(id);
-   url.hash = new URLSearchParams({ pay: payer.token }).toString();
-   return run(() => copy(payer.name+' · '+clubName(bill.club)+' '+dateLabel(bill.date)+' · '+money(payer.amount)+' บาท\n'+url.href));
+  if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
+  if (action === 'upload' && payer) {
+   const input = root.querySelector('#paymentSlip');
+   input.dataset.payer = payer.id;
+   return input.click();
   }
   if (action === 'share') {
    const lines = ['💸 '+clubName(bill.club)+' · '+dateLabel(bill.date),'ค้าง '+money(bill.outstanding)+' บาท'];

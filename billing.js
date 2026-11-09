@@ -4,6 +4,7 @@ const maxStoredSlipBytes = 250 * 1000 * 1000;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const idPattern = /^[a-f0-9]{32}$/;
 const tokenPattern = /^[a-f0-9]{64}$/;
+const promptPayPattern = /^[0-9]{10}$|^[0-9]{13}$/;
 const clubName = club => club === '88' ? '88' : 'Sena';
 const money = cents => (cents / 100).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const clean = value => typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
@@ -36,9 +37,13 @@ async function readBill(db, id) {
  const row = await db.prepare('SELECT * FROM bills WHERE id=?').bind(id).first();
  return row ? { ...row, ...JSON.parse(row.payload) } : null;
 }
+async function promptPaySettings(db) {
+ await db.prepare('CREATE TABLE IF NOT EXISTS billing_settings (id INTEGER PRIMARY KEY CHECK(id=1), promptpay TEXT NOT NULL)').run();
+ return await db.prepare('SELECT promptpay FROM billing_settings WHERE id=1').first();
+}
 async function updateBill(db, bill, payload) {
  const result = await db.prepare('UPDATE bills SET payload=?, revision=revision+1, closed_at=? WHERE id=? AND revision=?')
-  .bind(JSON.stringify(payload), payload.payers.every(p => p.status === 'paid') ? Date.now() : null, bill.id, bill.revision).run();
+  .bind(JSON.stringify(payload), payload.payers.every(p => p.status === 'paid') ? bill.closed_at ?? Date.now() : null, bill.id, bill.revision).run();
  return Boolean(result.meta.changes);
 }
 const paidCount = bill => bill.payers.filter(p => p.status === 'paid').length;
@@ -46,7 +51,7 @@ const outstanding = bill => bill.payers.reduce((total, p) => total + (p.status =
 function summary(bill) {
  return {
   id: bill.id, club: bill.club, date: bill.session_date, total: bill.total,
-  count: bill.payers.length, paid: paidCount(bill), outstanding: outstanding(bill)
+  count: bill.payers.length, paid: paidCount(bill), outstanding: outstanding(bill), cancelled: Boolean(bill.cancelled)
  };
 }
 function paymentView(p, privateView, admin, slipsRemoved) {
@@ -60,8 +65,8 @@ function paymentView(p, privateView, admin, slipsRemoved) {
 function billView(bill, admin, payer) {
  return {
   ...summary(bill), court: bill.court, shuttle: bill.shuttle, people: bill.people,
-  ...(admin || payer ? { transfer: bill.transfer } : {}),
-  ...(admin ? { revision: bill.revision, editable: !bill.payers.some(p => p.submittedAt) } : {}),
+  ...(admin || !bill.cancelled && (payer || promptPayPattern.test(bill.transfer)) ? { transfer: bill.transfer } : {}),
+  ...(admin ? { revision: bill.revision, editable: !bill.cancelled && !bill.payers.some(p => p.submittedAt) } : {}),
   payers: (payer ? [payer] : bill.payers).map(p => paymentView(p, admin || Boolean(payer), admin, bill.slips_removed))
  };
 }
@@ -74,7 +79,7 @@ function readDraft(input) {
  const { date, court, shuttle, attendees } = input;
  const transfer = typeof input.transfer === 'string' ? input.transfer.trim() : '';
  if (!validDate(date) || ![court, shuttle].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 100000000) ||
-     court + shuttle < 1 || !transfer || transfer.length > 500 ||
+     court + shuttle < 1 || !promptPayPattern.test(transfer) ||
      !Array.isArray(attendees) || !attendees.length || attendees.length > 200 || court + shuttle < attendees.length) return null;
  const people = [];
  const keys = new Set();
@@ -171,12 +176,26 @@ export async function billingRoute(req, env, admin, club) {
  if (!id) {
   if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
   if (req.method === 'GET') {
-   if (action === 'sessions') return json({ sessions: await recentSessions(db, club), storageReady: Boolean(env.SLIPS_DB) });
-   const rows = await db.prepare('SELECT * FROM bills ORDER BY closed_at IS NOT NULL, session_date DESC LIMIT 200').all();
-   return json({ bills: rows.results.map(r => summary({ ...r, ...JSON.parse(r.payload) })), storageReady: Boolean(env.SLIPS_DB) });
+   const setting = await promptPaySettings(db);
+   const promptpay = setting?.promptpay || env.BILL_PROMPTPAY || '';
+   if (action === 'sessions') {
+    const date = url.searchParams.get('date');
+    const existing = validDate(date) ? await db.prepare('SELECT id FROM bills WHERE club=? AND session_date=?').bind(club, date).first() : null;
+    if (existing) return json({ existing: existing.id });
+    return json({ sessions: await recentSessions(db, club), storageReady: Boolean(env.SLIPS_DB),
+     promptpay });
+   }
+   const rows = await db.prepare("SELECT * FROM bills ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200").all();
+   return json({ bills: rows.results.map(r => summary({ ...r, ...JSON.parse(r.payload) })), storageReady: Boolean(env.SLIPS_DB), promptpay });
   }
   if (req.method !== 'POST') return fail('Method not allowed', 405);
   const input = await readLimitedJson(req);
+  if (action === 'promptpay') {
+   if (!promptPayPattern.test(input?.promptpay || '')) return fail('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก');
+   await promptPaySettings(db);
+   await db.prepare('INSERT INTO billing_settings (id,promptpay) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET promptpay=excluded.promptpay').bind(input.promptpay).run();
+   return json({ ok: true });
+  }
   const draft = input && readDraft(input);
   if (!draft) return fail('กรุณาตรวจวันที่ ค่าใช้จ่าย บัญชีรับเงิน และรายชื่อผู้ตี');
   if (!env.SLIPS_DB) return fail('ยังไม่พร้อมรับสลิป กรุณาติดต่อผู้จัดระบบ', 503);
@@ -191,7 +210,7 @@ export async function billingRoute(req, env, admin, club) {
  const payer = tokenPattern.test(supplied) ? bill.payers.find(p => p.token === supplied) : null;
  if (supplied && !payer) return fail('ลิงก์ชำระเงินไม่ถูกต้อง', 403);
  if (req.method === 'GET') {
-  if (action !== 'slip') return json(billView(bill, admin && !payer, payer));
+  if (action !== 'slip') return json(bill.cancelled && !admin ? { cancelled: true } : billView(bill, admin && !payer, payer));
   const target = payer || (admin ? bill.payers.find(p => p.id === url.searchParams.get('payer')) : null);
   if (!target) return fail('ไม่มีสิทธิ์ดูสลิป', 403);
   if (bill.slips_removed || !target.slipKey || !env.SLIPS_DB) return fail('ไม่พบสลิป', 404);
@@ -204,23 +223,26 @@ export async function billingRoute(req, env, admin, club) {
   } });
  }
  if (req.method !== 'POST') return fail('Method not allowed', 405);
- const payload = { court: bill.court, shuttle: bill.shuttle, total: bill.total, transfer: bill.transfer, people: bill.people, payers: bill.payers };
+ const payload = JSON.parse(bill.payload);
  if (action === 'upload') {
-  if (!payer) return fail('กรุณาเปิดลิงก์ชำระเงินของตัวเอง', 403);
+  if (bill.cancelled) return fail('บิลนี้ถูกยกเลิกแล้ว', 409);
+  const target = payload.payers.find(p => p.id === (payer?.id || url.searchParams.get('payer')));
+  if (!target || (!payer && !promptPayPattern.test(bill.transfer))) return fail('กรุณาเลือกชื่อผู้จ่ายจากหน้าบิล', 403);
+  if (!payer && url.searchParams.get('amount') !== String(target.amount)) return fail('ยอดเปลี่ยนแล้ว กรุณาโหลดบิลใหม่', 409);
   const slips = env.SLIPS_DB;
   if (!slips) return fail('ระบบรับสลิปยังไม่พร้อม', 503);
-  if (!['unpaid', 'rejected'].includes(payer.status)) return fail('รายการนี้ส่งสลิปแล้ว', 409);
+  if (!['unpaid', 'rejected'].includes(target.status)) return fail('รายการนี้ส่งสลิปแล้ว', 409);
   const bytes = await readLimited(req, maxSlipBytes);
   const type = bytes && imageType(bytes);
   if (!type) return fail('ใช้รูป JPG, PNG หรือ WebP ขนาดไม่เกิน 1 MB');
-  const key = id + '/' + payer.id + '/' + randomId();
+  const key = id + '/' + target.id + '/' + randomId();
   await prepareSlips(slips);
   const stored = await slips.prepare(`INSERT INTO bill_slips (key, bill_id, content_type, bytes, body)
    SELECT ?, ?, ?, ?, ? WHERE (SELECT COALESCE(SUM(bytes), 0) FROM bill_slips) + ? <= ?`)
    .bind(key, id, type, bytes.length, bytes.buffer, bytes.length, maxStoredSlipBytes).run();
   if (!stored.meta.changes) return fail('พื้นที่เก็บสลิปเต็ม กรุณาแจ้งผู้จัด', 507);
-  const oldKey = payer.slipKey;
-  Object.assign(payer, { status: 'review', slipKey: key, note: '', submittedAt: Date.now() });
+  const oldKey = target.slipKey, now = Date.now();
+  Object.assign(target, { status: 'paid', slipKey: key, note: '', submittedAt: now, paidAt: now });
   // A storage/DB error can be ambiguous. Only remove the new object after a
   // definite conflict, so a successfully attached receipt is never erased.
   if (!await updateBill(db, bill, payload)) {
@@ -232,15 +254,27 @@ export async function billingRoute(req, env, admin, club) {
  }
  if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
  const input = await readLimitedJson(req);
+ if (action === 'cancel' || action === 'restore') {
+  if (input?.revision !== bill.revision) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  payload.cancelled = action === 'cancel';
+  return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+ }
+ if (bill.cancelled) return fail('กรุณาเปิดบิลอีกครั้งก่อนแก้ไข', 409);
  if (action === 'edit') {
-  if (bill.payers.some(p => p.submittedAt)) return fail('มีผู้ส่งสลิปแล้ว จึงแก้ยอดหรือรายชื่อไม่ได้', 409);
+  if (bill.payers.some(p => p.submittedAt)) {
+   if (input?.revision !== bill.revision || !promptPayPattern.test(input?.transfer || '')) return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
+   if ('court' in input || 'shuttle' in input || 'attendees' in input) return fail('มีผู้ส่งสลิปแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
+   payload.transfer = input.transfer;
+   return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  }
   const draft = input && readDraft({ ...input, date: bill.session_date });
   if (!draft || input.revision !== bill.revision) return fail('ข้อมูลบิลไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   return await updateBill(db, bill, splitBill(draft, bill.payers)) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
  }
  if (action === 'review') {
-  const target = bill.payers.find(p => p.id === input?.payer);
-  if (!target || target.status !== 'review' || !target.slipKey || target.slipKey.split('/').at(-1) !== input.receiptId)
+  const target = payload.payers.find(p => p.id === input?.payer);
+  if (!target || (target.status !== 'review' && !(target.status === 'paid' && input.status === 'rejected')) ||
+   bill.slips_removed || !target.slipKey || target.slipKey.split('/').at(-1) !== input.receiptId)
    return fail('สลิปนี้เปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   if (!['paid', 'rejected'].includes(input.status)) return fail('สถานะไม่ถูกต้อง');
   const note = clean(input.note);
@@ -256,7 +290,7 @@ export async function billingRoute(req, env, admin, club) {
 export async function billingLineText(env, scope, origin) {
  if (!env.DB) return 'ระบบบิลยังไม่พร้อม';
  await prepare(env.DB);
- const query = 'SELECT * FROM bills WHERE closed_at IS NULL';
+ const query = "SELECT * FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload, '$.cancelled'), 0)=0";
  const clubs = scope === 'all' ? ['sena', '88'] : [scope];
  const limit = scope === 'all' ? 3 : 5;
  const groups = await Promise.all(clubs.map(club =>
@@ -284,12 +318,17 @@ export async function billingLineText(env, scope, origin) {
 export async function prunePaidSlips(env) {
  if (!env.DB || !env.SLIPS_DB) return;
  await prepare(env.DB);
- const { results } = await env.DB.prepare('SELECT id, revision FROM bills WHERE closed_at<=? AND slips_removed=0 ORDER BY closed_at LIMIT 10')
+ const { results } = await env.DB.prepare('SELECT id, revision, slips_removed FROM bills WHERE closed_at<=? AND slips_removed<>1 ORDER BY closed_at LIMIT 10')
   .bind(Date.now() - 30 * day).all();
  if (!results.length) return;
  await prepareSlips(env.SLIPS_DB);
- for (const { id, revision } of results) {
+ for (const { id, revision, slips_removed } of results) {
+  if (!slips_removed) {
+   const claim = await env.DB.prepare('UPDATE bills SET slips_removed=2, revision=revision+1 WHERE id=? AND revision=? AND slips_removed=0')
+    .bind(id, revision).run();
+   if (!claim.meta.changes) continue;
+  }
   await env.SLIPS_DB.prepare('DELETE FROM bill_slips WHERE bill_id=?').bind(id).run();
-  await env.DB.prepare('UPDATE bills SET slips_removed=1 WHERE id=? AND revision=?').bind(id, revision).run();
+  await env.DB.prepare('UPDATE bills SET slips_removed=1 WHERE id=? AND slips_removed=2').bind(id).run();
  }
 }
