@@ -86,7 +86,7 @@
  <div id="bookingInlineDetails"><div id="bookingDetailPanels"><section class="panel booking-detail"><div class="sectionhead"><h2>คิวลงคอร์ต</h2><span id="bookingDetailBadge" class="booking-chip"></span></div><div id="bookingDetail"></div></section><section class="panel booking-matches"><div class="sectionhead"><h2>⚡ ตารางพร้อมลุย</h2><span class="booking-chip">จัดคู่อัตโนมัติ</span></div><div id="bookingSchedule"></div></section></div></div></div>
  <dialog id="bookingDetailsDialog" class="booking-details-dialog" aria-labelledby="bookingDetailsTitle" aria-describedby="bookingDetailsMeta">
  <header class="booking-details-header">
- <div><h2 id="bookingDetailsTitle">รายชื่อ / ตาราง</h2><p id="bookingDetailsMeta"></p></div>
+ <div><h2 id="bookingDetailsTitle">ดูรายชื่อ / ถอนตัว</h2><p id="bookingDetailsMeta"></p></div>
  <form method="dialog"><button id="bookingDetailsClose" type="submit" aria-label="ปิด" autofocus><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
  </header>
  <p id="bookingDetailsStatus" role="status"></p><div id="bookingDetailsContent"></div></dialog>
@@ -134,7 +134,7 @@
      <input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id)?'checked':''} ${closed?'disabled':''} aria-label="เลือก ${displayDate(s.date)}${s.isCup?' · '+html(cupName):''}">
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.</small></span>
     </label>
-    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist?`<strong class="booking-waitlist-label">${waitlist}</strong>`: ''}${personal?`<small>${personal}</small>`: ''}</div><button type="button" class="textbtn" ${mobileDetails.matches&&supportsDetailsPopup?'aria-haspopup="dialog"':''} data-book-focus="${html(s.id)}">ดูรายชื่อ / ตาราง</button></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist?`<strong class="booking-waitlist-label">${waitlist}</strong>`: ''}${personal?`<small>${personal}</small>`: ''}</div><button type="button" class="booking-roster-action" ${mobileDetails.matches&&supportsDetailsPopup?'aria-haspopup="dialog"':''} data-book-focus="${html(s.id)}">ดูรายชื่อ / ถอนตัว</button></div>
     ${s.holiday?`<p class="booking-holiday">☀ ${html(s.holiday)}</p>`:''}
     ${!data.holidayYears.includes(Number(s.date.slice(0,4)))?'<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>':''}
    </article>`;
