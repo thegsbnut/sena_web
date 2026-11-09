@@ -1,3 +1,5 @@
+import qrcode from 'qrcode-generator';
+
 const day = 86400000;
 const maxSlipBytes = 1024 * 1024;
 const maxStoredSlipBytes = 250 * 1000 * 1000;
@@ -20,6 +22,21 @@ const billDate = bill => bill.session_date.slice(0, 10);
 const displayDate = date => new Intl.DateTimeFormat('th-TH', {
  dateStyle: 'medium', timeZone: 'Asia/Bangkok'
 }).format(new Date(date + 'T12:00:00+07:00'));
+
+export function promptPayPayload(number, amount) {
+ if (!/^(?:0[0-9]{9}|[0-9]{13})$/.test(number) || !Number.isSafeInteger(amount) || amount <= 0) return null;
+ const field = (id, value) => id + String(value.length).padStart(2, '0') + value;
+ const account = field('00', 'A000000677010111') +
+  (number.length === 10 ? field('01', '0066' + number.slice(1)) : field('02', number));
+ const payload = field('00', '01') + field('01', '12') + field('29', account) +
+  field('53', '764') + field('54', (amount / 100).toFixed(2)) + field('58', 'TH') + '6304';
+ let crc = 0xffff;
+ for (const c of payload) {
+  crc ^= c.charCodeAt(0) << 8;
+  for (let bit = 0; bit < 8; bit++) crc = ((crc << 1) ^ (crc & 0x8000 ? 0x1021 : 0)) & 0xffff;
+ }
+ return payload + crc.toString(16).padStart(4, '0').toUpperCase();
+}
 
 async function prepare(db) {
  await db.prepare(`CREATE TABLE IF NOT EXISTS bills (
@@ -220,6 +237,20 @@ export async function billingRoute(req, env, admin, club) {
  const payer = tokenPattern.test(supplied) ? bill.payers.find(p => p.token === supplied) : null;
  if (supplied && !payer) return fail('ลิงก์ชำระเงินไม่ถูกต้อง', 403);
  if (req.method === 'GET') {
+  if (action === 'qr') {
+   const target = bill.payers.find(p => p.id === url.searchParams.get('payer'));
+   if (!target || (payer && payer.id !== target.id)) return fail('ไม่พบชื่อผู้จ่าย', 404);
+   if (bill.cancelled || !['unpaid', 'rejected'].includes(target.status)) return fail('รายการนี้ไม่เปิดให้ชำระแล้ว', 409);
+   if (url.searchParams.get('amount') !== String(target.amount)) return fail('ยอดเปลี่ยนแล้ว กรุณาอัปเดตบิล', 409);
+   const payload = promptPayPayload(bill.transfer, target.amount);
+   if (!payload) return fail('สร้าง QR ไม่ได้ กรุณาตรวจเลขพร้อมเพย์กับผู้จัด');
+   const qr = qrcode(0, 'M');
+   qr.addData(payload);
+   qr.make();
+   return new Response(qr.createSvgTag(8, 32), { headers: {
+    'Content-Type': 'image/svg+xml', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'
+   } });
+  }
   if (action !== 'slip') return json(bill.cancelled && !admin ? { cancelled: true } : billView(bill, admin && !payer, payer));
   const target = payer || (admin ? bill.payers.find(p => p.id === url.searchParams.get('payer')) : null);
   if (!target) return fail('ไม่มีสิทธิ์ดูสลิป', 403);

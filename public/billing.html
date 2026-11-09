@@ -7,7 +7,7 @@
  <meta name="theme-color" content="#173f35">
  <title>บิลค่าใช้จ่าย · SENA COURT</title>
  <link rel="stylesheet" href="/billing.css">
- <script defer src="/billing.js?v=20261109-extra-bill"></script>
+ <script defer src="/billing.js?v=20261109-qr"></script>
 </head>
 <body>
  <header><a id="back" href="/court#booking">← SENA COURT</a><span>ค่าใช้จ่ายก๊วน</span></header>
@@ -16,5 +16,12 @@
   <div id="billing"></div>
  </main>
  <dialog id="receipt"><form method="dialog"><button>ปิดสลิป</button></form><img alt="สลิปโอนเงิน"></dialog>
+ <dialog id="paymentQr" aria-labelledby="paymentQrTitle">
+  <h2 id="paymentQrTitle">จ่ายด้วย QR พร้อมเพย์</h2>
+  <p id="paymentQrAmount"></p>
+  <img alt="QR พร้อมเพย์สำหรับยอดของผู้จ่าย">
+  <p class="muted">ถ้าใช้เครื่องเดียว ให้บันทึกรูปแล้วเลือกจากแกลเลอรีในเมนูสแกนของแอปธนาคาร ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p>
+  <form method="dialog" class="actions"><a class="button" download="promptpay.png">บันทึกรูป QR</a><button>ปิด</button></form>
+ </dialog>
 </body>
 </html>

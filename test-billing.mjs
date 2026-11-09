@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
-import { billingLineText, prunePaidSlips } from './billing.js';
+import { billingLineText, promptPayPayload, prunePaidSlips } from './billing.js';
 
 const origin = 'https://sena.example';
 function fixture(t) {
@@ -42,6 +42,29 @@ const draft = {
  ]
 };
 const slip = Uint8Array.of(255,216,255,224,0,0,0,0,0,0,255,217);
+
+test('PromptPay encodes the receiver and amount with the expected checksum', () => {
+ assert.equal(promptPayPayload('0123456789', 12700),
+  '00020101021229370016A0000006770101110113006612345678953037645406127.005802TH6304E848');
+ assert.equal(promptPayPayload('1111111111111', 1250),
+  '00020101021229370016A000000677010111021311111111111115303764540512.505802TH6304E70D');
+ assert.equal(promptPayPayload('0123456789', 0), null);
+});
+
+test('bill QR serves only the selected outstanding share and refuses a stale amount', async t => {
+ const f = fixture(t), cookie = await f.login();
+ const { id } = await (await f.request('/api/billing', { method: 'POST', payload: draft, cookie })).json();
+ const path = '/api/billing?bill=' + id;
+ const { payers: [nut, bua] } = await (await f.request(path, { cookie })).json();
+ const qr = path + '&action=qr&payer=' + nut.id;
+ const result = await f.request(qr + '&amount=' + nut.amount);
+ assert.equal(result.headers.get('Content-Type'), 'image/svg+xml');
+ assert.match(await result.text(), /<svg/);
+ assert.equal((await f.request(qr + '&amount=' + bua.amount)).status, 409);
+ assert.equal((await f.request(qr + '&amount=' + nut.amount, { token: bua.token })).status, 404);
+ await f.request(path + '&action=cash', { method: 'POST', cookie, payload: { payer: nut.id, revision: 0, received: true } });
+ assert.equal((await f.request(qr + '&amount=' + nut.amount)).status, 409);
+});
 
 test('billing rounds each payer total up to baht, groups guests, and follows older dates in Badbot', async t => {
  const f = fixture(t), cookie = await f.login();

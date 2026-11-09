@@ -7,6 +7,9 @@
  const root = document.querySelector('#billing');
  const status = document.querySelector('#status');
  const receipt = document.querySelector('#receipt');
+ const paymentQr = document.querySelector('#paymentQr');
+ const qrImage = paymentQr.querySelector('img');
+ const qrDownload = paymentQr.querySelector('a');
  const clubName = value => value === '88' ? '88' : 'Sena';
  const money = cents => (cents / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
  const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -22,6 +25,10 @@
   if (slipUrl) URL.revokeObjectURL(slipUrl);
   slipUrl = undefined;
   receipt.querySelector('img').removeAttribute('src');
+ });
+ paymentQr.addEventListener('close', () => {
+  qrImage.removeAttribute('src');
+  qrDownload.removeAttribute('href');
  });
 
  function endpoint(action, payer) {
@@ -43,7 +50,7 @@
    const error = await response.json().catch(() => ({}));
    throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
   }
-  return action === 'slip' ? response.blob() : response.json();
+  return ['slip', 'qr'].includes(action) ? response.blob() : response.json();
  }
  function post(action, data) {
   return request(action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -113,7 +120,8 @@
       ${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
-       ${!bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
+       ${!bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
+       ${!bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.method !== 'cash' && ['review', 'paid'].includes(p.status) ? `<button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
        ${organizer && !bill.cancelled && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="cash" data-payer="${p.id}">รับเงินสด</button>` : ''}
@@ -362,6 +370,25 @@
    return renderAttendees();
   }
   if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
+  if (action === 'qr' && payer) return run(async () => {
+   const blob = await request('qr', {}, payer.id, payer.amount);
+   const url = URL.createObjectURL(blob);
+   try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    qrImage.src = qrDownload.href = canvas.toDataURL('image/png');
+    paymentQr.querySelector('#paymentQrAmount').textContent = payer.name + ' · ' + money(payer.amount) + ' บาท';
+    paymentQr.showModal();
+    message('');
+   } finally {
+    URL.revokeObjectURL(url);
+   }
+  });
   if ((action === 'cash' || action === 'undo-cash') && payer) {
    const received = action === 'cash';
    if (!confirm(received ? 'ยืนยันว่าได้รับเงินสดจาก '+payer.name+' '+money(payer.amount)+' บาทแล้ว?' : 'ยกเลิกรายการรับเงินสดของ '+payer.name+'?')) return;
