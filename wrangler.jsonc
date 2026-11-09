@@ -5,7 +5,9 @@
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/admin", "/"] },
   "keep_vars": true,
   "triggers": {"crons": ["0 18 * * *"]},
-  "r2_buckets": [{"binding":"BILL_SLIPS"}],
-  "d1_databases": [{"binding":"DB","database_name":"sena-db","database_id":"0e9a8106-d9e8-4d61-bfcb-1668f1374b1b"}]
+  "d1_databases": [
+    {"binding":"DB","database_name":"sena-db","database_id":"0e9a8106-d9e8-4d61-bfcb-1668f1374b1b"},
+    {"binding":"SLIPS_DB","database_name":"sena-bill-slips"}
+  ]
 }
 

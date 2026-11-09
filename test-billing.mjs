@@ -7,23 +7,20 @@ import { billingLineText, prunePaidSlips } from './billing.js';
 const origin = 'https://sena.example';
 function fixture(t) {
  const db = new DatabaseSync(':memory:');
- t.after(() => db.close());
+ const slips = new DatabaseSync(':memory:');
+ t.after(() => { db.close(); slips.close(); });
  db.exec('CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)');
- const files = new Map();
- const env = { ADMIN_KEY: 'test-key', DB: { prepare(sql) {
-  const stmt = db.prepare(sql);
+ const binding = database => ({ prepare(sql) {
+  const stmt = database.prepare(sql);
   let args = [];
   return {
-   bind(...values) { args = values; return this; },
+   bind(...values) { args = values.map(value => value instanceof ArrayBuffer ? new Uint8Array(value) : value); return this; },
    first() { return stmt.get(...args); },
    all() { return { results: stmt.all(...args) }; },
-   run() { return { meta: { changes: stmt.run(...args).changes } }; }
+   async run() { return { meta: { changes: stmt.run(...args).changes } }; }
   };
- } }, BILL_SLIPS: {
-  async put(key, body, options) { files.set(key, { body, httpMetadata: options.httpMetadata }); },
-  async get(key) { return files.get(key); },
-  async delete(keys) { for (const key of [keys].flat()) files.delete(key); }
- } };
+ } });
+ const env = { ADMIN_KEY: 'test-key', DB: binding(db), SLIPS_DB: binding(slips) };
  const request = (path, { cookie = '', token, method = 'GET', payload, body, originHeader = origin } = {}) =>
   worker.fetch(new Request(origin + path, {
    method, headers: { Origin: originHeader, Cookie: cookie, ...(token ? { 'X-Bill-Token': token } : {}) },
@@ -34,7 +31,7 @@ function fixture(t) {
   assert.equal(response.status, 200);
   return response.headers.get('Set-Cookie').split(';')[0];
  }
- return { db, env, files, request, login };
+ return { db, env, slips, request, login };
 }
 const draft = {
  date: '2026-10-01', court: 80000, shuttle: 40001, transfer: 'บัญชีทดสอบ',
@@ -85,26 +82,37 @@ test('private slips require payer or admin, approval requires an uploaded slip, 
  const privatePath = path + '&action=slip&payer=' + nut.id;
  assert.equal((await f.request(privatePath)).status, 403);
  assert.equal((await f.request(privatePath, { token: bua.token })).status, 404);
- assert.equal((await f.request(privatePath, { token: nut.token })).headers.get('Content-Type'), 'image/jpeg');
+ const privateSlip = await f.request(privatePath, { token: nut.token });
+ assert.equal(privateSlip.headers.get('Content-Type'), 'image/jpeg');
+ assert.deepEqual(new Uint8Array(await privateSlip.arrayBuffer()), slip);
  assert.equal((await f.request(privatePath, { cookie })).status, 200);
  assert.equal((await f.request(path + '&action=edit', { method: 'POST', payload: draft, cookie })).status, 409);
  assert.equal((await review(nut, 'rejected', 'ยอดไม่ตรง')).status, 200);
  const previous = nut;
  assert.equal((await upload(nut)).status, 200);
  [nut] = await read();
- assert.equal(f.files.size, 1);
+ const countSlips = () => f.slips.prepare('SELECT COUNT(*) AS count FROM bill_slips').get().count;
+ assert.equal(countSlips(), 1);
  assert.equal((await review(previous, 'paid')).status, 409);
  assert.equal((await review(nut, 'paid')).status, 200);
  assert.doesNotMatch(await billingLineText(f.env, 'all', origin), /Nut/);
  await prunePaidSlips(f.env);
- assert.equal(f.files.size, 1);
+ assert.equal(countSlips(), 1);
+ const fill = f.slips.prepare('INSERT INTO bill_slips VALUES (?, ?, ?, ?, ?)');
+ fill.run('full', 'another-bill', 'image/jpeg', 250_000_000, slip);
+ assert.equal((await upload(bua)).status, 507);
+ assert.equal((await read())[1].status, 'unpaid');
+ f.slips.prepare("DELETE FROM bill_slips WHERE key='full'").run();
  assert.equal((await upload(bua)).status, 200);
  [, bua] = await read();
  assert.equal((await review(bua, 'paid')).status, 200);
  assert.match(await billingLineText(f.env, 'all', origin), /ไม่มีบิลค้าง/);
- f.db.prepare('UPDATE bills SET closed_at=? WHERE id=?').run(Date.now() - 91*86400000, id);
+ f.db.prepare('UPDATE bills SET closed_at=? WHERE id=?').run(Date.now() - 29*86400000, id);
  await prunePaidSlips(f.env);
- assert.equal(f.files.size, 0);
+ assert.equal(countSlips(), 2);
+ f.db.prepare('UPDATE bills SET closed_at=? WHERE id=?').run(Date.now() - 31*86400000, id);
+ await prunePaidSlips(f.env);
+ assert.equal(countSlips(), 0);
  assert.equal((await read())[0].status, 'paid');
  assert.equal((await f.request(privatePath, { cookie })).status, 404);
 });
