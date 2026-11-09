@@ -1,3 +1,4 @@
+import {billingRoute,prunePaidSlips} from './billing.js';
 import {lineAdmin,lineWebhook} from './line.js';
 import {bookingRoute,scheduledBookings} from './booking.js';
 import {backupsRoute,prepareBackups} from './backups.js';
@@ -35,7 +36,7 @@ export function guestState(state) {
 function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
-export default {async scheduled(event,env,ctx){if(event.cron==='0 18 * * *')ctx.waitUntil(scheduledBookings(env));},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+export default {async scheduled(event,env,ctx){if(event.cron==='0 18 * * *'){ctx.waitUntil(scheduledBookings(env));ctx.waitUntil(prunePaidSlips(env));}},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
 const club=url.searchParams.get('club')||'sena';
 if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วนที่เลือก'},400);
 const stateTable=club==='88'?'club_state_88':'club_state';
@@ -45,6 +46,7 @@ if(path==='/api/line/webhook')return await lineWebhook(req,env);
 if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({error:'Origin ไม่ถูกต้อง'},403);
 if(path==='/api/session')return req.method==='GET'?json({canEdit:await authorized(req,env)}):json({error:'Method not allowed'},405);
 if(path==='/api/line')return await lineAdmin(req,env,await authorized(req,env),club);
+if(path==='/api/billing')return await billingRoute(req,env,await authorized(req,env),club);
 if(path==='/api/booking')return await bookingRoute(req,env,await authorized(req,env),club);
 if(path==='/api/backups')return await backupsRoute(req,env,await authorized(req,env),club,valid);
 if(path==='/api/leaderboard'){const admin=await authorized(req,env);if(admin&&env.DB&&req.method==='POST')await prepareBackups(env.DB,club);return await leaderboardRoute(req,env,admin,club);}

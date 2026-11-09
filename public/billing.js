@@ -1,0 +1,344 @@
+(() => {
+ const params = new URLSearchParams(location.search);
+ const club = params.get('club') === '88' ? '88' : 'sena';
+ let id = params.get('bill');
+ const manage = params.get('manage') === '1';
+ const payerToken = new URLSearchParams(location.hash.slice(1)).get('pay');
+ const root = document.querySelector('#billing');
+ const status = document.querySelector('#status');
+ const receipt = document.querySelector('#receipt');
+ const clubName = value => value === '88' ? '88' : 'Sena';
+ const money = cents => (cents / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+ })[c]);
+ const dateLabel = value => new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(new Date(value + 'T12:00:00+07:00'));
+ const states = { unpaid: 'ยังไม่จ่าย', review: 'รอตรวจสลิป', rejected: 'ส่งสลิปใหม่', paid: 'จ่ายแล้ว' };
+ const order = { unpaid: 0, rejected: 1, review: 2, paid: 3 };
+ let busy = false, slipUrl, bill, adminList, sessions = [], attendees = [], editing = false;
+ document.querySelector('#back').href = '/court' + (club === '88' ? '?club=88' : '') + '#booking';
+ receipt.addEventListener('close', () => {
+  if (slipUrl) URL.revokeObjectURL(slipUrl);
+  slipUrl = undefined;
+  receipt.querySelector('img').removeAttribute('src');
+ });
+
+ function endpoint(action, payer) {
+  const url = new URL('/api/billing', location.origin);
+  url.searchParams.set('club', club);
+  if (id) url.searchParams.set('bill', id);
+  if (action) url.searchParams.set('action', action);
+  if (payer) url.searchParams.set('payer', payer);
+  return url;
+ }
+ async function request(action, options = {}, payer) {
+  const headers = new Headers(options.headers);
+  if (payerToken) headers.set('X-Bill-Token', payerToken);
+  const response = await fetch(endpoint(action, payer), { ...options, headers, cache: 'no-store' });
+  if (!response.ok) {
+   const error = await response.json().catch(() => ({}));
+   throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
+  }
+  return action === 'slip' ? response.blob() : response.json();
+ }
+ function post(action, data) {
+  return request(action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+ }
+ function message(text, error = false) {
+  status.textContent = text;
+  status.classList.toggle('error', error);
+ }
+ async function run(operation) {
+  if (busy) return;
+  busy = true;
+  root.setAttribute('aria-busy', 'true');
+  message('กำลังดำเนินการ…');
+  try { await operation(); }
+  catch (error) { message(error.message, true); }
+  finally { busy = false; root.removeAttribute('aria-busy'); }
+ }
+ function linkToBill(billId, admin = false) {
+  const url = new URL('/billing.html', location.origin);
+  url.searchParams.set('bill', billId);
+  if (admin) {
+   url.searchParams.set('manage', '1');
+   url.searchParams.set('club', club);
+  }
+  return url;
+ }
+ async function copy(value) {
+  try { await navigator.clipboard.writeText(value); }
+  catch {
+   const box = document.createElement('textarea');
+   box.value = value;
+   box.setAttribute('aria-label', 'ข้อความพร้อมคัดลอก');
+   box.readOnly = true;
+   root.prepend(box);
+   box.select();
+   if (document.execCommand('copy')) box.remove();
+   else { message('กดค้างในช่องข้อความเพื่อคัดลอก'); return; }
+  }
+  message('คัดลอกแล้ว');
+ }
+ function showBill() {
+  const rows = [...bill.payers].sort((a, b) => order[a.status] - order[b.status]);
+  const organizer = manage && Number.isInteger(bill.revision);
+  const who = payerToken ? rows[0] : null;
+  root.innerHTML = `
+   <h1>ค่าใช้จ่าย · ${clubName(bill.club)}</h1>
+   <p class="muted">${dateLabel(bill.date)} · ผู้ตีจริง ${bill.people} คน</p>
+   <section class="summary">
+    <div class="card-title"><h2>รวม ${money(bill.total)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
+    <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
+   </section>
+   ${who || organizer ? `<section><h2>ช่องทางโอนเงิน</h2><div class="transfer">${escape(bill.transfer)}</div></section>` : ''}
+   <section>
+    <div class="card-title"><h2>${who ? 'ยอดของคุณ' : 'สถานะการชำระ'}</h2><button type="button" data-action="reload">อัปเดต</button></div>
+    ${rows.map(p => `
+     <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
+      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${states[p.status]}</div>
+      ${p.note ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
+      <div class="actions">
+       ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
+       ${organizer && p.status !== 'paid' ? `<button type="button" data-action="payer-link" data-payer="${p.id}">คัดลอกลิงก์จ่าย</button>` : ''}
+       ${organizer && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button><button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
+      </div></div>`).join('')}
+    ${who && ['unpaid', 'rejected'].includes(who.status) ? `<form id="upload"><label>แนบสลิปโอนเงิน<input type="file" name="slip" accept="image/*" required></label><button class="primary" type="submit">ส่งสลิปให้ผู้จัดตรวจ</button></form>` : ''}
+    ${!who && !organizer ? '<p class="muted">ขอลิงก์ชำระเงินส่วนตัวจากผู้จัดเพื่อดูบัญชีและแนบสลิป</p>' : ''}
+   </section>
+   ${organizer ? `<div class="actions"><button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button>${bill.editable ? '<button data-action="edit" type="button">แก้ไขบิล</button>' : ''}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
+  message('');
+ }
+ function fillAttendees(date) {
+  attendees = (sessions.find(s => s.date === date)?.attendees || []).map(row => ({ ...row }));
+  renderAttendees();
+ }
+ function renderAttendees() {
+  root.querySelector('#attendance').innerHTML = attendees.length ? attendees.map((p, i) =>
+   `<label class="attendee"><input type="checkbox" data-index="${i}" ${p.attended ? 'checked' : ''}><span>${escape(p.name)}${p.guest ? ` <small>แขกของ ${escape(p.payer)}</small>` : ''}</span></label>`
+  ).join('') : '<p class="muted">ยังไม่มีรายชื่อสำหรับวันนี้ เพิ่มผู้ตีจริงด้านล่างได้</p>';
+  preview();
+ }
+ function cents(value) {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
+  const [baht, fraction = ''] = value.split('.');
+  const total = Number(baht) * 100 + Number(fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(total) ? total : null;
+ }
+ function costDraft() {
+  const form = root.querySelector('#draft');
+  const f = new FormData(form);
+  const court = cents(f.get('court') || '0');
+  const shuttle = f.has('perShuttle') ? cents(f.get('shuttle') || '0') * Number(f.get('shuttleCount')) : cents(f.get('shuttle') || '0');
+  if (court === null || !Number.isSafeInteger(shuttle) || shuttle < 0 || (f.has('perShuttle') && cents(f.get('shuttle') || '0') === null)) return null;
+  return { date: f.get('date'), court, shuttle, transfer: f.get('transfer'), attendees: attendees.filter(p => p.attended).map(({ name, payer, payerKey }) => ({ name, payer, payerKey })) };
+ }
+ function preview() {
+  const draft = costDraft();
+  const out = root.querySelector('#preview');
+  if (!draft || !draft.attendees.length) { out.textContent = 'เลือกคนที่มาตีจริงเพื่อดูยอด'; return; }
+  const total = draft.court + draft.shuttle;
+  const each = Math.floor(total / draft.attendees.length), extra = total % draft.attendees.length;
+  const byPayer = new Map();
+  draft.attendees.forEach((p, i) => {
+   const row = byPayer.get(p.payerKey) || { name: p.payer, amount: 0, seats: 0 };
+   row.amount += each + Number(i < extra);
+   row.seats++;
+   byPayer.set(p.payerKey, row);
+  });
+  out.innerHTML = `<strong>รวม ${money(total)} บาท · ผู้ตี ${draft.attendees.length} คน</strong>
+   <p>คนละ ${money(each)}${extra ? '–' + money(each + 1) : ''} บาท</p>
+   ${[...byPayer.values()].map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · '+p.seats+' คน' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
+ }
+ function showDraft() {
+  const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+  const suppliedDate = params.get('date');
+  const date = editing ? bill.date : (/^\d{4}-\d{2}-\d{2}$/.test(suppliedDate || '') ? suppliedDate : sessions.find(s => s.date <= today)?.date || today);
+  root.innerHTML = `
+   <h1>จบและคิดเงิน · ${clubName(club)}</h1>
+   ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม เปิดบิลได้เมื่อเชื่อมพื้นที่เก็บสลิปแล้ว</p>' : ''}
+   <form id="draft">
+    <section>
+     <h2>1. เช็กคนที่มาตีจริง</h2>
+     ${editing ? '' : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${sessions.map(s => `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`).join('')}</select></label>`}
+     <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
+     <div id="attendance"></div>
+     <div class="grid"><label>เพิ่มผู้ตีจริง<input id="addName" maxlength="100" placeholder="ชื่อผู้ตี"></label><label>แขกของ (ถ้ามี)<input id="addHost" maxlength="100" placeholder="ชื่อสมาชิกผู้ชวน"></label></div>
+     <button type="button" data-action="add-attendee">+ เพิ่มชื่อ</button>
+    </section>
+    <section>
+     <h2>2. ใส่ค่าใช้จ่ายและบัญชีรับเงิน</h2>
+     <div class="grid"><label>ค่าคอร์ตรวม (บาท)<input name="court" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.court / 100 : 0}"></label>
+     <label id="shuttleLabel">ค่าลูกรวม (บาท)<input name="shuttle" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.shuttle / 100 : 0}"></label></div>
+     <label class="attendee"><input type="checkbox" name="perShuttle"> คิดจากจำนวนลูก × ราคาต่อลูก</label>
+     <label id="countLabel" hidden>จำนวนลูก<input name="shuttleCount" type="number" min="1" max="999" step="1" value="1"></label>
+     <label>บัญชีรับเงินหรือเลขพร้อมเพย์<textarea name="transfer" required maxlength="500" placeholder="ธนาคาร · เลขบัญชี · ชื่อบัญชี">${editing ? escape(bill.transfer) : ''}</textarea></label>
+    </section>
+    <section class="summary"><h2>3. ตรวจยอดก่อนเปิดบิล</h2><div id="preview"></div></section>
+    <div class="actions"><button class="primary" type="submit" ${!editing && !adminList.storageReady ? 'disabled' : ''}>${editing ? 'บันทึกการแก้ไข' : 'เปิดบิล'}</button>
+    <button type="button" data-action="cancel-draft">กลับ</button></div>
+   </form>`;
+  if (editing) {
+   attendees = bill.payers.flatMap(p => p.names.map(name => ({
+    name, payer: p.name, payerKey: p.payerKey, guest: name !== p.name, attended: true
+   })));
+   renderAttendees();
+  } else fillAttendees(date);
+  message('');
+ }
+ function showAdminList() {
+  const rows = adminList.bills;
+  root.innerHTML = `
+   <h1>บิลค่าใช้จ่าย</h1>
+   <div class="actions"><button type="button" class="primary" data-action="new">จบและคิดเงิน · ${clubName(club)}</button><button type="button" data-action="reload">อัปเดต</button>
+   <a class="button" href="/billing.html?manage=1&club=${club === '88' ? 'sena' : '88'}">เปิดบิลสนาม ${club === '88' ? 'Sena' : '88'}</a></div>
+   ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
+   ${[['บิลค้าง', rows.filter(b => b.outstanding)], ['ประวัติบิลที่จ่ายครบ', rows.filter(b => !b.outstanding)]].map(([title, list]) =>
+    `<section><h2>${title}</h2>${list.length ? list.map(b =>
+     `<div class="row"><div><strong>${clubName(b.club)} · ${dateLabel(b.date)}</strong><div>จ่ายแล้ว ${b.paid}/${b.count} · ${b.outstanding ? 'ค้าง ' + money(b.outstanding) : 'รวม ' + money(b.total)} บาท</div></div>
+     <a class="button" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}">เปิดบิล</a></div>`).join('') : '<p class="muted">ยังไม่มีรายการ</p>'}</section>`).join('')}`;
+  message('');
+ }
+ async function openDraft() {
+  const draft = await request('sessions');
+  sessions = draft.sessions;
+  adminList.storageReady = draft.storageReady;
+  showDraft();
+ }
+ async function load() {
+  if (id) { bill = await request(); showBill(); }
+  else {
+   adminList = await request();
+   showAdminList();
+  }
+ }
+ async function compress(file) {
+  if (!file || file.size > 20 * 1024 * 1024) throw Error('เลือกรูปสลิปขนาดไม่เกิน 20 MB');
+  const url = URL.createObjectURL(file);
+  try {
+   const image = new Image();
+   image.src = url;
+   await image.decode();
+   const canvas = document.createElement('canvas');
+   const ratio = Math.min(1, 1400 / Math.max(image.naturalWidth, image.naturalHeight));
+   canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+   canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+   const ctx = canvas.getContext('2d');
+   ctx.fillStyle = 'white';
+   ctx.fillRect(0, 0, canvas.width, canvas.height);
+   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+   for (const quality of [0.88, 0.78, 0.66]) {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (blob && (blob.size <= 320 * 1024 || quality === 0.66 && blob.size <= 1024 * 1024)) return blob;
+   }
+  } catch {
+   if (['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 1024 * 1024) return file;
+  } finally { URL.revokeObjectURL(url); }
+  throw Error('เปิดรูปสลิปไม่ได้หรือรูปใหญ่เกินไป ลองใช้ภาพหน้าจอ JPG หรือ PNG');
+ }
+ root.addEventListener('input', e => {
+  if (!e.target.closest('#draft')) return;
+  if (e.target.matches('[data-index]')) attendees[Number(e.target.dataset.index)].attended = e.target.checked;
+  if (e.target.name === 'perShuttle') {
+   root.querySelector('#countLabel').hidden = !e.target.checked;
+   root.querySelector('#shuttleLabel').firstChild.textContent = e.target.checked ? 'ราคาต่อลูก (บาท)' : 'ค่าลูกรวม (บาท)';
+  }
+  preview();
+ });
+ root.addEventListener('change', e => {
+  if (!e.target.closest('#draft') || editing) return;
+  if (e.target.id === 'source' && e.target.value) {
+   root.querySelector('[name=date]').value = e.target.value;
+   fillAttendees(e.target.value);
+  } else if (e.target.name === 'date') {
+   root.querySelector('#source').value = e.target.value;
+   fillAttendees(e.target.value);
+  }
+ });
+ root.addEventListener('submit', e => {
+  e.preventDefault();
+  if (e.target.id === 'upload') {
+   const file = new FormData(e.target).get('slip');
+   run(async () => {
+    const blob = await compress(file);
+    await request('upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+    await load();
+    message('ส่งสลิปแล้ว · รอผู้จัดตรวจ');
+   });
+  } else if (e.target.id === 'draft') {
+   const draft = costDraft();
+   if (!draft || !draft.attendees.length || draft.court + draft.shuttle < 1) { message('ตรวจค่าใช้จ่ายและเลือกผู้ตีจริงก่อน', true); return; }
+   run(async () => {
+    if (editing) {
+     await post('edit', { ...draft, revision: bill.revision });
+     editing = false;
+     await load();
+    } else {
+     const result = await post(null, draft);
+     id = result.id;
+     location.replace(linkToBill(id, true).href);
+    }
+   });
+  }
+ });
+ root.addEventListener('click', e => {
+  const target = e.target.closest('[data-action]');
+  if (!target || busy) return;
+  const action = target.dataset.action;
+  const payer = bill?.payers.find(p => p.id === target.dataset.payer);
+  if (action === 'new') return run(openDraft);
+  if (action === 'reload') return run(load);
+  if (action === 'edit') { editing = true; return showDraft(); }
+  if (action === 'cancel-draft') { editing = false; return bill ? showBill() : showAdminList(); }
+  if (action === 'add-attendee') {
+   const nameInput = root.querySelector('#addName'), hostInput = root.querySelector('#addHost');
+   const name = nameInput.value.trim(), host = hostInput.value.trim() || name;
+   if (!name) { nameInput.focus(); return; }
+   const normalize = value => value.normalize('NFC').toLowerCase();
+   const existing = attendees.find(p => normalize(p.payer) === normalize(host));
+   const payerKey = existing?.payerKey || 'name:' + normalize(host);
+   const same = attendees.find(p => normalize(p.name) === normalize(name) && p.payerKey === payerKey);
+   if (same) same.attended = true;
+   else attendees.push({ name, payer: existing?.payer || host, payerKey, attended: true, guest: Boolean(hostInput.value.trim()) });
+   nameInput.value = hostInput.value = '';
+   return renderAttendees();
+  }
+  if (action === 'payer-link' && payer) {
+   const url = linkToBill(id);
+   url.hash = new URLSearchParams({ pay: payer.token }).toString();
+   return run(() => copy(payer.name+' · '+clubName(bill.club)+' '+dateLabel(bill.date)+' · '+money(payer.amount)+' บาท\n'+url.href));
+  }
+  if (action === 'share') {
+   const lines = ['💸 '+clubName(bill.club)+' · '+dateLabel(bill.date),'ค้าง '+money(bill.outstanding)+' บาท'];
+   for (const p of bill.payers.filter(p => ['unpaid','rejected'].includes(p.status))) lines.push('• '+p.name+' '+money(p.amount)+' บาท · '+states[p.status]);
+   const reviewing = bill.payers.filter(p => p.status === 'review').length;
+   if (reviewing) lines.push('รอตรวจสลิป '+reviewing+' คน');
+   lines.push(linkToBill(id).href);
+   return run(() => copy(lines.join('\n')));
+  }
+  if (action === 'slip' && payer) return run(async () => {
+   const blob = await request('slip', {}, payer.id);
+   slipUrl = URL.createObjectURL(blob);
+   receipt.querySelector('img').src = slipUrl;
+   receipt.showModal();
+   message('');
+  });
+  if ((action === 'approve' || action === 'reject') && payer) {
+   const note = action === 'reject' ? prompt('เหตุผลที่ให้ส่งสลิปใหม่') : '';
+   if (note === null || (action === 'approve' && !confirm('ตรวจยอดและบัญชีรับเงินแล้ว ยืนยันว่า '+payer.name+' จ่าย '+money(payer.amount)+' บาท?'))) return;
+   run(async () => {
+    await post('review', { payer: payer.id, receiptId: payer.receiptId, status: action === 'approve' ? 'paid' : 'rejected', note });
+    await load();
+   });
+  }
+ });
+ run(async () => {
+  try {
+   await load();
+   if (!id && manage && (params.has('date') || params.has('new'))) await openDraft();
+  } catch (error) {
+   if (manage && !payerToken) root.innerHTML = '<h1>บิลค่าใช้จ่าย</h1><a class="button" href="/court#booking">เข้าสู่ระบบผู้จัดจากหน้าจอง</a>';
+   throw error;
+  }
+ });
+})();

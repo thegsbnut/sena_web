@@ -1,3 +1,4 @@
+import {billingLineText} from './billing.js';
 import {bookingRoute} from './booking.js';
 import {latestCup,leaderboardRoute} from './leaderboard.js';
 
@@ -22,6 +23,9 @@ const shortcuts=new Map([
  ['leaderboard',{kind:'leaderboard',scope:'all',description:'5 อันดับแรกของทั้งสองสนาม'}],
  ['leaderboard sena',{kind:'leaderboard',scope:'sena',description:'5 อันดับแรกของ Sena'}],
  ['leaderboard 88',{kind:'leaderboard',scope:'88',description:'5 อันดับแรกของ 88'}],
+ ['bill',{kind:'bill',scope:'all',description:'คนที่ยังไม่จ่ายทั้งสองสนาม'}],
+ ['bill 88',{kind:'bill',scope:'88',description:'คนที่ยังไม่จ่ายสนาม 88'}],
+ ['bill sena',{kind:'bill',scope:'sena',description:'คนที่ยังไม่จ่ายสนาม Sena'}],
  ['help',{kind:'help',description:'รายการคำสั่ง'}]
 ]);
 
@@ -117,6 +121,7 @@ async function shortcutText(action,env,urls){
  const club=action.club;
  const cupName=club==='88'?'88 Cup':'Sena Cup';
  if(action.kind==='help')return ['🏸 คำสั่ง Badbot',...[...shortcuts].map(([key,value])=>'badbot '+key+' · '+value.description)].join('\n');
+ if(action.kind==='bill')return billingLineText(env,action.scope,new URL(urls.sena).origin);
  if(action.kind==='book')return '🏸 จอง / ถอน '+(club==='88'?'88':'Sena')+'\n'+urls[club];
  if(action.kind==='matchup'){
   const response=await bookingRoute(new Request('https://badbot.internal/api/booking'),env,false,'sena');
