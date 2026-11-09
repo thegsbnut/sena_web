@@ -222,8 +222,10 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
   ['matchup senacup',/Sena One \/ Sena Two vs Sena Three \/ Sena Four/],
   ['senacup',/🥇 1\. Sena One \/ Sena Two · ชนะ 1\/1/],
   ['88cup',/🥇 1\. 88 One \/ 88 Two · ชนะ 1\/1/],
-  ['leaderboard',/Sena Leaderboard[\s\S]*5\.[\s\S]*#leaderboard/],
-  ['help',/badbot matchup 88cup[\s\S]*badbot leaderboard/]
+  ['leaderboard',/Sena Leaderboard[\s\S]*5\.[\s\S]*\/court#leaderboard[\s\S]*88 Leaderboard[\s\S]*88 One[\s\S]*\/court\?club=88#leaderboard/],
+  ['leaderboard sena',/Sena Leaderboard[\s\S]*5\.[\s\S]*\/court#leaderboard/],
+  ['leaderboard 88',/88 Leaderboard[\s\S]*88 One[\s\S]*\/court\?club=88#leaderboard/],
+  ['help',/badbot leaderboard ·[^\n]+\nbadbot leaderboard sena ·[^\n]+\nbadbot leaderboard 88 ·/]
  ];
  for(const [command,expected] of cases){
   assert.equal((await f.hook([f.event('badbot '+command)])).status,200,command);
@@ -231,5 +233,7 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
   assert(reply.messages.every(m=>m.type==='text'),command);
   assert.match(textOf(reply),expected,command);
   assert.doesNotMatch(textOf(reply),/\bLv\b|ownerHash/);
+  if(command==='leaderboard sena')assert.doesNotMatch(textOf(reply),/88 Leaderboard|88 One/);
+  if(command==='leaderboard 88')assert.doesNotMatch(textOf(reply),/Sena Leaderboard|Sena One/);
  }
 });

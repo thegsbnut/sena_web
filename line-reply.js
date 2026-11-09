@@ -19,7 +19,9 @@ const shortcuts=new Map([
  ['matchup senacup',{kind:'cupMatchup',club:'sena',description:'ตารางแข่ง Sena Cup'}],
  ['senacup',{kind:'cupResult',club:'sena',description:'ผล Sena Cup ล่าสุด'}],
  ['88cup',{kind:'cupResult',club:'88',description:'ผล 88 Cup ล่าสุด'}],
- ['leaderboard',{kind:'leaderboard',description:'5 อันดับแรกของ Sena'}],
+ ['leaderboard',{kind:'leaderboard',scope:'all',description:'5 อันดับแรกของทั้งสองสนาม'}],
+ ['leaderboard sena',{kind:'leaderboard',scope:'sena',description:'5 อันดับแรกของ Sena'}],
+ ['leaderboard 88',{kind:'leaderboard',scope:'88',description:'5 อันดับแรกของ 88'}],
  ['help',{kind:'help',description:'รายการคำสั่ง'}]
 ]);
 
@@ -147,11 +149,20 @@ async function shortcutText(action,env,urls){
    return (rank===1?'🥇 ':'')+rank+'. '+clean(row.name)+' · ชนะ '+row.w+'/'+row.played+' · แต้ม '+row.pf+'–'+row.pa;
   })]);
  }
- const response=await leaderboardRoute(new Request('https://badbot.internal/api/leaderboard'),env,false,'sena');
- if(!response.ok)return 'อ่าน Leaderboard ไม่สำเร็จ';
+ const selected=action.scope==='all'?clubs:[action.scope];
+ const sections=await Promise.all(selected.map(club=>leaderboardSection(env,club,urls[club])));
+ return sections.join('\n\n━━━━━━━━━━\n\n');
+}
+
+async function leaderboardSection(env,club,url){
+ const heading='🏆 '+(club==='88'?'88':'Sena')+' Leaderboard';
+ const response=await leaderboardRoute(new Request('https://badbot.internal/api/leaderboard'),env,false,club);
+ if(!response.ok)return heading+'\nอ่านอันดับไม่สำเร็จ';
  const {standings}=await response.json();
- const link=new URL(urls.sena);link.hash='leaderboard';
- return ['🏆 Sena Leaderboard',...standings.slice(0,5).map((row,i)=>(row.position??i+1)+'. '+clean(row.name)+' · ชนะ '+row.w+'/'+row.played),'ดูอันดับทั้งหมด: '+link.href].join('\n');
+ const link=new URL(url);
+ link.hash='leaderboard';
+ const topFive=standings.slice(0,5).map((row,i)=>(row.position??i+1)+'. '+clean(row.name)+' · ชนะ '+row.w+'/'+row.played);
+ return [heading,...(topFive.length?topFive:['ยังไม่มีข้อมูลอันดับ']), 'ดูอันดับทั้งหมด: '+link.href].join('\n');
 }
 
 function textMessages(text){
