@@ -77,10 +77,24 @@ export function materialize(doc,players,now=new Date()) {
  for(const s of doc.sessions){
   s.holiday=holidayOn(s.date,cfg.holidays);
   s.skipped=!!s.holiday&&cfg.holidayPolicy==='skip';
-  s.registrations=s.registrations.filter(r=>rosterIds.has(r.playerId));
+  const hosts=new Set(s.registrations.filter(r=>!r.guest&&rosterIds.has(r.playerId)).map(r=>r.playerId));
+  s.registrations=s.registrations.filter(r=>r.guest?hosts.has(r.guest.hostId):hosts.has(r.playerId));
   s.registrations.sort((a,b)=>a.seq-b.seq);
  }
  doc.sessions.sort((a,b)=>a.date.localeCompare(b.date));
+}
+const guestLevel=6.5;
+function bookingPlayers(session,players){
+ return session.registrations.slice(0,session.capacity).map(r=>r.guest
+  ?{id:r.playerId,name:r.guest.name,gender:r.guest.gender,lv:guestLevel}
+  :players.find(p=>p.id===r.playerId)).filter(Boolean);
+}
+function bookingGuest(input,hostId){
+ if(input==null)return null;
+ if(typeof input.name!=='string'||input.name.length>80||!['M','F'].includes(input.gender))fail('กรอกชื่อและเพศของแขกให้ครบ');
+ const name=input.name.normalize('NFC').trim().replace(/\s+/g,' ');
+ if(!name||/[\p{Cc}\p{Cf}]/u.test(name))fail('ชื่อแขกไม่ถูกต้อง');
+ return {name,gender:input.gender,hostId};
 }
 const womensDoubles=team=>team.every(player=>player.gender==='F');
 const bookingMatchAllowed=(a,b)=>womensDoubles(a)===womensDoubles(b);
@@ -103,7 +117,7 @@ export function refreshSchedules(doc,players,now=new Date()) {
   if(startsAt(s)<=+now)continue;
   const ids=s.registrations.slice(0,s.capacity).map(r=>r.playerId);
   if(ids.length===s.capacity)s.hasFilled=true;
-  const chosen=ids.map(id=>players.find(p=>p.id===id)).filter(Boolean);
+  const chosen=bookingPlayers(s,players);
   const fingerprint=JSON.stringify(['booking-v2',ids,s.rounds,chosen.map(p=>[p.lv,p.gender]),s.skipped,s.closed,doc.settings.enabled]);
   if(fingerprint===s.fingerprint)continue;
   s.fingerprint=fingerprint;
@@ -129,7 +143,7 @@ export function publicBooking(doc,revision,players,admin,now=new Date(),club='se
  const cfg=doc.settings,cupWeek=cupWeekFor(doc,club);
  return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai,lv})=>({id,name,thai,award:awards.get(cupPlayerKey(name,club))||awards.get(cupPlayerKey(thai||'',club))||'',...(admin?{lv}:{})})),serverNow:now.toISOString(),sessions:doc.sessions.filter(s=>startsAt(s)>+now).map(s=>({
   id:s.id,date:s.date,courtNumbers:s.courtNumbers??cfg.courtNumbers??'',isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null,courtNumbersOverride:s.courtNumbers??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
-  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:true}))
+  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,...(r.guest?{guest:{name:r.guest.name,hostId:r.guest.hostId,...(admin?{lv:guestLevel}:{})}}:{}),status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:true}))
  }))};
 }
 export async function mutateBooking(env,club,operation,now=new Date()) {
@@ -213,7 +227,7 @@ export async function bookingRoute(req,env,admin,club) {
     if(!doc.settings.enabled||s.closed||s.skipped||!s.schedule||s.scheduleVersion!==input.scheduleVersion){
      fail('ตารางรอบนี้เปลี่ยนแล้วหรือยังไม่พร้อม กรุณาอัปเดตคิว',409);
     }
-    const chosen=s.registrations.slice(0,s.capacity).map(r=>players.find(p=>p.id===r.playerId));
+    const chosen=bookingPlayers(s,players);
     try{s.schedule=generateBookingSchedule(chosen,s.rounds,s.schedule);}
     catch{fail('ยังไม่พบตารางแบบอื่นที่เข้าเงื่อนไข จึงเก็บตารางเดิมไว้',409);}
     s.scheduleRerolled=true;s.scheduleVersion++;s.scheduleUpdatedAt=now.toISOString();
@@ -232,20 +246,29 @@ export async function bookingRoute(req,env,admin,club) {
     const sessions=input.sessionIds.map(session);
     if(sessions.some(s=>s.closed||s.skipped))fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่',409);
     if(sessions.some(s=>s.holiday)&&input.acceptHoliday!==true)fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง',409);
-    let added=0;
+    const guest=bookingGuest(input.guest,player.id);
+    let added=0,guestsAdded=0;
     const duplicateIds=[];
     for(const s of sessions){
-     if(s.registrations.some(r=>r.playerId===input.playerId)){duplicateIds.push(s.id);continue;}
-     if(s.registrations.length>=200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
-     s.registrations.push({id:crypto.randomUUID(),playerId:input.playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString()});added++;
+     const hasHost=s.registrations.some(r=>r.playerId===player.id);
+     const addGuest=guest&&!s.registrations.some(r=>r.guest?.hostId===player.id&&r.guest.name.toLowerCase()===guest.name.toLowerCase());
+     const seats=Number(!hasHost)+Number(Boolean(addGuest));
+     if(!seats){duplicateIds.push(s.id);continue;}
+     if(s.registrations.length+seats>200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
+     const register=(playerId,extra={})=>{
+      s.registrations.push({id:crypto.randomUUID(),playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString(),...extra});
+     };
+     if(!hasHost)register(player.id);
+     if(addGuest){register('guest:'+crypto.randomUUID(),{guest});guestsAdded++;}
+     added++;
     }
     const duplicate=duplicateIds.length;
-    return {added,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
+    return {added,guestsAdded,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${guestsAdded?` • เพิ่มแขก ${guestsAdded} ที่นั่ง`:''}${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
    }
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
-    s.registrations=s.registrations.filter(x=>x.id!==r.id);
+    s.registrations=s.registrations.filter(x=>x.id!==r.id&&x.guest?.hostId!==r.playerId);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);

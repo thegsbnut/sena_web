@@ -74,7 +74,7 @@ async function rosterSection(env,club,now){
  const names=new Map(data.roster.map(p=>[p.id,clean([p.award,p.name].filter(Boolean).join(' '))]));
  const numbered=status=>session.registrations.filter(r=>r.status===status)
   .sort((a,b)=>a.position-b.position)
-  .map((r,i)=>`${i+1}. ${names.get(r.playerId)||'ผู้เล่นที่นำออกจากก๊วน'}`);
+  .map((r,i)=>`${i+1}. ${r.guest?clean(r.guest.name)+' (แขกของ '+(names.get(r.guest.hostId)||'สมาชิก')+')':names.get(r.playerId)||'ผู้เล่นที่นำออกจากก๊วน'}`);
  const confirmed=numbered('confirmed'),waiting=numbered('waitlist');
  const vacancy=session.closed?'ปิดรับจอง':session.confirmedCount>=session.capacity?'เต็ม':`เหลือ ${session.capacity-session.confirmedCount} ที่`;
  return boundedSection([

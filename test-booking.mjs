@@ -265,3 +265,29 @@ test('court numbers inherit the venue default and preserve authorized per-date o
  rows=await read();
  assert.equal(rows.get(first.id).courtNumbers,'3');
 });
+
+test('guests occupy booking seats, join the draw, and retain the inviting member',async t=>{
+ const f=fixture();
+ t.after(()=>f.db.close());
+ const {cookie,data}=await f.open();
+ const sessionId=data.sessions[0].id;
+ const book=async (playerId,guest)=>f.call({action:'book',playerId,sessionIds:[sessionId],acceptHoliday:true,guest});
+ const read=async options=>(await (await f.call(null,options)).json());
+ assert.equal((await book('p0')).status,200);
+ assert.equal((await book('p0',{name:'Guest A',gender:'X'})).status,400);
+ const guest={name:'Guest A',gender:'F',lv:99};
+ assert.equal((await (await book('p0',guest)).json()).result.guestsAdded,1);
+ assert.equal((await (await book('p0',guest)).json()).result.guestsAdded,0);
+ for(let i=1;i<=6;i++)assert.equal((await book('p'+i)).status,200);
+ const publicData=await read(),session=publicData.sessions.find(s=>s.id===sessionId);
+ const entry=session.registrations.find(r=>r.guest);
+ assert.deepEqual(entry.guest,{name:'Guest A',hostId:'p0'});
+ assert.equal(publicData.roster.some(p=>p.id===entry.playerId),false);
+ assert.equal(session.confirmedCount,8);
+ assert(session.schedule.counts[entry.playerId]>0);
+ const adminData=await read({cookie});
+ assert.equal(adminData.sessions.find(s=>s.id===sessionId).registrations.find(r=>r.guest).guest.lv,6.5);
+ const host=session.registrations.find(r=>r.playerId==='p0');
+ assert.equal((await f.call({action:'cancel',sessionId,registrationId:host.id})).status,200);
+ assert.equal((await read()).sessions.find(s=>s.id===sessionId).registrations.some(r=>r.guest),false);
+});

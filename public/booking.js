@@ -11,9 +11,10 @@
  let data=null,busy=false,dirty=false,focusId='',selected=new Set(),playerId='',token=null;
  try{token=localStorage.getItem(clubStorage('booking-token'));if(!/^[a-f0-9]{64}$/.test(token||'')){token=Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem(clubStorage('booking-token'),token);}playerId=localStorage.getItem(clubStorage('booking-player'))||'';}catch{token=null;}
  const displayDate=d=>new Date(d+'T12:00:00+07:00').toLocaleDateString('th-TH',{weekday:'short',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok'});
- const player=id=>data?.roster.find(p=>p.id===id);
+ const guest=id=>data?.sessions.find(s=>s.id===focusId)?.registrations.find(r=>r.playerId===id)?.guest;
+ const player=id=>data?.roster.find(p=>p.id===id)??guest(id);
  const rawName=id=>player(id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
- const name=id=>{const award=player(id)?.award;return award?award+' '+rawName(id):rawName(id);};
+ const name=id=>{const extra=guest(id);if(extra)return extra.name+' (แขกของ '+rawName(extra.hostId)+')';const award=player(id)?.award;return award?award+' '+rawName(id):rawName(id);};
  const level=id=>player(id)?.lv;
  const formatLevel=new Intl.NumberFormat('th-TH',{maximumFractionDigits:2});
  function levelBadge(id){
@@ -67,7 +68,7 @@
  }
  root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
- <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อผู้ตี</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
+ <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อสมาชิกผู้จองหลัก</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingGuestOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasGuest"> เพิ่มแขก (Guest)</label><div id="bookingGuestFields" class="booking-fields" hidden><label>ชื่อแขก<input id="bookingGuestName" type="text" maxlength="80" placeholder="ชื่อแขก"></label><label>เพศสำหรับจัดคู่<select id="bookingGuestGender"><option value="">เลือกเพศ</option><option value="M">ชาย</option><option value="F">หญิง</option></select></label></div></div><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
  <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่าการจองและสนาม <span>สำหรับผู้จัด</span></summary>
  <details class="booking-cup-settings"><summary>🏆 วันแข่งขัน ${html(cupName)}</summary>
  <form id="bookingCupSettings"><label for="bookingCupWeek">สัปดาห์แข่งขันประจำเดือน</label>
@@ -151,19 +152,21 @@
   const booked=new Map();
   for(const session of chosen)for(const {playerId:id} of session.registrations)booked.set(id,(booked.get(id)||0)+1);
   const picker=q('#bookingPlayer');
-  const options=data.roster.filter(p=>!chosen.length||(booked.get(p.id)||0)<chosen.length);
+  const options=data.roster;
   picker.innerHTML='<option value="">เลือกชื่อของคุณ…</option>'+options.map(p=>{
    const count=booked.get(p.id)||0;
-   const note=chosen.length>1&&count?` · จองแล้ว ${count}/${chosen.length} วัน`:'';
+   const note=count?` · จองแล้ว ${count}/${chosen.length} วัน`:'';
    return `<option value="${html(p.id)}">${html(name(p.id))}${p.thai?' · '+html(p.thai):''}${note}</option>`;
   }).join('');
   const eligible=options.some(p=>p.id===playerId);
   picker.value=eligible?playerId:'';
   picker.disabled=!options.length;
-  q('#bookingPlayerHint').textContent=!data.roster.length?'ไม่มีชื่อในก๊วน? ให้ผู้จัดเพิ่มรายชื่อก่อน'
-   :!options.length?'ทุกคนในรายชื่อจองครบทุกวันที่เลือกแล้ว'
-   :chosen.length===1?'แสดงเฉพาะคนที่ยังไม่ได้จองวันนี้'
-   :'ระบบจะจองเฉพาะวันที่ชื่อนี้ยังไม่ได้จอง';
+  q('#bookingGuestOption').hidden=!picker.value;
+  const withGuest=Boolean(picker.value&&q('#bookingHasGuest').checked);
+  q('#bookingGuestFields').hidden=!withGuest;
+  q('#bookingPlayerHint').textContent=!options.length?'ให้ผู้จัดเพิ่มรายชื่อสมาชิกก่อน'
+   :picker.value&&(booked.get(picker.value)||0)===chosen.length?'สมาชิกจองครบแล้ว ยังเพิ่มแขกในรอบนี้ได้'
+   :'แขกนับเป็นหนึ่งที่นั่ง และจะลงชื่อในทุกวันที่เลือก';
   q('#bookingAction').hidden=!chosen.length;
   q('#bookingSelection').textContent=`เลือก ${chosen.length} วัน`;
   q('#bookingReviewDates').innerHTML=chosen.map(s=>{
@@ -172,7 +175,7 @@
    return `<li>${displayDate(s.date)} · ${html(s.start)}–${html(s.end)} น.${s.isCup?' · 🏆 '+html(cupName):''}${note}</li>`;
   }).join('');
   q('#bookingHolidayConfirm').hidden=!chosen.some(s=>s.holiday);
-  q('#bookingConfirm').disabled=!chosen.length||!picker.value||!token||!data.settings.enabled;
+  q('#bookingConfirm').disabled=!chosen.length||!picker.value||!token||!data.settings.enabled||(!withGuest&&(booked.get(picker.value)||0)===chosen.length);
   if(!token)status('เบราว์เซอร์ไม่ให้เก็บรหัสจัดการการจอง กรุณาเปิดเว็บใน Safari / Chrome โดยตรง',true);
  }
  function renderDetail(){
@@ -242,6 +245,7 @@
  }
  root.addEventListener('change',e=>{
   if(e.target.matches('[data-book-date]')){e.target.checked?selected.add(e.target.dataset.bookDate):selected.delete(e.target.dataset.bookDate);focusId=e.target.dataset.bookDate;renderSelection();renderDetail();}
+  if(e.target.id==='bookingHasGuest')renderSelection();
   if(e.target.id==='bookingPlayer'){playerId=e.target.value;try{localStorage.setItem(clubStorage('booking-player'),playerId);}catch{}render();}
   if(e.target.closest('#bookingSettings'))dirty=true;
   if(e.target.closest('#bookingCupSettings')){
@@ -301,6 +305,10 @@
   }
   if(button.id==='bookingContinue'&&selected.size){
    q('#bookingAcceptHoliday').checked=false;
+   q('#bookingHasGuest').checked=false;
+   q('#bookingGuestName').value='';
+   q('#bookingGuestGender').value='';
+   renderSelection();
    q('#bookingReview').showModal();
   }
   if(button.id==='bookingRefresh'){if(dirty||cupDirty){status('มีการตั้งค่าที่ยังไม่บันทึก กรุณาบันทึกก่อนอัปเดตคิว',true);return;}load();}
@@ -319,7 +327,7 @@
     content.scrollTop=0;
    }else q('.booking-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
   }
-  if(button.dataset.bookCancel){const s=data.sessions.find(s=>s.id===focusId),r=s?.registrations.find(r=>r.id===button.dataset.bookCancel);if(r&&confirm(`ถอนชื่อ ${name(r.playerId)} วันที่ ${displayDate(s.date)}?`))mutate({action:'cancel',sessionId:s.id,registrationId:r.id});}
+  if(button.dataset.bookCancel){const s=data.sessions.find(s=>s.id===focusId),r=s?.registrations.find(r=>r.id===button.dataset.bookCancel);if(r&&confirm(`ถอนชื่อ ${name(r.playerId)} วันที่ ${displayDate(s.date)}${s.registrations.some(x=>x.guest?.hostId===r.playerId)?' พร้อมแขกที่ลงชื่อมาด้วย':''}?`))mutate({action:'cancel',sessionId:s.id,registrationId:r.id});}
   if(button.id==='bookingEditCourts'){
    const s=data.sessions.find(item=>item.id===focusId);
    if(!s||!data.canEdit)return;
@@ -327,7 +335,13 @@
    if(courtNumbers!==null)mutate({action:'courtNumbers',sessionId:s.id,courtNumbers,previousCourtNumbers:s.courtNumbersOverride});
   }
   if(button.id==='bookingClose'){const s=data.sessions.find(s=>s.id===focusId);if(s&&confirm(`${s.closed?'เปิด':'ปิด'}รับจองรอบ ${displayDate(s.date)}? รายชื่อเดิมยังเก็บไว้`))mutate({action:'close',sessionId:s.id,closed:!s.closed});}
-  if(button.id==='bookingConfirm'){if(!q('#bookingHolidayConfirm').hidden&&!q('#bookingAcceptHoliday').checked){status('กรุณารับทราบวันหยุดก่อนยืนยันจอง',true);feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}mutate({action:'book',playerId:q('#bookingPlayer').value,sessionIds:[...selected],acceptHoliday:q('#bookingAcceptHoliday').checked});}
+  if(button.id==='bookingConfirm'){
+   const acceptHoliday=q('#bookingAcceptHoliday').checked;
+   if(!q('#bookingHolidayConfirm').hidden&&!acceptHoliday){feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}
+   const guest=q('#bookingHasGuest').checked?{name:q('#bookingGuestName').value.trim(),gender:q('#bookingGuestGender').value}:null;
+   if(guest&&(!guest.name||!guest.gender)){feedback('ยังไม่ได้ยืนยันจอง','กรอกชื่อและเลือกเพศของแขกให้ครบ');return;}
+   mutate({action:'book',playerId:q('#bookingPlayer').value,sessionIds:[...selected],acceptHoliday,...(guest?{guest}:{})});
+  }
   if(button.id==='bookingReroll'){
    const s=data.sessions.find(s=>s.id===focusId);
    if(s?.schedule&&confirm('จัดคู่ใหม่และแทนตารางเดิมของรอบนี้?'))mutate({action:'reroll',sessionId:s.id,scheduleVersion:s.scheduleVersion});
