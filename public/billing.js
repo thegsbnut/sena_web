@@ -9,7 +9,9 @@
  const receipt = document.querySelector('#receipt');
  const paymentQr = document.querySelector('#paymentQr');
  const qrImage = paymentQr.querySelector('img');
- const qrDownload = paymentQr.querySelector('a');
+ const qrSaveHint = paymentQr.querySelector('#paymentQrSaveHint');
+ const qrPhotoFallback = 'กดค้างที่รูป QR แล้วเลือกบันทึกรูปภาพ ถ้าเปิดจาก LINE แล้วไม่มีตัวเลือกนี้ ให้เปิดหน้าบิลใน Safari หรือ Chrome';
+ let qrPhoto, qrPhotoUrl;
  const clubName = value => value === '88' ? '88' : 'Sena';
  const money = cents => (cents / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
  const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -27,8 +29,20 @@
   receipt.querySelector('img').removeAttribute('src');
  });
  paymentQr.addEventListener('close', () => {
+  if (qrPhotoUrl) URL.revokeObjectURL(qrPhotoUrl);
+  qrPhoto = qrPhotoUrl = undefined;
   qrImage.removeAttribute('src');
-  qrDownload.removeAttribute('href');
+ });
+ paymentQr.querySelector('#paymentQrSave').addEventListener('click', async () => {
+  const data = { files: [qrPhoto] };
+  if (!qrPhoto || !navigator.share || !navigator.canShare?.(data)) {
+   qrSaveHint.textContent = qrPhotoFallback;
+   return;
+  }
+  try { await navigator.share(data); }
+  catch (error) {
+   if (error.name !== 'AbortError') qrSaveHint.textContent = qrPhotoFallback;
+  }
  });
 
  function endpoint(action, payer) {
@@ -381,7 +395,12 @@
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     canvas.getContext('2d').drawImage(image, 0, 0);
-    qrImage.src = qrDownload.href = canvas.toDataURL('image/png');
+    const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!png) throw Error('เตรียมรูป QR ไม่สำเร็จ กรุณาลองอีกครั้ง');
+    qrPhoto = new File([png], 'promptpay.png', { type: 'image/png' });
+    qrImage.src = qrPhotoUrl = URL.createObjectURL(qrPhoto);
+    qrSaveHint.textContent = navigator.canShare?.({ files: [qrPhoto] }) ?
+     'ในเมนูแชร์ เลือกบันทึกรูปภาพ (Save Image)' : qrPhotoFallback;
     paymentQr.querySelector('#paymentQrAmount').textContent = payer.name + ' · ' + money(payer.amount) + ' บาท';
     paymentQr.showModal();
     message('');
