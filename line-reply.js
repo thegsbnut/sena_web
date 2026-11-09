@@ -35,14 +35,10 @@ function bookingUrl(env,club='sena'){
  return url.href;
 }
 
-function menu(urls,scope=null){
+function menu(urls){
  const link=club=>({type:'button',style:'primary',color:'#168B42',action:{type:'uri',label:'🏸 จอง / ถอน '+(club==='88'?'88':'Sena'),uri:urls[club]}});
  const postback=(label,data)=>({type:'button',style:'secondary',action:{type:'postback',label,data}});
- const buttons=scope?[
-  postback('🔄 ดูข้อมูลล่าสุด','badbot:roster:'+scope),
-  ...(scope==='all'?clubs:[scope]).map(link),
-  postback('เมนูหลัก','badbot:menu')
- ]:[
+ const buttons=[
   ...clubs.map(link),
   postback('👥 ผู้ตีทุกสนาม','badbot:roster:all'),
   postback('👥 ผู้ตี Sena','badbot:roster:sena'),
@@ -51,7 +47,7 @@ function menu(urls,scope=null){
  return {type:'flex',altText:'SENA Badbot · จอง / ถอนชื่อ และดูรายชื่อผู้ตี',contents:{
   type:'bubble',body:{type:'box',layout:'vertical',spacing:'md',contents:[
    {type:'text',text:'🏸 SENA Badbot',weight:'bold',size:'lg',wrap:true},
-   {type:'text',text:scope?'ดูคิวล่าสุด หรือเปิดเว็บเพื่อจอง / ถอนชื่อ':'เลือกสนามเพื่อจอง / ถอน หรือดูรายชื่อผู้ตี',size:'sm',wrap:true}
+   {type:'text',text:'เลือกสนามเพื่อจอง / ถอน หรือดูรายชื่อผู้ตี',size:'sm',wrap:true}
   ]},footer:{type:'box',layout:'vertical',spacing:'sm',contents:buttons}
  }};
 }
@@ -128,10 +124,11 @@ export async function replyToGroupCommand(event,env){
    const selected=action.scope==='all'?clubs:[action.scope];
    const sections=await Promise.all(selected.map(club=>rosterSection(env,club,now)));
    const text='🏸 รอบตีที่กำลังจะถึง\n\n'+sections.join('\n\n━━━━━━━━━━\n\n')+
-    '\n\nอัปเดต ณ '+thaiTime.format(now)+' น.\n'+selected.map(club=>'จอง / ถอน '+(club==='88'?'88':'Sena')+': '+urls[club]).join('\n');
+    '\n\nอัปเดต ณ '+thaiTime.format(now)+' น.';
    messages.push(...textMessages(text));
+  }else{
+   messages.push(menu(urls));
   }
-  messages.push(menu(urls,action.kind==='roster'?action.scope:null));
   const response=await fetch('https://api.line.me/v2/bot/message/reply',{
    method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},
    body:JSON.stringify({replyToken:event.replyToken,messages}),signal:AbortSignal.timeout(10000)

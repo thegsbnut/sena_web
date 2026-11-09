@@ -73,7 +73,7 @@ test('roster postback shows the nearest upcoming round for both courts and refre
  assert.match(text,/เสนา[\s\S]*2\/8 คน[\s\S]*1\. Nut\n2\. Bua[\s\S]*88[\s\S]*1\/8 คน[\s\S]*1\. Pete/);
  assert.match(text,/เหลือ 6 ที่/);assert.match(text,/อัปเดต ณ/);
  assert.doesNotMatch(text,/"lv"|gender|ownerHash|never-show-this|LINE-user-not-a-player-id/);
- assert.equal(f.calls[0].messages.at(-1).contents.footer.contents[0].action.label,'🔄 ดูข้อมูลล่าสุด');
+ assert.deepEqual(f.calls[0].messages.map(message=>message.type),['text']);
  const doc=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload);
  doc.sessions.find(s=>s.date===date).registrations.push({id:'new',playerId:'p2',seq:10,source:'manual'});
  f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
@@ -82,7 +82,7 @@ test('roster postback shows the nearest upcoming round for both courts and refre
  assert.notEqual(f.calls[0].replyToken,f.calls[1].replyToken);
 });
 
-test('all five menu actions route correctly and single-court refresh keeps its scope',async t=>{
+test('roster buttons return scoped text only and old menu actions still work',async t=>{
  const f=fixture(t),date=future(1);
  f.seed('sena',[session(date)]);
  f.seed('88',[session(date,{names:1})],true,['Pete','Noon']);
@@ -91,21 +91,19 @@ test('all five menu actions route correctly and single-court refresh keeps its s
  for(const [index,scope] of [[2,'all'],[3,'sena'],[4,'88']]){
   const beforeOther=f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(scope==='sena'?'88':'sena').payload;
   await f.hook([f.event('',{type:'postback',postback:{data:actions[index].data}})]);
-  const call=f.calls.at(-1),text=textOf(call),footer=call.messages.at(-1).contents.footer.contents;
-  assert.equal(footer[0].action.data,'badbot:roster:'+scope);
+  const call=f.calls.at(-1),text=textOf(call);
+  assert.deepEqual(call.messages.map(message=>message.type),['text']);
   assert.match(text,scope==='88'?/1\. Pete/:/1\. Nut/);
   if(scope==='all')assert.match(text,/📍 เสนา[\s\S]*📍 88/);
   else{
    assert.doesNotMatch(text,scope==='sena'?/📍 88|Pete/:/📍 เสนา|Nut/);
    assert.equal(f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(scope==='sena'?'88':'sena').payload,beforeOther);
-   assert.equal(footer.filter(b=>b.action.type==='uri').length,1);
   }
  }
- const refresh=f.calls.at(-1).messages.at(-1).contents.footer.contents[0].action;
+ const refresh=actions[4];
  await f.hook([f.event('',{type:'postback',postback:{data:refresh.data}})]);
  assert.match(textOf(f.calls.at(-1)),/1\. Pete/);assert.doesNotMatch(textOf(f.calls.at(-1)),/📍 เสนา|Nut/);
- const back=f.calls.at(-1).messages.at(-1).contents.footer.contents.at(-1).action;
- await f.hook([f.event('',{type:'postback',postback:{data:back.data}})]);
+ await f.hook([f.event('',{type:'postback',postback:{data:'badbot:menu'}})]);
  assert.equal(f.calls.at(-1).messages.length,1);
  assert.equal(f.calls.at(-1).messages[0].contents.footer.contents.length,5);
 });
@@ -115,7 +113,9 @@ test('typed roster shortcuts select Sena, เสนา, 88 or all courts',async 
  f.seed('sena',[session(date)]);f.seed('88',[session(date,{names:1})],true,['Pete']);
  for(const [text,scope] of [['badbot รายชื่อ SENA','sena'],['แบดบอต ดูผู้ตี เสนา','sena'],['badbot รายชื่อ 88','88'],['badbot ดูรายชื่อผู้เล่น ทั้งหมด','all']]){
   assert.equal((await f.hook([f.event(text)])).status,200);
-  assert.equal(f.calls.at(-1).messages.at(-1).contents.footer.contents[0].action.data,'badbot:roster:'+scope);
+  const result=textOf(f.calls.at(-1));
+  assert.equal(result.includes('📍 เสนา'),scope!=='88');
+  assert.equal(result.includes('📍 88'),scope!=='sena');
  }
 });
 
