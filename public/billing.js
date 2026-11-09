@@ -84,6 +84,7 @@
   }
   message('คัดลอกแล้ว');
  }
+ let additionalKey, additionalDate, originalBillId;
  function showBill() {
   const organizer = manage && Number.isInteger(bill.revision);
   if (bill.cancelled && !organizer) {
@@ -95,7 +96,7 @@
   const who = payerToken ? rows[0] : null;
   const promptpay = validPromptPay(bill.transfer);
   root.innerHTML = `
-   <h1>ค่าใช้จ่าย · ${clubName(bill.club)}</h1>
+   <h1>${bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
    <p class="muted">${dateLabel(bill.date)} · ผู้ตีจริง ${bill.people} คน</p>
    <section class="summary">
     <div class="card-title"><h2>ยอดเรียกเก็บ ${money(bill.collection)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
@@ -125,7 +126,12 @@
   message('');
  }
  function fillAttendees(date) {
-  attendees = (sessions.find(s => s.date === date)?.attendees || []).map(row => ({ ...row }));
+  const previous = adminList.bills.find(b => b.club === club && b.date === date && !b.additional)?.id
+   || (date === params.get('date') ? originalBillId : undefined);
+  const notice = root.querySelector('#additionalNotice');
+  notice.hidden = !previous;
+  if (previous) notice.querySelector('a').href = linkToBill(previous, true).href;
+  attendees = (sessions.find(s => s.date === date)?.attendees || []).map(row => ({ ...row, attended: !previous && row.attended }));
   renderAttendees();
  }
  function renderAttendees() {
@@ -178,6 +184,7 @@
      <h2>1. เช็กคนที่มาตีจริง</h2>
      ${editing ? '' : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${sessions.map(s => `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`).join('')}</select></label>`}
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
+     ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance"></div>
      <div class="grid"><label>เพิ่มผู้ตีจริง<input id="addName" maxlength="100" placeholder="ชื่อผู้ตี"></label><label>แขกของ (ถ้ามี)<input id="addHost" maxlength="100" placeholder="ชื่อสมาชิกผู้ชวน"></label></div>
      <button type="button" data-action="add-attendee">+ เพิ่มชื่อ</button>
@@ -212,13 +219,13 @@
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
    ${[['บิลค้าง', rows.filter(b => !b.cancelled && b.outstanding)], ['ประวัติบิลที่จ่ายครบ', rows.filter(b => !b.cancelled && !b.outstanding)], ['บิลที่ยกเลิก', rows.filter(b => b.cancelled)]].map(([title, list]) =>
     `<section><h2>${title}</h2>${list.length ? list.map(b =>
-     `<div class="row"><div><strong>${clubName(b.club)} · ${dateLabel(b.date)}</strong><div>จ่ายแล้ว ${b.paid}/${b.count} · ${b.outstanding ? 'ค้าง ' + money(b.outstanding) : 'รวม ' + money(b.collection)} บาท</div></div>
+     `<div class="row"><div><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><div>จ่ายแล้ว ${b.paid}/${b.count} · ${b.outstanding ? 'ค้าง ' + money(b.outstanding) : 'รวม ' + money(b.collection)} บาท</div></div>
      <a class="button" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}">เปิดบิล</a></div>`).join('') : '<p class="muted">ยังไม่มีรายการ</p>'}</section>`).join('')}`;
   message('');
  }
  async function openDraft() {
   const draft = await request('sessions');
-  if (draft.existing) { location.replace(linkToBill(draft.existing, true).href); return; }
+  originalBillId = draft.existing;
   sessions = draft.sessions;
   adminList.storageReady = draft.storageReady;
   adminList.promptpay = draft.promptpay;
@@ -299,7 +306,18 @@
      await load();
     } else {
      if (savePromptPay) await post('promptpay', { promptpay: draft.transfer });
-     const result = await post(null, draft);
+     let result;
+     if (additionalKey && additionalDate === draft.date) {
+      result = await post(null, { ...draft, additional: additionalKey });
+     } else {
+      result = await post(null, draft);
+      if (result.existing) {
+       if (!confirm('วันนี้เปิดบิลไปแล้ว ต้องการสร้างบิลเพิ่มเติมแยกจากบิลเดิมใช่ไหม?')) return message('');
+       additionalKey = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
+       additionalDate = draft.date;
+       result = await post(null, { ...draft, additional: additionalKey });
+      }
+     }
      id = result.id;
      location.replace(linkToBill(id, true).href);
     }

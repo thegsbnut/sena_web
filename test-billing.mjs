@@ -150,7 +150,7 @@ test('organizers can set a default, edit before payment and cancel or restore an
  assert.equal((await (await f.request(sessions, { cookie })).json()).promptpay, draft.transfer);
  const { id } = await (await post('/api/billing', draft)).json();
  const path = '/api/billing?bill=' + id;
- assert.deepEqual(await (await f.request(sessions, { cookie })).json(), { existing: id });
+ assert.equal((await (await f.request(sessions, { cookie })).json()).existing, id);
  assert.equal((await post(path + '&action=edit', { ...draft, court: 90000, revision: 0 })).status, 200);
  assert.equal((await post(path + '&action=cancel', { revision: 0 })).status, 409);
  assert.equal((await post(path + '&action=cancel', { revision: 1 })).status, 200);
@@ -159,4 +159,21 @@ test('organizers can set a default, edit before payment and cancel or restore an
  assert.equal((await post(path + '&action=restore', { revision: 2 })).status, 200);
  assert.equal((await (await f.request(path)).json()).court, 90000);
  assert.match(await billingLineText(f.env, 'all', origin), /Nut/);
+});
+
+test('a confirmed supplemental bill has a distinct link, displays the same date, and retries safely', async t => {
+ const f = fixture(t), cookie = await f.login();
+ const post = (payload, club = 'sena') => f.request('/api/billing?club=' + club, { method: 'POST', payload, cookie });
+ const additional = 'a'.repeat(32);
+ assert.equal((await post({ ...draft, additional })).status, 409);
+ const first = await (await post(draft)).json();
+ assert.deepEqual(await (await post(draft)).json(), { id: first.id, existing: true });
+ const extra = await (await post({ ...draft, additional })).json();
+ assert.notEqual(extra.id, first.id);
+ assert.deepEqual(await (await post({ ...draft, additional })).json(), { id: extra.id, existing: true });
+ const view = await (await f.request('/api/billing?bill=' + extra.id)).json();
+ assert.equal(view.date, draft.date);
+ assert.equal(view.additional, true);
+ assert.match(await billingLineText(f.env, 'sena', origin), /บิลเพิ่มเติม/);
+ assert.equal((await post({ ...draft, additional }, '88')).status, 409);
 });

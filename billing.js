@@ -15,6 +15,8 @@ const fail = (message, status = 400) => json({ error: message }, status);
 const randomId = () => crypto.randomUUID().replaceAll('-', '');
 const token = () => randomId() + randomId();
 const billLink = (origin, bill) => new URL('/billing.html?bill=' + bill.id, origin).href;
+// Keep the first bill's date key intact; supplemental bills append a unique suffix.
+const billDate = bill => bill.session_date.slice(0, 10);
 const displayDate = date => new Intl.DateTimeFormat('th-TH', {
  dateStyle: 'medium', timeZone: 'Asia/Bangkok'
 }).format(new Date(date + 'T12:00:00+07:00'));
@@ -50,7 +52,7 @@ const paidCount = bill => bill.payers.filter(p => p.status === 'paid').length;
 const outstanding = bill => bill.payers.reduce((total, p) => total + (p.status === 'paid' ? 0 : p.amount), 0);
 function summary(bill) {
  return {
-  id: bill.id, club: bill.club, date: bill.session_date, total: bill.total,
+  id: bill.id, club: bill.club, date: billDate(bill), total: bill.total, additional: bill.session_date.length > 10,
   collection: bill.payers.reduce((total, p) => total + p.amount, 0),
   count: bill.payers.length, paid: paidCount(bill), outstanding: outstanding(bill), cancelled: Boolean(bill.cancelled)
  };
@@ -183,8 +185,7 @@ export async function billingRoute(req, env, admin, club) {
    if (action === 'sessions') {
     const date = url.searchParams.get('date');
     const existing = validDate(date) ? await db.prepare('SELECT id FROM bills WHERE club=? AND session_date=?').bind(club, date).first() : null;
-    if (existing) return json({ existing: existing.id });
-    return json({ sessions: await recentSessions(db, club), storageReady: Boolean(env.SLIPS_DB),
+    return json({ existing: existing?.id, sessions: await recentSessions(db, club), storageReady: Boolean(env.SLIPS_DB),
      promptpay });
    }
    const rows = await db.prepare("SELECT * FROM bills ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200").all();
@@ -201,10 +202,17 @@ export async function billingRoute(req, env, admin, club) {
   const draft = input && readDraft(input);
   if (!draft) return fail('กรุณาตรวจวันที่ ค่าใช้จ่าย บัญชีรับเงิน และรายชื่อผู้ตี');
   if (!env.SLIPS_DB) return fail('ยังไม่พร้อมรับสลิป กรุณาติดต่อผู้จัดระบบ', 503);
+  const extra = input.additional;
+  if (extra !== undefined) {
+   if (typeof extra !== 'string' || !idPattern.test(extra)) return fail('รหัสบิลเพิ่มเติมไม่ถูกต้อง');
+   const first = await db.prepare('SELECT id FROM bills WHERE club=? AND session_date=?').bind(club, draft.date).first();
+   if (!first) return fail('ยังไม่มีบิลเดิมในวันนี้ กรุณาเปิดบิลปกติ', 409);
+  }
+  const dateKey = extra ? draft.date + '/' + extra : draft.date;
   const billId = randomId();
   await db.prepare('INSERT OR IGNORE INTO bills (id,club,session_date,revision,payload) VALUES (?,?,?,0,?)')
-   .bind(billId, club, draft.date, JSON.stringify(splitBill(draft))).run();
-  const existing = await db.prepare('SELECT id FROM bills WHERE club=? AND session_date=?').bind(club, draft.date).first();
+   .bind(billId, club, dateKey, JSON.stringify(splitBill(draft))).run();
+  const existing = await db.prepare('SELECT id FROM bills WHERE club=? AND session_date=?').bind(club, dateKey).first();
   return json({ id: existing.id, existing: existing.id !== billId });
  }
  const bill = await readBill(db, id);
@@ -280,7 +288,7 @@ export async function billingRoute(req, env, admin, club) {
    payload.transfer = input.transfer;
    return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   }
-  const draft = input && readDraft({ ...input, date: bill.session_date });
+  const draft = input && readDraft({ ...input, date: billDate(bill) });
   if (!draft || input.revision !== bill.revision) return fail('ข้อมูลบิลไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   return await updateBill(db, bill, splitBill(draft, bill.payers)) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
  }
@@ -320,7 +328,7 @@ export async function billingLineText(env, scope, origin) {
   const reviewing = pending.filter(p => p.status === 'review');
   const entries = unpaid.slice(0, 8).map(p => '• ' + p.name + ' ' + money(p.amount) + ' บ.');
   return [
-   clubName(bill.club) + ' · ' + displayDate(bill.session_date) + ' · ค้าง ' + money(outstanding(bill)) + ' บ.',
+   clubName(bill.club) + ' · ' + displayDate(billDate(bill)) + (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '') + ' · ค้าง ' + money(outstanding(bill)) + ' บ.',
    ...entries, ...(unpaid.length > 8 ? ['… ยังไม่จ่ายอีก ' + (unpaid.length - 8) + ' คน'] : []),
    ...(reviewing.length ? ['รอตรวจสลิป ' + reviewing.length + ' คน'] : []), billLink(origin, bill)
   ].join('\n');
