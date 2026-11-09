@@ -21,7 +21,7 @@ function validateVenueMap(value) {
  }
  return url.href;
 }
-export const defaultSettings=()=>({enabled:false,weekdays:[2,4],start:'18:00',end:'21:00',capacity:12,rounds:10,weeks:4,regularIds:[],holidayPolicy:'warn',holidays:[]});
+export const defaultSettings=()=>({enabled:false,weekdays:[2,4],start:'18:00',end:'21:00',capacity:12,rounds:10,weeks:4,courtNumbers:'',regularIds:[],holidayPolicy:'warn',holidays:[]});
 export const bangkokDate=(now=new Date())=>new Date(+now+7*3600000).toISOString().slice(0,10);
 const addDays=(date,n)=>new Date(Date.parse(date+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 const startsAt=s=>Date.parse(s.date+'T'+s.start+':00+07:00');
@@ -30,9 +30,17 @@ const validTime=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 const integer=(v,min,max)=>Number.isInteger(v)&&v>=min&&v<=max;
 const cupWeekFor=(doc,club)=>doc.cupWeek??(club==='88'?4:2);
 const weekOfMonth=date=>Math.ceil(Number(date.slice(8,10))/7);
+function normalizeCourtNumbers(value) {
+ if(typeof value!=='string'||value.length>80)fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
+ const trimmed=value.trim();
+ if(!trimmed)return '';
+ const numbers=trimmed.split(',').map(part=>part.trim());
+ if(numbers.some(number=>!/^[1-9]\d{0,2}$/.test(number)))fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
+ return [...new Set(numbers)].join(', ');
+}
 export function validateSettings(input,roster) {
  if(!input||typeof input.enabled!=='boolean'||!Array.isArray(input.weekdays)||!input.weekdays.length||input.weekdays.length>7||new Set(input.weekdays).size!==input.weekdays.length||!input.weekdays.every(d=>integer(d,0,6))||!validTime(input.start)||!validTime(input.end)||input.end<=input.start||!integer(input.capacity,8,24)||!integer(input.rounds,1,30)||!integer(input.weeks,1,8)||!Array.isArray(input.regularIds)||input.regularIds.length>200||new Set(input.regularIds).size!==input.regularIds.length||!input.regularIds.every(id=>roster.some(p=>p.id===id))||!['warn','skip'].includes(input.holidayPolicy)||!Array.isArray(input.holidays)||input.holidays.length>100||!input.holidays.every(h=>h&&validDate(h.date)&&typeof h.name==='string'&&h.name.trim()&&h.name.length<=100))fail('ตรวจวัน เวลา จำนวนคน และรายชื่อขาประจำอีกครั้ง');
- return {...input,weekdays:[...input.weekdays].sort(),holidays:input.holidays.map(h=>({date:h.date,name:h.name.trim()})),regularIds:[...input.regularIds]};
+ return {...input,courtNumbers:normalizeCourtNumbers(input.courtNumbers??''),weekdays:[...input.weekdays].sort(),holidays:input.holidays.map(h=>({date:h.date,name:h.name.trim()})),regularIds:[...input.regularIds]};
 }
 async function prepare(DB) {
  await DB.prepare('CREATE TABLE IF NOT EXISTS booking_clubs (club TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)').run();
@@ -120,7 +128,7 @@ async function ownerHash(req) {
 export function publicBooking(doc,revision,players,admin,now=new Date(),club='sena',awards=new Map()) {
  const cfg=doc.settings,cupWeek=cupWeekFor(doc,club);
  return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai,lv})=>({id,name,thai,award:awards.get(cupPlayerKey(name,club))||awards.get(cupPlayerKey(thai||'',club))||'',...(admin?{lv}:{})})),serverNow:now.toISOString(),sessions:doc.sessions.filter(s=>startsAt(s)>+now).map(s=>({
-  id:s.id,date:s.date,isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
+  id:s.id,date:s.date,courtNumbers:s.courtNumbers??cfg.courtNumbers??'',isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null,courtNumbersOverride:s.courtNumbers??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
   registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:true}))
  }))};
 }
@@ -149,8 +157,8 @@ export async function bookingRoute(req,env,admin,club) {
    const text=await req.text();if(text.length>30000)fail('ข้อมูลยาวเกินไป');
    try{input=JSON.parse(text);}catch{fail('ข้อมูลไม่ถูกต้อง');}
    if(!input||typeof input!=='object')fail('ข้อมูลไม่ถูกต้อง');
-   if(['settings','close','venueMap','cupCalendar','reroll'].includes(input.action)&&!admin)fail('กรุณาเข้าสู่ระบบผู้จัด',401);
-   if(!['settings','close','book','cancel','venueMap','cupCalendar','reroll'].includes(input.action))fail('ไม่พบคำสั่ง');
+   if(['settings','close','venueMap','cupCalendar','reroll','courtNumbers'].includes(input.action)&&!admin)fail('กรุณาเข้าสู่ระบบผู้จัด',401);
+   if(!['settings','close','book','cancel','venueMap','cupCalendar','reroll','courtNumbers'].includes(input.action))fail('ไม่พบคำสั่ง');
   }
   const cupHistory=env.DB?await latestCup(env.DB,club):null;
   const outcome=await mutateBooking(env,club,input?(doc,players)=>{
@@ -163,7 +171,7 @@ export async function bookingRoute(req,env,admin,club) {
    }
    if(input.action==='settings'){
     if(input.settingsVersion!==doc.settingsVersion)fail('ผู้จัดอีกเครื่องแก้การตั้งค่าแล้ว กรุณาโหลดใหม่',409);
-    const cfg=validateSettings(input.settings,players);
+    const cfg=validateSettings({...input.settings,courtNumbers:input.settings?.courtNumbers??doc.settings.courtNumbers??''},players);
     doc.settings=cfg;doc.settingsVersion++;
     for(const s of doc.sessions){if(startsAt(s)<=+now)continue;
      s.start=cfg.start;s.end=cfg.end;s.capacity=cfg.capacity;s.rounds=cfg.rounds;
@@ -177,6 +185,14 @@ export async function bookingRoute(req,env,admin,club) {
     if(!s||startsAt(s)<=+now)fail('รอบนี้เริ่มแล้ว หรือไม่มีในตาราง กรุณาโหลดใหม่',409);
     return s;
    };
+   if(input.action==='courtNumbers'){
+    const s=session(input.sessionId);
+    const next=normalizeCourtNumbers(input.courtNumbers);
+    if((s.courtNumbers??null)!==input.previousCourtNumbers)fail('เลขคอร์ตถูกแก้จากอีกเครื่อง กรุณาโหลดใหม่',409);
+    if(next)s.courtNumbers=next;
+    else delete s.courtNumbers;
+    return {message:'บันทึกเลขคอร์ตแล้ว'};
+   }
    if(input.action==='cupCalendar'){
     const {week,changes,cupVersion}=input;
     if(cupVersion!==(doc.cupVersion??0))fail('ผู้จัดอีกเครื่องแก้ปฏิทิน Cup แล้ว กรุณาโหลดค่าล่าสุด',409);

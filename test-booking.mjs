@@ -243,3 +243,25 @@ test('Badbot links only via a signed one-time group command and rejects retired 
  worker.scheduled({cron:'*/5 * * * *'},f.env,{waitUntil(){scheduled=true;}});
  assert.equal(scheduled,false);
 });
+
+test('court numbers inherit the venue default and preserve authorized per-date overrides',async t=>{
+ const f=fixture();
+ t.after(()=>f.db.close());
+ const {cookie,settings,data}=await f.open();
+ const [first,second]=data.sessions;
+ const saveDefault=(courtNumbers,settingsVersion)=>f.call({action:'settings',settingsVersion,settings:{...settings,courtNumbers}},{cookie});
+ assert.equal((await saveDefault('6,7',1)).status,200);
+ const change={action:'courtNumbers',sessionId:first.id,courtNumbers:' 9, 10, 9 ',previousCourtNumbers:null};
+ assert.equal((await f.call(change)).status,401);
+ assert.equal((await f.call({...change,courtNumbers:'6, x'},{cookie})).status,400);
+ assert.equal((await f.call(change,{cookie})).status,200);
+ assert.equal((await f.call(change,{cookie})).status,409);
+ assert.equal((await saveDefault('3',2)).status,200);
+ const read=async()=>new Map((await (await f.call()).json()).sessions.map(s=>[s.id,s]));
+ let rows=await read();
+ assert.equal(rows.get(first.id).courtNumbers,'9, 10');
+ assert.equal(rows.get(second.id).courtNumbers,'3');
+ assert.equal((await f.call({...change,courtNumbers:'',previousCourtNumbers:'9, 10'},{cookie})).status,200);
+ rows=await read();
+ assert.equal(rows.get(first.id).courtNumbers,'3');
+});

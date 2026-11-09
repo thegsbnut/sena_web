@@ -79,7 +79,7 @@ async function rosterSection(env,club,now){
  const vacancy=session.closed?'ปิดรับจอง':session.confirmedCount>=session.capacity?'เต็ม':`เหลือ ${session.capacity-session.confirmedCount} ที่`;
  return boundedSection([
   heading+(session.isCup?' · CUP':''),
-  thaiDay.format(new Date(session.date+'T12:00:00+07:00'))+` · ${session.start}–${session.end} น.`,
+  thaiDay.format(new Date(session.date+'T12:00:00+07:00'))+` · ${session.start}–${session.end} น.${session.courtNumbers?' · คอร์ต '+session.courtNumbers:''}`,
   `👥 ผู้ตี ${session.confirmedCount}/${session.capacity} คน · ${vacancy}`,
   ...confirmed.length?confirmed:['ยังไม่มีผู้ลงชื่อ'],
   '',waiting.length?`⏳ สำรอง ${session.waitlistCount} คน`:'⏳ สำรอง: ไม่มี',...waiting
