@@ -140,16 +140,6 @@ export async function mutateBooking(env,club,operation,now=new Date()) {
  }
  fail('มีผู้จองพร้อมกันหลายคน กรุณาลองอีกครั้ง',409);
 }
-function recordLineChange(doc,s,player,action,now,players,promoted){
- const since=+now-48*60*60*1000;
- doc.lineChanges=(doc.lineChanges||[]).filter(change=>change.at>=since).slice(-499);
- const names=new Map(players.map(p=>[p.id,p.name]));
- const roster=s.registrations.map(r=>names.get(r.playerId)||'ผู้เล่น');
- doc.lineChanges.push({at:+now,date:s.date,start:s.start,end:s.end,promoted:names.get(promoted?.playerId),name:player?.name||'ผู้เล่น',action,
-  confirmedNames:roster.slice(0,s.capacity),waitingNames:roster.slice(s.capacity),
-  confirmed:Math.min(s.capacity,s.registrations.length),capacity:s.capacity,
-  waiting:Math.max(0,s.registrations.length-s.capacity)});
-}
 export async function bookingRoute(req,env,admin,club) {
  try {
   if(!['GET','POST'].includes(req.method))return reply({error:'Method not allowed'},405);
@@ -232,7 +222,6 @@ export async function bookingRoute(req,env,admin,club) {
      if(s.registrations.some(r=>r.playerId===input.playerId)){duplicateIds.push(s.id);continue;}
      if(s.registrations.length>=200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
      s.registrations.push({id:crypto.randomUUID(),playerId:input.playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString()});added++;
-     if(env.LINE_CHANNEL_ACCESS_TOKEN)recordLineChange(doc,s,player,'book',now,players);
     }
     const duplicate=duplicateIds.length;
     return {added,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
@@ -240,9 +229,7 @@ export async function bookingRoute(req,env,admin,club) {
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
-    const promoted=s.registrations.indexOf(r)<s.capacity?s.registrations[s.capacity]:null;
     s.registrations=s.registrations.filter(x=>x.id!==r.id);
-    if(env.LINE_CHANNEL_ACCESS_TOKEN)recordLineChange(doc,s,players.find(p=>p.id===r.playerId),'cancel',now,players,promoted);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);

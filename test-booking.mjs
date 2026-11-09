@@ -204,7 +204,7 @@ test('reroll is organizer-only and replaces the selected schedule without changi
  assert.deepEqual((await(await f.call()).json()).sessions[0].schedule,changed.schedule);
 });
 
-test('Badbot links only via a signed one-time group command and sends only for organizers',async t=>{
+test('Badbot links only via a signed one-time group command and rejects retired push actions',async t=>{
  const f=fixture(),{cookie,data}=await f.open(['p0']);
  Object.assign(f.env,{LINE_CHANNEL_SECRET:'test-only-secret',LINE_CHANNEL_ACCESS_TOKEN:'test-only-token'});
  const call=(body,auth=cookie)=>worker.fetch(new Request(origin+'/api/line',{method:body?'POST':'GET',headers:{Origin:origin,Cookie:auth},...(body?{body:JSON.stringify(body)}:{})}),f.env);
@@ -212,12 +212,12 @@ test('Badbot links only via a signed one-time group command and sends only for o
  const {code}=await(await call({action:'pair'})).json();
  const groupId='C'+'a'.repeat(32);
  const check=()=>worker.fetch(new Request(origin+'/api/line?diagnose=1',{headers:{Cookie:cookie}}),f.env);
- let active=false,signatureWorks=false,sent;
+ let active=false,signatureWorks=false;
  t.mock.method(globalThis,'fetch',async(url,options)=>{
   if(url.endsWith('/info'))return Response.json({displayName:'Badbot',basicId:'@badbot'});
   if(url.endsWith('/endpoint'))return Response.json({endpoint:origin+'/api/line/webhook',active});
   if(url.endsWith('/test'))return Response.json({success:signatureWorks,statusCode:signatureWorks?200:401});
-  assert.equal(url,'https://api.line.me/v2/bot/message/push');sent=JSON.parse(options.body);return Response.json({});
+  assert.fail('Unexpected outbound request: '+url);
  });
  assert.match((await(await check()).json()).diagnosis,/Use webhook/);
  active=true;
@@ -237,75 +237,9 @@ test('Badbot links only via a signed one-time group command and sends only for o
  assert.equal((await hook(other,await signed(other))).status,200);
  const payload={action:'send',sessionId:data.sessions[0].id};
  assert.equal((await call(payload,'')).status,401);
- assert.equal((await call(payload)).status,200);
- assert.equal(sent.to,groupId);
- assert.match(sent.messages[0].text,/ตัวจริง 1\/8 คน/);
- assert.match(sent.messages[0].text,/Player 0/);
- assert.match(sent.messages[0].text,/สำรอง 0 คน/);
- assert.doesNotMatch(sent.messages[0].text,/\bLv\b/);
-});
-
-test('Badbot batches alerts and reserves the combined summary',async t=>{
- const f=fixture(),{cookie}=await f.open(['p0']);
- Object.assign(f.env,{LINE_CHANNEL_SECRET:'test-only-secret',LINE_CHANNEL_ACCESS_TOKEN:'test-only-token'});
- const admin=(body,club='sena',auth=cookie)=>worker.fetch(new Request(origin+'/api/line?club='+club,{method:body?'POST':'GET',headers:{Origin:origin,Cookie:auth},...(body?{body:JSON.stringify(body)}:{})}),f.env);
- assert.deepEqual((await(await admin()).json()).auto,{dailyLimit:3,summaryTime:'17:00'});
- const custom={action:'autoSettings',dailyLimit:2,summaryTime:'18:10'};
- assert.equal((await admin(custom,'sena','')).status,401);
- assert.equal((await admin({...custom,dailyLimit:0})).status,400);
- assert.equal((await admin(custom)).status,200);
- assert.deepEqual((await(await admin(null,'88')).json()).auto,{dailyLimit:2,summaryTime:'18:10'});
- await admin({...custom,dailyLimit:3,summaryTime:'17:00'});
- f.db.exec("INSERT INTO line_groups (club,group_id) VALUES ('sena','test-group'),('88','test-group')");
- const date=bangkokDate(),at=time=>new Date(date+'T'+time+':00+07:00');
- const doc=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload);
- doc.lineChanges=['13:00','13:04','14:00','15:00'].map((time,i)=>({at:+at(time),date,name:'Player '+i,action:i===2?'cancel':'book',confirmed:3,capacity:8,waiting:0}));
- Object.assign(doc.lineChanges[1],{start:'19:00',end:'21:00',action:'cancel',promoted:'Noon',
-  confirmedNames:['Nut','Noon','Mew'],waiting:1,waitingNames:['Pete']});
- const nextDate=bangkokDate(new Date(+at('13:04')+86400000));
- doc.lineChanges.push({...doc.lineChanges[0],date:nextDate,name:'Mew'});
- f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
- const other=JSON.parse(f.db.prepare("SELECT payload FROM booking_clubs WHERE club='88'").get().payload);
- other.lineChanges=[{...doc.lineChanges[0],name:'Bank'}];
- f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='88'").run(JSON.stringify(other));
- let remaining=3;
- const sent=[];
- t.mock.method(globalThis,'fetch',async(url,options)=>{
-  if(url.endsWith('/quota'))return Response.json({type:'limited',value:300});
-  if(url.endsWith('/consumption'))return Response.json({totalUsage:300-remaining});
-  if(url.endsWith('/members/count'))return Response.json({count:3});
-  assert.match(url,/\/message\/push$/);
-  assert(options.headers['X-Line-Retry-Key']);
-  sent.push(JSON.parse(options.body).messages[0].text);
-  return Response.json({});
- });
- const checkQuota=auth=>worker.fetch(new Request(origin+'/api/line?quota=1',{headers:{Cookie:auth}}),f.env);
- assert.equal((await checkQuota('')).status,401);
- const quotaResponse=await checkQuota(cookie);
- assert.equal(quotaResponse.status,200);
- assert.deepEqual((await quotaResponse.json()).quota,{used:297,limit:300,remaining:3});
- assert.equal(sent.length,0);
- const {scheduledLine}=await import('./line.js');
- await scheduledLine(f.env,at('13:05'));
- await scheduledLine(f.env,at('13:10'));
- assert.equal(sent.length,0);
- remaining=300;
- await scheduledLine(f.env,at('13:10'));
- await scheduledLine(f.env,at('13:15'));
- assert.equal(sent.length,1);
- assert.match(sent[0],/อัปเดตคิว 2 สนาม/);
- assert.match(sent[0],/SENA COURT[\s\S]*19:00–21:00[\s\S]*ลงชื่อ: Player 0[\s\S]*ถอนชื่อ: Player 1[\s\S]*เลื่อนขึ้นตัวจริง: Noon/);
- assert.match(sent[0],/1\. Nut\n2\. Noon\n3\. Mew[\s\S]*สำรอง 1 คน\n1\. Pete/);
- assert.match(sent[0],/ลงชื่อ: Mew[\s\S]*court#booking[\s\S]*THE 88[\s\S]*ลงชื่อ: Bank[\s\S]*court\?club=88#booking/);
- await scheduledLine(f.env,at('14:10'));
- await scheduledLine(f.env,at('15:20'));
- assert.equal(sent.length,2);
- assert.match(sent[1],/ครบโควตาแจ้งเตือนวันนี้แล้ว/);
- await scheduledLine(f.env,at('16:55'));
- assert.equal(sent.length,2);
- remaining=3;
- await scheduledLine(f.env,at('17:00'));
- await scheduledLine(f.env,at('17:05'));
- assert.equal(sent.length,3);
- assert.match(sent[2],/สรุปคิว 17:00[\s\S]*SENA COURT[\s\S]*court#booking[\s\S]*THE 88[\s\S]*court\?club=88#booking/);
+ assert.equal((await call(payload)).status,400);
+ assert.equal((await call({action:'autoSettings',dailyLimit:2,summaryTime:'17:00'})).status,400);
+ let scheduled=false;
+ worker.scheduled({cron:'*/5 * * * *'},f.env,{waitUntil(){scheduled=true;}});
+ assert.equal(scheduled,false);
 });
