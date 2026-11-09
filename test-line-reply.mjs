@@ -196,3 +196,40 @@ test('court links preserve custom query and fragment while overriding a stale cl
  assert.equal(sena.searchParams.has('club'),false);assert.equal(other.searchParams.get('club'),'88');
  for(const url of [sena,other]){assert.equal(url.searchParams.get('from'),'line');assert.equal(url.hash,'#booking');}
 });
+
+test('English shortcuts route bookings, lists, matchups, completed Cup results and standings',async t=>{
+ const f=fixture(t);
+ const date=future(1);
+ const players=Array.from({length:8},(_,i)=>'Sena '+(i+1));
+ f.seed('sena',[{...session(date,{names:8}),cupOverride:false}],true,players);
+ f.seed('88',[session(date)],true,['88 One','88 Two']);
+ for(const [club,label] of [['sena','Sena'],['88','88']]){
+  const state=club==='88'?'club_state_88':'club_state';
+  const history=club==='88'?'cup_history_88':'cup_history';
+  const teams=[[label+' One',label+' Two'],[label+' Three',label+' Four']];
+  const cup={teams,matches:[{a:0,b:1,sa:'',sb:''}]};
+  f.db.prepare(`UPDATE ${state} SET payload=json_set(payload,'$.cup',json(?)) WHERE id=1`).run(JSON.stringify(cup));
+  f.db.exec(`CREATE TABLE ${history} (id TEXT PRIMARY KEY,revision INTEGER,sequence INTEGER,payload TEXT)`);
+  f.db.prepare(`INSERT INTO ${history} VALUES ('saved',1,1,?)`).run(JSON.stringify({
+   title:label+' Cup ผลทดสอบ',date:future(-1),inBaseline:false,teams,matches:[{a:0,b:1,sa:21,sb:14}]
+  }));
+ }
+ const cases=[
+  ['BOOK 88',/club=88#booking/],['book sena',/\/court#booking/],
+  ['list',/📍 เสนา[\s\S]*📍 88/],['list 88',/📍 88/],['list sena',/📍 เสนา/],
+  ['matchup sena',/เกม 1 · Sena \d/],
+  ['matchup 88cup',/88 One \/ 88 Two vs 88 Three \/ 88 Four/],
+  ['matchup senacup',/Sena One \/ Sena Two vs Sena Three \/ Sena Four/],
+  ['senacup',/🥇 1\. Sena One \/ Sena Two · ชนะ 1\/1/],
+  ['88cup',/🥇 1\. 88 One \/ 88 Two · ชนะ 1\/1/],
+  ['leaderboard',/Sena Leaderboard[\s\S]*5\.[\s\S]*#leaderboard/],
+  ['help',/badbot matchup 88cup[\s\S]*badbot leaderboard/]
+ ];
+ for(const [command,expected] of cases){
+  assert.equal((await f.hook([f.event('badbot '+command)])).status,200,command);
+  const reply=f.calls.at(-1);
+  assert(reply.messages.every(m=>m.type==='text'),command);
+  assert.match(textOf(reply),expected,command);
+  assert.doesNotMatch(textOf(reply),/\bLv\b|ownerHash/);
+ }
+});

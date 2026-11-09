@@ -1,4 +1,5 @@
 import {bookingRoute} from './booking.js';
+import {latestCup,leaderboardRoute} from './leaderboard.js';
 
 const defaultBookingUrl='https://sena-web.thegsbnut.workers.dev/court#booking';
 const clubs=['sena','88'];
@@ -6,6 +7,21 @@ const day=86400000;
 const thaiDay=new Intl.DateTimeFormat('th-TH',{weekday:'long',day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Bangkok'});
 const thaiTime=new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Bangkok'});
 export const normalizeLineText=text=>String(text??'').normalize('NFKC').replace(/[\u200b\u200e\u200f\ufeff]/g,'').trim();
+
+const shortcuts=new Map([
+ ['book 88',{kind:'book',club:'88',description:'ลิงก์จอง 88'}],
+ ['book sena',{kind:'book',club:'sena',description:'ลิงก์จอง Sena'}],
+ ['list',{kind:'roster',scope:'all',description:'รายชื่อทั้งสองสนาม'}],
+ ['list 88',{kind:'roster',scope:'88',description:'รายชื่อ 88'}],
+ ['list sena',{kind:'roster',scope:'sena',description:'รายชื่อ Sena'}],
+ ['matchup sena',{kind:'matchup',description:'คู่ตีรอบปกติ Sena'}],
+ ['matchup 88cup',{kind:'cupMatchup',club:'88',description:'ตารางแข่ง 88 Cup'}],
+ ['matchup senacup',{kind:'cupMatchup',club:'sena',description:'ตารางแข่ง Sena Cup'}],
+ ['senacup',{kind:'cupResult',club:'sena',description:'ผล Sena Cup ล่าสุด'}],
+ ['88cup',{kind:'cupResult',club:'88',description:'ผล 88 Cup ล่าสุด'}],
+ ['leaderboard',{kind:'leaderboard',description:'5 อันดับแรกของ Sena'}],
+ ['help',{kind:'help',description:'รายการคำสั่ง'}]
+]);
 
 function command(event){
  if(event.mode==='standby')return null;
@@ -19,7 +35,8 @@ function command(event){
  if(event.type!=='message'||event.message?.type!=='text')return null;
  const match=/^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
  if(!match)return null;
- const action=(match[1]||'').trim();
+ const action=(match[1]||'').trim().toLowerCase().replace(/\s+/g,' ');
+ if(shortcuts.has(action))return shortcuts.get(action);
  // Pairing codes are consumed by the existing administrator-only pairing flow.
  if(/^[a-f0-9]{32}$/i.test(action))return null;
  const roster=/^(?:รายชื่อ|ดูรายชื่อ|ดูผู้ตี|ผู้ตี|ดูรายชื่อผู้เล่น)(?:\s+(ทั้งหมด|ทุกสนาม|all|sena|เสนา|88))?$/i.exec(action);
@@ -62,6 +79,14 @@ function boundedSection(lines){
  return result.join('\n');
 }
 
+function displayNames(data,session){
+ const names=new Map(data.roster.map(p=>[p.id,clean([p.award,p.name].filter(Boolean).join(' '))]));
+ for(const r of session.registrations){
+  if(r.guest)names.set(r.playerId,clean(r.guest.name)+' (แขกของ '+(names.get(r.guest.hostId)||'สมาชิก')+')');
+ }
+ return id=>names.get(id)||'ผู้เล่นที่นำออกจากก๊วน';
+}
+
 async function rosterSection(env,club,now){
  const heading='📍 '+(club==='88'?'88':'เสนา');
  const response=await bookingRoute(new Request('https://badbot.internal/api/booking'),env,false,club);
@@ -71,10 +96,10 @@ async function rosterSection(env,club,now){
   .filter(s=>!s.skipped&&Date.parse(s.date+'T'+s.start+':00+07:00')>+now)
   .sort((a,b)=>(a.date+'T'+a.start).localeCompare(b.date+'T'+b.start))[0];
  if(!session)return heading+'\nยังไม่มีรอบเปิดรับ';
- const names=new Map(data.roster.map(p=>[p.id,clean([p.award,p.name].filter(Boolean).join(' '))]));
+ const name=displayNames(data,session);
  const numbered=status=>session.registrations.filter(r=>r.status===status)
   .sort((a,b)=>a.position-b.position)
-  .map((r,i)=>`${i+1}. ${r.guest?clean(r.guest.name)+' (แขกของ '+(names.get(r.guest.hostId)||'สมาชิก')+')':names.get(r.playerId)||'ผู้เล่นที่นำออกจากก๊วน'}`);
+  .map((r,i)=>`${i+1}. ${name(r.playerId)}`);
  const confirmed=numbered('confirmed'),waiting=numbered('waitlist');
  const vacancy=session.closed?'ปิดรับจอง':session.confirmedCount>=session.capacity?'เต็ม':`เหลือ ${session.capacity-session.confirmedCount} ที่`;
  return boundedSection([
@@ -84,6 +109,49 @@ async function rosterSection(env,club,now){
   ...confirmed.length?confirmed:['ยังไม่มีผู้ลงชื่อ'],
   '',waiting.length?`⏳ สำรอง ${session.waitlistCount} คน`:'⏳ สำรอง: ไม่มี',...waiting
  ]);
+}
+
+async function shortcutText(action,env,urls){
+ const club=action.club;
+ const cupName=club==='88'?'88 Cup':'Sena Cup';
+ if(action.kind==='help')return ['🏸 คำสั่ง Badbot',...[...shortcuts].map(([key,value])=>'badbot '+key+' · '+value.description)].join('\n');
+ if(action.kind==='book')return '🏸 จอง / ถอน '+(club==='88'?'88':'Sena')+'\n'+urls[club];
+ if(action.kind==='matchup'){
+  const response=await bookingRoute(new Request('https://badbot.internal/api/booking'),env,false,'sena');
+  if(!response.ok)return 'อ่านตารางคู่ตี Sena ไม่สำเร็จ';
+  const data=await response.json();
+  const session=data.settings.enabled&&data.sessions.find(s=>!s.skipped&&!s.isCup);
+  if(!session)return 'ยังไม่มีรอบปกติถัดไปของ Sena';
+  const date=thaiDay.format(new Date(session.date+'T12:00:00+07:00'));
+  const heading='🏸 คู่ตี Sena · '+date+` · ${session.start}–${session.end} น.`+(session.courtNumbers?' · คอร์ต '+session.courtNumbers:'');
+  if(session.closed||!session.schedule?.schedule?.length)return heading+'\nตารางคู่ยังไม่พร้อม';
+  const name=displayNames(data,session);
+  return boundedSection([heading,...session.schedule.schedule.map(m=>'เกม '+m.round+' · '+m.ids.slice(0,2).map(name).join(' / ')+' vs '+m.ids.slice(2).map(name).join(' / '))]);
+ }
+ if(action.kind==='cupMatchup'){
+  const table=club==='88'?'club_state_88':'club_state';
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)`).run();
+  const row=await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
+  const cup=row?JSON.parse(row.payload).cup:null;
+  if(!cup?.matches?.length||cup.matches.every(m=>Number.isInteger(m.sa)&&Number.isInteger(m.sb)&&m.sa!==m.sb))return 'ยังไม่มีตาราง '+cupName+' ที่กำลังรอแข่ง';
+  return boundedSection(['🏸 ตาราง '+cupName,...cup.matches.map((m,i)=>'เกม '+(i+1)+' · '+cup.teams[m.a].map(clean).join(' / ')+' vs '+cup.teams[m.b].map(clean).join(' / ')+(i>0&&globalThis.Sena.cupRestConflicts(cup.matches.slice(i-1,i+1))?' · เว้นพักก่อนเกมนี้':''))]);
+ }
+ if(action.kind==='cupResult'){
+  const cup=await latestCup(env.DB,club);
+  if(!cup)return 'ยังไม่มีผล '+cupName+' ที่บันทึกไว้';
+  const rows=globalThis.Sena.standings(cup.teams,cup.matches);
+  let previous,rank;
+  return boundedSection(['🏆 ผล '+clean(cup.title),thaiDay.format(new Date(cup.date+'T12:00:00+07:00')),...rows.map((row,i)=>{
+   if(!previous||row.w!==previous.w||row.pf-row.pa!==previous.pf-previous.pa||row.pf!==previous.pf)rank=i+1;
+   previous=row;
+   return (rank===1?'🥇 ':'')+rank+'. '+clean(row.name)+' · ชนะ '+row.w+'/'+row.played+' · แต้ม '+row.pf+'–'+row.pa;
+  })]);
+ }
+ const response=await leaderboardRoute(new Request('https://badbot.internal/api/leaderboard'),env,false,'sena');
+ if(!response.ok)return 'อ่าน Leaderboard ไม่สำเร็จ';
+ const {standings}=await response.json();
+ const link=new URL(urls.sena);link.hash='leaderboard';
+ return ['🏆 Sena Leaderboard',...standings.slice(0,5).map((row,i)=>(row.position??i+1)+'. '+clean(row.name)+' · ชนะ '+row.w+'/'+row.played),'ดูอันดับทั้งหมด: '+link.href].join('\n');
 }
 
 function textMessages(text){
@@ -126,8 +194,10 @@ export async function replyToGroupCommand(event,env){
    const text='🏸 รอบตีที่กำลังจะถึง\n\n'+sections.join('\n\n━━━━━━━━━━\n\n')+
     '\n\nอัปเดต ณ '+thaiTime.format(now)+' น.';
    messages.push(...textMessages(text));
-  }else{
+  }else if(action.kind==='menu'){
    messages.push(menu(urls));
+  }else{
+   messages.push(...textMessages(await shortcutText(action,env,urls)));
   }
   const response=await fetch('https://api.line.me/v2/bot/message/reply',{
    method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},
