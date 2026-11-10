@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
+import { readSlipFields } from './public/slip-ocr.js';
 import { billingLineText, promptPayPayload, prunePaidSlips } from './billing.js';
 
 const origin = 'https://sena.example';
@@ -21,9 +22,9 @@ function fixture(t) {
   };
  } });
  const env = { ADMIN_KEY: 'test-key', DB: binding(db), SLIPS_DB: binding(slips) };
- const request = (path, { cookie = '', token, method = 'GET', payload, body, originHeader = origin } = {}) =>
+ const request = (path, { cookie = '', token, method = 'GET', payload, body, headers, originHeader = origin } = {}) =>
   worker.fetch(new Request(origin + path, {
-   method, headers: { Origin: originHeader, Cookie: cookie, ...(token ? { 'X-Bill-Token': token } : {}) },
+   method, headers: { Origin: originHeader, Cookie: cookie, ...headers, ...(token ? { 'X-Bill-Token': token } : {}) },
    body: body ?? (payload ? JSON.stringify(payload) : undefined)
   }), env);
  async function login() {
@@ -107,7 +108,7 @@ test('only organizers can record and undo cash, without requiring a slip', async
  assert.match(await billingLineText(f.env, 'all', origin), /Nut/);
 });
 
-test('public uploads auto-pay the selected row, slips stay private, and only closed bills are pruned', async t => {
+test('public uploads preserve OCR review separately from payment, keep slips private and only prune closed bills', async t => {
  const f = fixture(t), cookie = await f.login();
  const { id } = await (await f.request('/api/billing', { method: 'POST', payload: draft, cookie })).json();
  const path = '/api/billing?bill=' + id;
@@ -116,14 +117,24 @@ test('public uploads auto-pay the selected row, slips stay private, and only clo
  const review = (p, status, note) => f.request(path + '&action=review', {
   method: 'POST', cookie, payload: { payer: p.id, status, note, receiptId: p.receiptId }
  });
- const upload = (p, body = slip) => f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, { method: 'POST', body });
+ const upload = (p, body = slip, fields) => f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, {
+  method: 'POST', body,
+  headers: fields && { 'X-Slip-Ocr-Amount': String(fields.amount), 'X-Slip-Ocr-PromptPay': fields.recipient }
+ });
  assert.equal((await review(nut, 'paid')).status, 409);
  assert.equal((await upload({})).status, 403);
  assert.equal((await upload(nut, new Uint8Array(1024*1024+1))).status, 400);
  assert.equal((await upload({ ...nut, amount: nut.amount - 1 })).status, 409);
- assert.equal((await upload(nut)).status, 200);
+ assert.equal((await upload(nut, slip, { amount: nut.amount, recipient: '0000' })).status, 200);
  [nut, bua] = await read();
- assert.equal(nut.status, 'paid');
+ assert.equal(nut.status, 'review');
+ assert.deepEqual(nut.slipReview, { amount: 'match', recipient: 'match' });
+ const publicBill = await (await f.request(path)).json();
+ assert.equal(publicBill.paid, 0);
+ assert.deepEqual(publicBill.payers[0].slipReview, nut.slipReview);
+ assert.equal((await f.request(path + '&action=review', {
+  method: 'POST', payload: { payer: nut.id, status: 'paid', receiptId: nut.receiptId }
+ })).status, 401);
  const privatePath = path + '&action=slip&payer=' + nut.id;
  assert.equal((await f.request(privatePath)).status, 403);
  assert.equal((await f.request(privatePath, { token: bua.token })).status, 404);
@@ -137,7 +148,9 @@ test('public uploads auto-pay the selected row, slips stay private, and only clo
  assert.equal(countSlips(), 1);
  assert.equal((await review(nut, 'rejected', 'กรุณาตรวจชื่อ')).status, 200);
  assert.equal((await read())[0].status, 'rejected');
- assert.equal((await upload(nut)).status, 200);
+ assert.equal((await upload(nut, slip, { amount: nut.amount + 1, recipient: '0001' })).status, 200);
+ [nut, bua] = await read();
+ assert.deepEqual(nut.slipReview, { amount: 'mismatch', recipient: 'mismatch' });
  assert.equal(countSlips(), 1);
  assert.doesNotMatch(await billingLineText(f.env, 'all', origin), /Nut/);
  await prunePaidSlips(f.env);
@@ -149,7 +162,16 @@ test('public uploads auto-pay the selected row, slips stay private, and only clo
  f.slips.prepare("DELETE FROM bill_slips WHERE key='full'").run();
  assert.equal((await upload(bua)).status, 200);
  [, bua] = await read();
- assert.equal(bua.status, 'paid');
+ assert.equal(bua.status, 'review');
+ assert.deepEqual(bua.slipReview, { amount: 'unknown', recipient: 'unknown' });
+ const { revision } = await (await f.request(path, { cookie })).json();
+ assert.equal((await f.request(path + '&action=edit', {
+  method: 'POST', cookie, payload: { revision, transfer: '0123450001' }
+ })).status, 200);
+ [nut, bua] = await read();
+ assert.deepEqual(nut.slipReview, { amount: 'mismatch', recipient: 'unknown' });
+ assert.equal((await review(nut, 'paid')).status, 200);
+ assert.equal((await review(bua, 'paid')).status, 200);
  assert.match(await billingLineText(f.env, 'all', origin), /ไม่มีบิลค้าง/);
  f.db.prepare('UPDATE bills SET closed_at=? WHERE id=?').run(Date.now() - 29*86400000, id);
  await prunePaidSlips(f.env);
@@ -199,4 +221,16 @@ test('a confirmed supplemental bill has a distinct link, displays the same date,
  assert.equal(view.additional, true);
  assert.match(await billingLineText(f.env, 'sena', origin), /บิลเพิ่มเติม/);
  assert.equal((await post({ ...draft, additional }, '88')).status, 409);
+});
+
+
+test('slip OCR only uses an explicit transfer amount and a recipient PromptPay number', () => {
+ assert.deepEqual(readSlipFields('จาก Nut\nพร้อมเพย์ 0899994321\nผู้รับ Bua\nพร้อมเพย์ XXX-XXX-๐๑๒๓\nจำนวนเงิน 1,200.50 บาท\nค่าธรรมเนียม 0.00'),
+  { amount: 120050, recipient: '0123' });
+ assert.deepEqual(readSlipFields('ยอดโอน\n401 บาท\nพร้อมเพย์ผู้รับ: 1234567890123'),
+  { amount: 40100, recipient: '0123' });
+ assert.deepEqual(readSlipFields('Amount: 401.00 THB\nRecipient: PromptPay XXX-XXX-01XX\nบัญชีผู้รับ XXX-XXX-0123'),
+  { amount: 40100, recipient: null });
+ assert.deepEqual(readSlipFields('From Nut\nPromptPay XXX-XXX-0123\nTo Bua\nบัญชี XXX-XXX-0123\nAmount: 401\nยอดโอน 402'),
+  { amount: null, recipient: null });
 });

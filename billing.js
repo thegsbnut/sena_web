@@ -74,10 +74,20 @@ function summary(bill) {
   count: bill.payers.length, paid: paidCount(bill), outstanding: outstanding(bill), cancelled: Boolean(bill.cancelled)
  };
 }
+function slipReview(headers, expectedAmount, promptPay) {
+ const amount = headers.get('X-Slip-Ocr-Amount') || '';
+ const recipient = headers.get('X-Slip-Ocr-PromptPay') || '';
+ return {
+  amount: /^[1-9]\d{0,9}$/.test(amount) ? (Number(amount) === expectedAmount ? 'match' : 'mismatch') : 'unknown',
+  recipient: /^\d{4}$/.test(recipient) && promptPayPattern.test(promptPay)
+   ? (recipient === promptPay.slice(-4) ? 'match' : 'mismatch') : 'unknown'
+ };
+}
 function paymentView(p, privateView, admin, slipsRemoved) {
  const { id, name, amount, status, shares, note, paidAt, slipKey } = p;
  return {
   id, name, amount, status, shares: shares.length, ...(p.method ? { method: p.method } : {}),
+  ...(status === 'review' && p.slipReview ? { slipReview: p.slipReview } : {}),
   ...(privateView ? { names: shares.map(x => x.name), note, paidAt, hasSlip: Boolean(slipKey) && !slipsRemoved } : {}),
   ...(admin ? { token: p.token, payerKey: p.payerKey, receiptId: p.slipKey?.split('/').at(-1) } : {})
  };
@@ -283,7 +293,10 @@ export async function billingRoute(req, env, admin, club) {
    .bind(key, id, type, bytes.length, bytes.buffer, bytes.length, maxStoredSlipBytes).run();
   if (!stored.meta.changes) return fail('พื้นที่เก็บสลิปเต็ม กรุณาแจ้งผู้จัด', 507);
   const oldKey = target.slipKey, now = Date.now();
-  Object.assign(target, { status: 'paid', method: 'transfer', slipKey: key, note: '', submittedAt: now, paidAt: now });
+  const assessment = slipReview(req.headers, target.amount, bill.transfer);
+  Object.assign(target, {
+   status: 'review', method: 'transfer', slipKey: key, note: '', submittedAt: now, paidAt: null, slipReview: assessment
+  });
   // A storage/DB error can be ambiguous. Only remove the new object after a
   // definite conflict, so a successfully attached receipt is never erased.
   if (!await updateBill(db, bill, payload)) {
@@ -291,7 +304,7 @@ export async function billingRoute(req, env, admin, club) {
    return fail('บิลมีการเปลี่ยนแปลง กรุณาโหลดใหม่แล้วลองอีกครั้ง', 409);
   }
   if (oldKey) await slips.prepare('DELETE FROM bill_slips WHERE key=?').bind(oldKey).run().catch(console.error);
-  return json({ ok: true });
+  return json({ ok: true, slipReview: assessment });
  }
  if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
  const input = await readLimitedJson(req);
@@ -316,6 +329,11 @@ export async function billingRoute(req, env, admin, club) {
   if (bill.payers.some(p => p.submittedAt || p.status === 'paid')) {
    if (input?.revision !== bill.revision || !promptPayPattern.test(input?.transfer || '')) return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
    if ('court' in input || 'shuttle' in input || 'attendees' in input) return fail('มีการชำระแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
+   if (payload.transfer !== input.transfer) {
+    for (const payment of payload.payers) {
+     if (payment.status === 'review' && payment.slipReview) payment.slipReview.recipient = 'unknown';
+    }
+   }
    payload.transfer = input.transfer;
    return await updateBill(db, bill, payload) ? json({ ok: true }) : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   }
@@ -331,6 +349,7 @@ export async function billingRoute(req, env, admin, club) {
   if (!['paid', 'rejected'].includes(input.status)) return fail('สถานะไม่ถูกต้อง');
   const note = clean(input.note);
   if (input.status === 'rejected' && (!note || note.length > 240)) return fail('กรุณาใส่เหตุผลไม่เกิน 240 ตัวอักษร');
+  delete target.slipReview;
   target.status = input.status;
   target.method = input.status === 'paid' ? 'transfer' : null;
   target.note = input.status === 'rejected' ? note : '';
