@@ -56,6 +56,9 @@ test('signed badbot command replies with five buttons and distinct existing book
  assert.equal(menu.type,'flex');
  const buttons=menu.contents.footer.contents;
  assert.equal(buttons.length,5);
+ assert.deepEqual(buttons.slice(2).map(button=>button.action.displayText),[
+  '👥 ขอรายชื่อผู้ตีทุกสนาม','👥 ขอรายชื่อผู้ตี Sena','👥 ขอรายชื่อผู้ตี 88'
+ ]);
  assert.deepEqual(buttons[0].action,{type:'uri',label:'🏸 จอง / ถอน Sena',uri:'https://sena-web.thegsbnut.workers.dev/court#booking'});
  assert.deepEqual(buttons[1].action,{type:'uri',label:'🏸 จอง / ถอน 88',uri:'https://sena-web.thegsbnut.workers.dev/court?club=88#booking'});
  assert.deepEqual(buttons.slice(2).map(b=>b.action.data),['badbot:roster:all','badbot:roster:sena','badbot:roster:88']);

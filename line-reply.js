@@ -60,12 +60,12 @@ function bookingUrl(env,club='sena'){
 
 function menu(urls){
  const link=club=>({type:'button',style:'primary',color:'#168B42',action:{type:'uri',label:'🏸 จอง / ถอน '+(club==='88'?'88':'Sena'),uri:urls[club]}});
- const postback=(label,data)=>({type:'button',style:'secondary',action:{type:'postback',label,data}});
+ const postback=(label,data,displayText)=>({type:'button',style:'secondary',action:{type:'postback',label,data,displayText}});
  const buttons=[
   ...clubs.map(link),
-  postback('👥 ผู้ตีทุกสนาม','badbot:roster:all'),
-  postback('👥 ผู้ตี Sena','badbot:roster:sena'),
-  postback('👥 ผู้ตี 88','badbot:roster:88')
+  postback('👥 ผู้ตีทุกสนาม','badbot:roster:all','👥 ขอรายชื่อผู้ตีทุกสนาม'),
+  postback('👥 ผู้ตี Sena','badbot:roster:sena','👥 ขอรายชื่อผู้ตี Sena'),
+  postback('👥 ผู้ตี 88','badbot:roster:88','👥 ขอรายชื่อผู้ตี 88')
  ];
  return {type:'flex',altText:'SENA Badbot · จอง / ถอนชื่อ และดูรายชื่อผู้ตี',contents:{
   type:'bubble',body:{type:'box',layout:'vertical',spacing:'md',contents:[
