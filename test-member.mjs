@@ -1,0 +1,119 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import worker from './worker.js';
+import {defaultSettings} from './booking.js';
+import {billingLineMessages} from './billing.js';
+const origin='https://sena.example',uid='U'+'a'.repeat(32),other='U'+'b'.repeat(32);
+function fixture(t){
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());
+ db.exec('CREATE TABLE club_state(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT);CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)');
+ db.prepare('INSERT INTO club_state VALUES(1,1,?,?)').run(JSON.stringify({players:[{id:'p0',name:'Nut',thai:'',lv:8,gender:'M'},{id:'p1',name:'Pete',thai:'',lv:7,gender:'M'}],selected:[],rounds:10,locks:[],result:null,cup:null}),'initial');
+ const binding={prepare(sql){const stmt=db.prepare(sql);let args=[];return {bind(...v){args=v.map(x=>x instanceof ArrayBuffer?new Uint8Array(x):x);return this;},first(){return stmt.get(...args);},all(){return {results:stmt.all(...args)};},run(){return {meta:{changes:stmt.run(...args).changes}};}};}};
+ const env={DB:binding,SLIPS_DB:binding,ADMIN_KEY:'test-key',LINE_MEMBER_AUTH_ENABLED:'true',LINE_LOGIN_CHANNEL_ID:'12345',LINE_LIFF_ID:'12345-test',LINE_CHANNEL_ACCESS_TOKEN:'fixture-token'};
+ let identity=uid,profileOverride={},calls=0;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(String(url).startsWith('https://api.line.me/v2/bot/group/'))return new Response('{}',{status:200});
+  assert.equal(url,'https://api.line.me/oauth2/v2.1/verify');calls++;
+  assert.equal(options.body.get('client_id'),'12345');
+  return Response.json({sub:identity,iss:'https://access.line.me',aud:'12345',exp:Math.floor(Date.now()/1000)+3600,name:'Odd LINE name',...profileOverride});
+ });
+ const request=(path,body,cookie='',extra={})=>worker.fetch(new Request(origin+path,{method:body?'POST':'GET',headers:{Origin:origin,Cookie:cookie,'X-Booking-Token':'a'.repeat(64),...extra},...(body?{body:typeof body==='object'&&!(body instanceof Uint8Array)?JSON.stringify(body):body}:{})}),env);
+ const cookieOf=r=>r.headers.get('Set-Cookie').split(';')[0];
+ const login=async(user=uid)=>{
+  identity=user;const status=await request('/api/member');const info=await status.json();
+  const r=await request('/api/member/login',{idToken:'verified-by-line'},cookieOf(status),{'X-Member-CSRF':info.csrf});assert.equal(r.status,200);return cookieOf(r);
+ };
+ const admin=async()=>cookieOf(await request('/api/login',{key:env.ADMIN_KEY}));
+ return {db,env,request,login,admin,cookieOf,get calls(){return calls;},profile:value=>profileOverride=value};
+}
+test('LIFF endpoint serves HTML without redirecting away from its registered URL',async()=>{
+ const response=await worker.fetch(new Request(origin+'/liff.html?club=88'),{ASSETS:{fetch(request){
+  const url=new URL(request.url);assert.equal(url.pathname,'/liff');assert.equal(url.searchParams.get('club'),'88');
+  return new Response('<!doctype html>',{headers:{'Content-Type':'text/html'}});
+ }}});
+ assert.equal(response.status,200);assert.equal(response.headers.get('Location'),null);
+});
+test('login-only trial allows real account setup before enforcing booking login',async t=>{
+ const f=fixture(t);f.env.LINE_MEMBER_AUTH_ENABLED='false';f.env.LINE_LOGIN_ENABLED='true';
+ const admin=await f.admin(),member=await f.login();
+ const status=await(await f.request('/api/member',null,member)).json();
+ assert.equal(status.loggedIn,true);assert.equal(status.enabled,true);assert.equal(status.requireLogin,false);
+ const setup=await(await f.request('/api/booking',{action:'settings',settingsVersion:0,settings:{...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8}},admin)).json();
+ const book={action:'book',playerId:'p0',sessionIds:[setup.sessions[0].id],acceptHoliday:true};
+ assert.equal((await f.request('/api/booking',book)).status,200);
+ f.env.LINE_MEMBER_AUTH_ENABLED='true';
+ assert.equal((await f.request('/api/booking',{...book,playerId:'p1'})).status,403);
+});
+
+test('LINE login verifies server-side audience, expiry and CSRF; forged sessions fail',async t=>{
+ const f=fixture(t);
+ assert.equal((await f.request('/api/member/login',{idToken:'fake'})).status,403);assert.equal(f.calls,0);
+ const r=await f.request('/api/member'),info=await r.json(),cookie=f.cookieOf(r);
+ assert.equal((await f.request('/api/member/login','null',cookie,{'X-Member-CSRF':info.csrf})).status,400);
+ for(const invalid of [{aud:'wrong'},{exp:0},{iss:'https://evil.test'},{sub:'attacker'}]){
+  f.profile(invalid);assert.equal((await f.request('/api/member/login',{idToken:'fake'},cookie,{'X-Member-CSRF':info.csrf})).status,401);
+ }
+ f.profile({});const member=await f.login();
+ assert.equal((await(await f.request('/api/member',null,member)).json()).loggedIn,true);
+ assert.equal((await(await f.request('/api/member',null,'__Host-sena-member='+'0'.repeat(64))).json()).loggedIn,false);
+ await f.request('/api/member/logout',{},member);
+ assert.equal((await(await f.request('/api/member',null,member)).json()).loggedIn,false);
+});
+test('member mapping requires organizer approval, isolates clubs, and limits booking and cancellation to self',async t=>{
+ const f=fixture(t),admin=await f.admin(),member=await f.login();
+ const settings={...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8};
+ const configured=await(await f.request('/api/booking',{action:'settings',settingsVersion:0,settings},admin)).json(),sessionId=configured.sessions[0].id;
+ const booking={action:'book',playerId:'p0',sessionIds:[sessionId],acceptHoliday:true};
+ assert.equal((await f.request('/api/booking',booking)).status,403);
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
+ assert.equal((await f.request('/api/booking',booking,member)).status,403);
+ assert.equal((await f.request('/api/member/approve',{userId:uid},member)).status,401);
+ assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,200);
+ assert.equal((await f.request('/api/booking',booking,member)).status,200);
+ assert.equal((await f.request('/api/booking',{...booking,playerId:'p1'},member)).status,403);
+ assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link,null);
+ await f.request('/api/booking',{...booking,playerId:'p1'},admin);
+ let data=await(await f.request('/api/booking',null,member)).json(),session=data.sessions.find(s=>s.id===sessionId);
+ const mine=session.registrations.find(r=>r.playerId==='p0'),theirs=session.registrations.find(r=>r.playerId==='p1');
+ assert.equal(mine.canCancel,true);assert.equal(theirs.canCancel,false);
+ assert.equal((await f.request('/api/booking',{action:'cancel',sessionId,registrationId:theirs.id,acceptLateCancellation:true},member)).status,403);
+ assert.equal((await f.request('/api/booking',{action:'cancel',sessionId,registrationId:mine.id,acceptLateCancellation:true},member)).status,200);
+ const second=await f.login(other);await f.request('/api/member/link',{playerId:'p0'},second);
+ assert.equal((await f.request('/api/member/approve',{userId:other},admin)).status,409);
+ await f.request('/api/member/revoke',{userId:uid},admin);
+ assert.equal((await f.request('/api/booking',booking,member)).status,403);
+});
+test('new member approval requires organizer LV and gender; renaming keeps the same linked identity',async t=>{
+ const f=fixture(t),admin=await f.admin(),member=await f.login();
+ assert.equal((await f.request('/api/member/link',{name:'New member'},member)).status,200);
+ assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,400);
+ assert.equal((await f.request('/api/member/approve',{userId:uid,name:'Good name',lv:6.5,gender:'F'},admin)).status,200);
+ const mapping=(await(await f.request('/api/member',null,member)).json()).link;
+ const before=await(await f.request('/api/state',null,admin)).json();
+ const player=before.state.players.find(p=>p.id===mapping.player_id);assert.equal(player.name,'Good name');
+ player.name='Edited by admin';
+ assert.equal((await f.request('/api/state',{state:before.state,revision:before.revision},admin)).status,200);
+ const after=await(await f.request('/api/member',null,member)).json();assert.equal(after.link.player_id,mapping.player_id);
+ assert.equal((await(await f.request('/api/state',null,admin)).json()).state.players.find(p=>p.id===mapping.player_id).name,'Edited by admin');
+});
+test('personal bill links reveal only the owner; uploads enforce ownership; group mentions contain no payer tokens',async t=>{
+ const f=fixture(t),admin=await f.admin(),member=await f.login();
+ await f.request('/api/member/link',{playerId:'p0'},member);await f.request('/api/member/approve',{userId:uid},admin);
+ const draft={date:'2026-11-10',court:10000,shuttle:0,transfer:'0000000000',attendees:[{name:'Nut',payer:'Nut',payerKey:'member:p0'},{name:'Pete',payer:'Pete',payerKey:'member:p1'}]};
+ const {id}=await(await f.request('/api/billing',draft,admin)).json();
+ const view=await(await f.request('/api/billing?bill='+id,null,admin)).json(),[mine,theirs]=view.payers;
+ assert.equal((await f.request('/api/member/bills')).status,401);
+ const own=await(await f.request('/api/member/bills?bill='+id,null,member)).json();
+ assert.equal(own.bills.length,1);assert(own.bills[0].url.includes(mine.token));assert(!JSON.stringify(own).includes(theirs.token));
+ const path='/api/billing?bill='+id+'&action=upload&payer='+theirs.id+'&amount='+theirs.amount;
+ const slip=Uint8Array.of(255,216,255,224,0,0,0,0,0,0,255,217);
+ assert.equal((await f.request(path,slip,member)).status,403);assert.equal((await f.request(path,slip)).status,403);
+ assert.equal((await f.request('/api/billing?bill='+id,null,member,{'X-Bill-Token':theirs.token})).status,403);
+ const messages=await billingLineMessages(f.env,'all',origin,'C'+'a'.repeat(32));
+ assert.equal(messages[0].type,'textV2');
+ assert.equal(Object.values(messages[0].substitution)[0].mentionee.userId,uid);
+ assert.match(messages[0].text,/https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
+ assert(!JSON.stringify(messages).includes(mine.token));assert(!JSON.stringify(messages).includes(theirs.token));
+ assert.equal((await f.request('/api/billing?bill='+id+'&action=upload&payer='+mine.id+'&amount='+mine.amount,slip,member)).status,200);
+});

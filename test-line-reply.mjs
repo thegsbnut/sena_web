@@ -48,6 +48,17 @@ function session(date,{names=2,closed=false,holiday=null,capacity=8}={}){
 }
 const textOf=call=>call.messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
 
+test('enabled member mode sends both booking buttons through the configured LIFF app',async t=>{
+ const f=fixture(t);f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
+ await f.hook([f.event()]);
+ const buttons=f.calls[0].messages[0].contents.footer.contents;
+ for(const [i,club] of [[0,'sena'],[1,'88']]){
+  const url=new URL(buttons[i].action.uri);
+  assert.equal(url.origin,'https://liff.line.me');assert.equal(url.pathname,'/12345-test');
+  assert.equal(url.searchParams.get('club'),club);assert.equal(url.searchParams.get('page'),'book');
+ }
+});
+
 test('signed badbot command replies with five buttons and distinct existing booking URLs',async t=>{
  const f=fixture(t),before=f.db.prepare('SELECT payload FROM club_state').get().payload;
  assert.equal((await f.hook([f.event('ＢＡＤＢＯＴ')])).status,200);

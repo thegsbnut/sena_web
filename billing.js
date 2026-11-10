@@ -1,3 +1,4 @@
+import {memberMode,memberFor,liffUrl,prepareMembers} from './member.js';
 import qrcode from 'qrcode-generator';
 
 const day = 86400000;
@@ -252,7 +253,10 @@ export async function billingRoute(req, env, admin, club) {
  }
  const bill = await readBill(db, id);
  if (!bill) return fail('ไม่พบบิล', 404);
+ const member=memberMode(env)?await memberFor(req,env,bill.club):null;
+ const owns=p=>member?.link?.status==='approved'&&p.payerKey==='member:'+member.link.player_id;
  const payer = tokenPattern.test(supplied) ? bill.payers.find(p => p.token === supplied) : null;
+ if(memberMode(env)&&!admin&&payer&&!owns(payer))return fail('กรุณาเข้าสู่ระบบ LINE ของเจ้าของบิล',403);
  if (supplied && !payer) return fail('ลิงก์ชำระเงินไม่ถูกต้อง', 403);
  if (req.method === 'GET') {
   if (action === 'qr') {
@@ -288,6 +292,7 @@ export async function billingRoute(req, env, admin, club) {
   const target = payload.payers.find(p => p.id === (payer?.id || url.searchParams.get('payer')));
   if (!target || (!payer && !promptPayPattern.test(bill.transfer))) return fail('กรุณาเลือกชื่อผู้จ่ายจากหน้าบิล', 403);
   if (!payer && url.searchParams.get('amount') !== String(target.amount)) return fail('ยอดเปลี่ยนแล้ว กรุณาโหลดบิลใหม่', 409);
+  if(memberMode(env)&&!admin&&!owns(target))return fail('แนบสลิปได้เฉพาะบิลของตัวเอง กรุณาเข้าสู่ระบบ LINE',403);
   const slips = env.SLIPS_DB;
   if (!slips) return fail('ระบบรับสลิปยังไม่พร้อม', 503);
   if (!['unpaid', 'rejected'].includes(target.status)) return fail('รายการนี้ส่งสลิปแล้ว', 409);
@@ -403,4 +408,40 @@ export async function prunePaidSlips(env) {
   await env.SLIPS_DB.prepare('DELETE FROM bill_slips WHERE bill_id=?').bind(id).run();
   await env.DB.prepare('UPDATE bills SET slips_removed=1 WHERE id=? AND slips_removed=2').bind(id).run();
  }
+}
+
+// No private payer tokens are placed in group messages. The LIFF destination
+// resolves the signed-in account to its own payer after authentication.
+export async function billingLineMessages(env,scope,origin,groupId){
+ if(!memberMode(env)||!env.LINE_LIFF_ID)return null;
+ await prepare(env.DB);await prepareMembers(env.DB);
+ const clubs=scope==='all'?['sena','88']:[scope],limit=scope==='all'?3:5;
+ const groups=await Promise.all(clubs.map(club=>env.DB.prepare("SELECT * FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload,'$.cancelled'),0)=0 AND club=? ORDER BY session_date LIMIT ?").bind(club,limit+1).all()));
+ const rows=groups.flatMap(g=>g.results.slice(0,limit)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+ if(!rows.length)return [{type:'text',text:'✅ ไม่มีบิลค้าง · '+(scope==='all'?'ทุกสนาม':clubName(scope))}];
+ const chunks=[];let text='💸 บิลค้าง · '+(scope==='all'?'ทุกสนาม':clubName(scope)),substitution={};
+ const safe=value=>String(value).replaceAll('{','｛').replaceAll('}','｝');
+ for(const row of rows){
+  const bill={...row,...JSON.parse(row.payload)},pending=bill.payers.filter(p=>p.status!=='paid'),unpaid=pending.filter(p=>p.status!=='review');
+  const entries=await Promise.all(unpaid.slice(0,8).map(async p=>{
+   const link=await env.DB.prepare("SELECT user_id FROM member_links WHERE club=? AND player_id=? AND status='approved'").bind(bill.club,p.payerKey?.startsWith('member:')?p.payerKey.slice(7):'').first();
+   if(!link)return {p};
+   try{
+    const response=await fetch('https://api.line.me/v2/bot/group/'+encodeURIComponent(groupId)+'/member/'+link.user_id,{headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN},signal:AbortSignal.timeout(2000)});
+    return {p,userId:response.ok?link.user_id:null};
+   }catch{return {p};}
+  }));
+  if(text.length>3000||Object.keys(substitution).length+entries.filter(e=>e.userId).length>20){chunks.push({type:'textV2',text,substitution});text='💸 บิลค้าง (ต่อ)';substitution={};}
+  text+='\n\n'+clubName(bill.club)+' · '+displayDate(billDate(bill))+(bill.session_date.length>10?' · บิลเพิ่มเติม':'')+' · ค้าง '+money(outstanding(bill))+' บ.';
+  for(const {p,userId} of entries){
+   const key='u'+Object.keys(substitution).length;
+   if(userId)substitution[key]={type:'mention',mentionee:{type:'user',userId}};
+   text+='\n• '+safe(p.name)+' '+money(p.amount)+' บ.'+(userId?' {'+key+'}':'');
+  }
+  if(unpaid.length>8)text+='\n… ยังไม่จ่ายอีก '+(unpaid.length-8)+' คน';
+  const reviewing=pending.length-unpaid.length;if(reviewing)text+='\nรอตรวจสลิป '+reviewing+' คน';
+  text+='\nชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n'+liffUrl(env,bill.club,'pay',bill.id);
+ }
+ if(groups.some(g=>g.results.length>limit))text+='\nแสดง '+limit+' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด';
+ chunks.push({type:'textV2',text,substitution});return chunks;
 }

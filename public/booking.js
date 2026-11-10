@@ -83,7 +83,7 @@
   const rows=session.withdrawals??[];
   return `<section class="booking-withdrawals"><h4>รายชื่อคนถอน <span>${rows.length} รายการ</span></h4>${[...rows].reverse().map(r=>`<div class="booking-person"><div><strong>${html(r.name)}</strong>${r.guest?` <small>แขกของ ${html(r.payer)}</small>`:''}<small>ถอน ${html(displayTimestamp(r.cancelledAt))} · ${r.status==='waitlist'?'เดิมเป็นสำรอง':'เดิมเป็นตัวจริง'}</small><small>${r.lateCancellation?'⚠ ถอนหลังกำหนด · รับทราบเรื่องค่าใช้จ่ายแล้ว':'ถอนในเวลาปลอดภัย'}${r.cancelledByOrganizer?' · ผู้จัดถอนให้':''}${session.registrations.some(x=>x.playerId===r.playerId||x.guest&&r.guest&&x.guest.name===r.name&&rawName(x.guest.hostId)===r.payer)?' · กลับมาลงชื่อแล้ว':''}</small></div></div>`).join('')||'<p class="hint">ยังไม่มีประวัติการถอนตัว</p>'}<p class="hint">เวลาไทย · ประวัติเริ่มเก็บหลังเปิดใช้ระบบนี้</p></section>`;
  }
- root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><span id="bookingBills" class="actions" hidden><a class="pill" href="${html(venueUrl('/billing.html?manage=1'))}">บิลค้าง ↗</a></span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
+ root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><a id="bookingMemberLogin" class="pill" href="${html(venueUrl('/liff.html'))}" hidden>เข้าสู่ระบบ LINE / ผูกชื่อเพื่อจอง</a><span id="bookingBills" class="actions" hidden><a class="pill" href="${html(venueUrl('/billing.html?manage=1'))}">บิลค้าง ↗</a></span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingCancelDialog" class="booking-feedback" aria-labelledby="bookingCancelTitle" aria-describedby="bookingCancelName bookingCancelDeadline bookingCancelWarning"><h2 id="bookingCancelTitle">ยืนยันถอนตัว</h2><p id="bookingCancelName"></p><p id="bookingCancelDeadline" class="hint"></p><p id="bookingCancelWarning" class="booking-cancel-warning" hidden>⚠ เลยเวลาถอนปลอดภัยแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย โดยผู้จัดจะพิจารณาอีกครั้ง</p><p id="bookingCancelStatus" role="status"></p><div class="actions"><button type="button" class="primary" id="bookingCancelConfirm">ยืนยันถอนตัว</button><button type="button" class="secondary" id="bookingCancelBack">กลับ</button></div></dialog>
  <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อสมาชิกผู้จองหลัก</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingGuestOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasGuest"> เพิ่มแขก (Guest)</label><div id="bookingGuestFields" class="booking-fields" hidden><label>ชื่อแขก<input id="bookingGuestName" type="text" maxlength="80" placeholder="ชื่อแขก"></label><label>เพศสำหรับจัดคู่<select id="bookingGuestGender"><option value="">เลือกเพศ</option><option value="M">ชาย</option><option value="F">หญิง</option></select></label></div></div><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
@@ -121,6 +121,11 @@
  });
  mobileDetails.addEventListener('change',()=>{if(!mobileDetails.matches&&detailsDialog.open)detailsDialog.close();});
  function render(){
+  if(data.requireLogin&&!data.canEdit){
+   const linked=data.member?.playerId;
+   q('#bookingMemberLogin').hidden=Boolean(linked);
+   if(linked)playerId=linked;
+  }else q('#bookingMemberLogin').hidden=true;
   const cfg=data.settings,map=q('#bookingVenueMap'),mapInput=q('#bookingMapUrl');
   const mapUrl=data.venueMapUrl??'';
   map.hidden=!mapUrl;
@@ -139,7 +144,7 @@
   const visibleSessions=showAllDates?sessions:sessions.slice(0,3);
   q('#bookingDates').innerHTML=sessions.length?visibleSessions.map(s=>{
    const available=Math.max(0,s.capacity-s.confirmedCount);
-   const closed=s.started||s.closed||s.skipped||!cfg.enabled;
+   const closed=s.started||s.closed||s.skipped||!cfg.enabled||data.requireLogin&&!data.canEdit&&!data.member?.playerId;
    const mine=s.registrations.find(r=>r.playerId===playerId);
    const tone=closed?'closed':available===0?'full':available<=2?'near':'open';
    const availability=closed
@@ -171,7 +176,7 @@
   const booked=new Map();
   for(const session of chosen)for(const {playerId:id} of session.registrations)booked.set(id,(booked.get(id)||0)+1);
   const picker=q('#bookingPlayer');
-  const options=data.roster;
+  const options=data.requireLogin&&!data.canEdit?data.roster.filter(p=>p.id===data.member?.playerId):data.roster;
   picker.innerHTML='<option value="">เลือกชื่อของคุณ…</option>'+options.map(p=>{
    const count=booked.get(p.id)||0;
    const note=count?` · จองแล้ว ${count}/${chosen.length} วัน`:'';
@@ -179,7 +184,7 @@
   }).join('');
   const eligible=options.some(p=>p.id===playerId);
   picker.value=eligible?playerId:'';
-  picker.disabled=!options.length;
+  picker.disabled=!options.length||data.requireLogin&&!data.canEdit;
   q('#bookingGuestOption').hidden=!picker.value;
   const withGuest=Boolean(picker.value&&q('#bookingHasGuest').checked);
   q('#bookingGuestFields').hidden=!withGuest;

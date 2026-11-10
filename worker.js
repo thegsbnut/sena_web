@@ -1,3 +1,4 @@
+import {memberRoute,memberFor,memberMode} from './member.js';
 import {billingRoute,prunePaidSlips,billIdFromCode} from './billing.js';
 import {lineAdmin,lineWebhook} from './line.js';
 import {bookingRoute,scheduledBookings} from './booking.js';
@@ -37,6 +38,8 @@ function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
 export default {async scheduled(event,env,ctx){if(event.cron==='0 18 * * *'){ctx.waitUntil(scheduledBookings(env));ctx.waitUntil(prunePaidSlips(env));}},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+// Preserve the exact LIFF endpoint; Assets normally redirects .html to /liff.
+if(path==='/liff.html'){const target=new URL(req.url);target.pathname='/liff';return env.ASSETS.fetch(new Request(target,req));}
 if(path.startsWith('/b/')){
  if(!['GET','HEAD'].includes(req.method))return json({error:'Method not allowed'},405);
  const id=billIdFromCode(path.slice(3));
@@ -53,7 +56,8 @@ if(path.startsWith('/api/')&&req.method!=='GET'&&!originOK(req))return json({err
 if(path==='/api/session')return req.method==='GET'?json({canEdit:await authorized(req,env)}):json({error:'Method not allowed'},405);
 if(path==='/api/line')return await lineAdmin(req,env,await authorized(req,env),club);
 if(path==='/api/billing')return await billingRoute(req,env,await authorized(req,env),club);
-if(path==='/api/booking')return await bookingRoute(req,env,await authorized(req,env),club);
+if(path==='/api/member'||path.startsWith('/api/member/'))return await memberRoute(req,env,await authorized(req,env),club);
+if(path==='/api/booking')return await bookingRoute(req,env,await authorized(req,env),club,await memberFor(req,env,club));
 if(path==='/api/backups')return await backupsRoute(req,env,await authorized(req,env),club,valid);
 if(path==='/api/leaderboard'){const admin=await authorized(req,env);if(admin&&env.DB&&req.method==='POST')await prepareBackups(env.DB,club);return await leaderboardRoute(req,env,admin,club);}
 if(path==='/api/login'&&req.method==='POST'){
@@ -69,6 +73,7 @@ if(path==='/api/login'&&req.method==='POST'){
 }
 if(path==='/api/logout'&&req.method==='POST')return json({ok:true},200,{'Set-Cookie':'__Host-sena=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'});
 if (path === '/api/generate' && req.method === 'POST') {
+  if(memberMode(env)&&!await authorized(req,env)&&(await memberFor(req,env,club))?.link?.status!=='approved')return json({error:'กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน'},401);
   if (!env.DB) return json({error:'ยังไม่ได้ตั้งค่าฐานข้อมูล'},503);
   const input = await body(req,10000);
   if (!Array.isArray(input.selected) || input.selected.length > 24 || new Set(input.selected).size !== input.selected.length || !Number.isInteger(input.rounds) || input.rounds < 1 || input.rounds > 30 || !Array.isArray(input.locks) || input.locks.length > 30 || !input.locks.every(l => l && Number.isInteger(l.round) && Array.isArray(l.ids) && l.ids.length === 4)) return json({error:'ข้อมูลจัดคู่ไม่ถูกต้อง'},400);

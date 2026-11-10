@@ -1,3 +1,4 @@
+import {memberMode} from './member.js';
 import './public/engine.js';
 import {latestCup,cupPlayerKey} from './leaderboard.js';
 import {holidayOn,HOLIDAY_YEARS} from './booking-holidays.js';
@@ -169,7 +170,7 @@ export async function mutateBooking(env,club,operation,now=new Date()) {
  }
  fail('มีผู้จองพร้อมกันหลายคน กรุณาลองอีกครั้ง',409);
 }
-export async function bookingRoute(req,env,admin,club) {
+export async function bookingRoute(req,env,admin,club,member=null) {
  try {
   if(!['GET','POST'].includes(req.method))return reply({error:'Method not allowed'},405);
   const owner=await ownerHash(req),now=new Date();
@@ -245,6 +246,7 @@ export async function bookingRoute(req,env,admin,club) {
     s.closed=input.closed;return {message:s.closed?'ปิดรับจองรอบนี้แล้ว':'เปิดรับจองรอบนี้แล้ว'};
    }
    if(input.action==='book'){
+    if(memberMode(env)&&!admin&&(member?.link?.status!=='approved'||input.playerId!==member.link.player_id))fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อของคุณก่อนจอง',403);
     if(!doc.settings.enabled)fail('ผู้จัดยังไม่เปิดรับจอง',409);
     if(!owner)fail('กรุณาเปิดใช้พื้นที่จัดเก็บในเบราว์เซอร์เพื่อจัดการการจอง');
     const player=players.find(p=>p.id===input.playerId);
@@ -275,6 +277,7 @@ export async function bookingRoute(req,env,admin,club) {
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
+    if(memberMode(env)&&!admin&&(member?.link?.status!=='approved'||(r.guest?.hostId||r.playerId)!==member.link.player_id))fail('ถอนได้เฉพาะรายการของตัวเอง กรุณาให้ผู้จัดช่วย',403);
     const hours=doc.settings.cancellationNoticeHours??48;
     const deadline=startsAt(s)-hours*3600000,late=+now>deadline;
     if(late&&input.acceptLateCancellation!==true)throw new BookingError(
@@ -286,14 +289,19 @@ export async function bookingRoute(req,env,admin,club) {
      const host=x.guest?.hostId||x.playerId,payer=players.find(p=>p.id===host)?.name||'ผู้เล่นที่นำออกจากก๊วน';
      s.withdrawals.push({registrationId:x.id,playerId:x.playerId,name:x.guest?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(x.guest),
       cancelledAt:now.toISOString(),lateCancellation:late,cancellationNoticeHours:hours,acknowledgedAt:late?now.toISOString():null,
-      status:s.registrations.indexOf(x)<s.capacity?'confirmed':'waitlist',cancelledByOrganizer:admin});
+      status:s.registrations.indexOf(x)<s.capacity?'confirmed':'waitlist',cancelledByOrganizer:admin,...(member?{actorUserId:member.userId}:{})});
     }
     s.registrations=s.registrations.filter(x=>x.id!==r.id&&x.guest?.hostId!==r.playerId);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);
   const awards=new Map([...globalThis.Sena.cupAwards(cupHistory??outcome.cup)].map(([name,award])=>[cupPlayerKey(name,club),award]));
-  return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,now,club,awards),venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
+  const view=publicBooking(outcome.doc,outcome.revision,outcome.players,admin,now,club,awards);
+  if(memberMode(env)){
+   view.requireLogin=true;view.member={loggedIn:Boolean(member),status:member?.link?.status||null,playerId:member?.link?.status==='approved'?member.link.player_id:null};
+   for(const session of view.sessions)for(const r of session.registrations)r.canCancel=r.canCancel&&(admin||member?.link?.status==='approved'&&(r.guest?.hostId||r.playerId)===member.link.player_id);
+  }
+  return reply({...view,venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
  }catch(e){if(e instanceof BookingError)return reply({error:e.message,...e.details},e.status);throw e;}
 }
 export async function scheduledBookings(env) {

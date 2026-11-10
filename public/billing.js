@@ -21,6 +21,7 @@
  const withdrawalTime = value => new Date(value).toLocaleString('th-TH', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Bangkok'}) + ' น.';
  const states = { unpaid: 'ยังไม่จ่าย', review: 'รอตรวจสลิป', rejected: 'ส่งสลิปใหม่', paid: 'จ่ายแล้ว' };
  const order = { unpaid: 0, rejected: 1, review: 2, paid: 3 };
+ let memberSession=null;
  let busy = false, slipUrl, bill, adminList, sessions = [], attendees = [], editing = false;
  const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
  document.querySelector('#back').href = '/court' + (club === '88' ? '?club=88' : '') + '#booking';
@@ -112,7 +113,9 @@
  }
  let additionalKey, additionalDate, originalBillId;
  function showBill() {
+  if(memberSession?.requireLogin&&!manage&&!payerToken){location.replace('/liff.html?page=pay&club='+bill.club+'&bill='+bill.id);return;}
   const organizer = manage && Number.isInteger(bill.revision);
+  const memberReadOnly=memberSession?.requireLogin&&!memberSession.loggedIn&&!organizer;
   if (bill.cancelled && !organizer) {
    root.innerHTML = '<h1>บิลนี้ถูกยกเลิกแล้ว</h1>';
    message('');
@@ -129,7 +132,7 @@
     <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
     ${bill.collection > bill.total ? `<p class="muted">ปัดขึ้นรวม ${money(bill.collection - bill.total)} บาท</p>` : ''}
    </section>
-   ${bill.cancelled ? '<p class="error">บิลนี้ถูกยกเลิกแล้ว</p>' : ''}
+   ${memberReadOnly ? '<p><a class="button" href="/liff.html?page=pay&club='+bill.club+'&bill='+bill.id+'">เข้าสู่ระบบ LINE เพื่อจ่ายบิลของคุณ</a></p>' : ''}${bill.cancelled ? '<p class="error">บิลนี้ถูกยกเลิกแล้ว</p>' : ''}
    ${bill.transfer && !bill.cancelled ? `<section><h2>${promptpay ? 'พร้อมเพย์' : 'ช่องทางโอนเงิน'}</h2><div class="transfer actions"><strong>${escape(bill.transfer)}</strong>${promptpay ? '<button type="button" data-action="copy-promptpay">คัดลอกเลขพร้อมเพย์</button>' : ''}</div></section>` : ''}
    <section>
     <div class="card-title"><h2>${who ? 'ยอดของคุณ' : 'สถานะการชำระ'}</h2><button type="button" data-action="reload">อัปเดต</button></div>
@@ -139,15 +142,15 @@
       ${organizer && p.withdrawals?.length ? p.withdrawals.map(r => `<small class="withdrawal-time">${escape(r.name)} · ถอน ${escape(withdrawalTime(r.withdrawnAt))}</small>`).join('') : ''}${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
-       ${!bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
-       ${!bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
+       ${!memberReadOnly && !bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
+       ${!memberReadOnly && !bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.method !== 'cash' && ['review', 'paid'].includes(p.status) ? `<button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
        ${organizer && !bill.cancelled && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="cash" data-payer="${p.id}">รับเงินสด</button>` : ''}
        ${organizer && bill.canUndoCash && p.method === 'cash' ? `<button type="button" data-action="undo-cash" data-payer="${p.id}">ยกเลิกรับเงินสด</button>` : ''}
       </div></div>`).join('')}
     <input type="file" id="paymentSlip" accept="image/*" hidden>
-    ${!bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะบันทึกว่าจ่ายแล้วทันที</p>' : ''}
+    ${!memberReadOnly && !bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะบันทึกว่าจ่ายแล้วทันที</p>' : ''}
    </section>
    ${organizer ? `<div class="actions">${bill.cancelled ? '<button data-action="restore" type="button">เปิดบิลอีกครั้ง</button>' : `<button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button><button data-action="edit" type="button">${bill.editable ? 'แก้ไขบิล' : 'แก้เลขพร้อมเพย์'}</button><button data-action="cancel" type="button">ยกเลิกบิล</button>`}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
   message('');
@@ -459,6 +462,9 @@
  });
  run(async () => {
   try {
+   const memberResponse=await fetch('/api/member?club='+club,{cache:'no-store'});
+   if(memberResponse.ok)memberSession=await memberResponse.json();
+   if(memberSession?.requireLogin&&!manage&&id&&(!memberSession.loggedIn||!payerToken)){location.replace('/liff.html?page=pay&club='+club+'&bill='+encodeURIComponent(id));return;}
    await load();
    if (!id && manage && (params.has('date') || params.has('new'))) await openDraft();
   } catch (error) {

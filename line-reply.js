@@ -1,4 +1,5 @@
-import {billingLineText} from './billing.js';
+import {memberMode,liffUrl} from './member.js';
+import {billingLineText,billingLineMessages} from './billing.js';
 import {bookingRoute} from './booking.js';
 import {latestCup,leaderboardRoute} from './leaderboard.js';
 
@@ -52,6 +53,7 @@ function command(event){
 }
 
 function bookingUrl(env,club='sena'){
+ if(memberMode(env)&&env.LINE_LIFF_ID)return liffUrl(env,club);
  const url=new URL(env.LINE_BOOKING_URL||defaultBookingUrl);
  if(url.protocol!=='https:'||url.username||url.password)throw Error('Invalid booking URL');
  if(club==='88')url.searchParams.set('club','88');else url.searchParams.delete('club');
@@ -210,6 +212,8 @@ export async function replyToGroupCommand(event,env){
    const text='🏸 รอบตีที่กำลังจะถึง\n\n'+sections.join('\n\n━━━━━━━━━━\n\n')+
     '\n\nอัปเดต ณ '+thaiTime.format(now)+' น.';
    messages.push(...textMessages(text));
+  }else if(action.kind==='bill'&&memberMode(env)&&env.LINE_LIFF_ID){
+   messages.push(...await billingLineMessages(env,action.scope,new URL(urls.sena).origin,group));
   }else if(action.kind==='menu'){
    messages.push(menu(urls));
   }else{
