@@ -112,3 +112,10 @@ main:has(#booking:not([hidden])) > .venue-picker small { display:none }
 
 .booking-bill-action{display:flex;width:100%;min-height:48px;align-items:center;justify-content:center;margin:12px 0;padding:10px 16px;border-radius:10px;background:#173f2f;color:#fff;font-weight:800;text-decoration:none}
 .booking-bill-action:hover,.booking-bill-action:focus-visible{background:#0f2e22;color:#fff}
+#bookingCancelDialog { max-height:85dvh; overflow:auto }
+.booking-cancel-warning { padding:12px; border:1px solid #bc7d23; border-radius:10px; background:#fff0cf; color:#68400e }
+#bookingCancelStatus { color:#85232b; white-space:pre-line }
+.booking-withdrawals { margin:18px 0; padding:12px; border:1px solid #d4c5ae; border-radius:12px; background:#f7f2e8 }
+.booking-withdrawals h4 { margin:0 0 8px }
+.booking-withdrawals .booking-person { align-items:start }
+.booking-withdrawals small { display:block; margin-top:4px; line-height:1.5 }

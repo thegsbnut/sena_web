@@ -22,3 +22,5 @@ dialog{border:1px solid var(--line);border-radius:.8rem;width:min(92vw,32rem);ma
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #82aa46;outline-offset:2px}
 
 [hidden]{display:none!important}
+.withdrawn-attendees{margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)}
+.withdrawal-time{display:block;font-size:.85rem;line-height:1.5}

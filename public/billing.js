@@ -18,6 +18,7 @@
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
  })[c]);
  const dateLabel = value => new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(new Date(value + 'T12:00:00+07:00'));
+ const withdrawalTime = value => new Date(value).toLocaleString('th-TH', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Bangkok'}) + ' น.';
  const states = { unpaid: 'ยังไม่จ่าย', review: 'รอตรวจสลิป', rejected: 'ส่งสลิปใหม่', paid: 'จ่ายแล้ว' };
  const order = { unpaid: 0, rejected: 1, review: 2, paid: 3 };
  let busy = false, slipUrl, bill, adminList, sessions = [], attendees = [], editing = false;
@@ -58,7 +59,11 @@
   if (payerToken) headers.set('X-Bill-Token', payerToken);
   const url = endpoint(action, payer);
   if (amount !== undefined) url.searchParams.set('amount', amount);
-  if (action === 'sessions' && params.has('date')) url.searchParams.set('date', params.get('date'));
+  if (action === 'sessions') {
+   url.searchParams.delete('bill');
+   if (bill?.club) url.searchParams.set('club', bill.club);
+   if (params.has('date')) url.searchParams.set('date', params.get('date'));
+  }
   const response = await fetch(url, { ...options, headers, cache: 'no-store' });
   if (!response.ok) {
    const error = await response.json().catch(() => ({}));
@@ -118,7 +123,7 @@
   const promptpay = validPromptPay(bill.transfer);
   root.innerHTML = `
    <h1>${bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
-   <p class="muted">${dateLabel(bill.date)} · ผู้ตีจริง ${bill.people} คน</p>
+   <p class="muted">${dateLabel(bill.date)} · ผู้ถูกเรียกเก็บ ${bill.people} คน</p>
    <section class="summary">
     <div class="card-title"><h2>ยอดเรียกเก็บ ${money(bill.collection)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
     <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
@@ -131,7 +136,7 @@
     ${rows.map(p => `
      <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
       <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? 'จ่ายเงินสดแล้ว' : states[p.status]}</div>
-      ${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
+      ${organizer && p.withdrawals?.length ? p.withdrawals.map(r => `<small class="withdrawal-time">${escape(r.name)} · ถอน ${escape(withdrawalTime(r.withdrawnAt))}</small>`).join('') : ''}${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
        ${!bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
@@ -153,13 +158,14 @@
   const notice = root.querySelector('#additionalNotice');
   notice.hidden = !previous;
   if (previous) notice.querySelector('a').href = linkToBill(previous, true).href;
-  attendees = (sessions.find(s => s.date === date)?.attendees || []).map(row => ({ ...row, attended: !previous && row.attended }));
+  const source = sessions.find(s => s.date === date);
+  attendees = [...(source?.attendees || []), ...(source?.withdrawals || [])].map(row => ({ ...row, attended: !previous && !row.withdrawnAt && row.attended }));
   renderAttendees();
  }
  function renderAttendees() {
-  root.querySelector('#attendance').innerHTML = attendees.length ? attendees.map((p, i) =>
-   `<label class="attendee"><input type="checkbox" data-index="${i}" ${p.attended ? 'checked' : ''}><span>${escape(p.name)}${p.guest ? ` <small>แขกของ ${escape(p.payer)}</small>` : ''}</span></label>`
-  ).join('') : '<p class="muted">ยังไม่มีรายชื่อสำหรับวันนี้ เพิ่มผู้ตีจริงด้านล่างได้</p>';
+  const row = (p, i) => `<label class="attendee"><input type="checkbox" data-index="${i}" ${p.attended ? 'checked' : ''}><span>${escape(p.name)}${p.guest ? ` <small>แขกของ ${escape(p.payer)}</small>` : ''}${p.withdrawnAt ? `<small class="withdrawal-time">ถอน ${escape(withdrawalTime(p.withdrawnAt))} · ${p.lateCancellation ? 'หลังกำหนด' : 'ในเวลาปลอดภัย'}</small>` : ''}</span></label>`;
+  root.querySelector('#attendance').innerHTML = (attendees.some(p => !p.withdrawnAt) ? attendees.map((p, i) => p.withdrawnAt ? '' : row(p, i)).join('') : '<p class="muted">ยังไม่มีรายชื่อผู้ตีจริงสำหรับวันนี้ เพิ่มชื่อด้านล่างได้</p>') +
+   `<div class="withdrawn-attendees"><h3>รายชื่อคนถอน</h3><p class="muted">ไม่เลือกเก็บเงินไว้เป็นค่าเริ่มต้น ผู้จัดเลือกเพิ่มได้ตามที่ตกลงกัน · เวลาไทย</p>${attendees.some(p => p.withdrawnAt) ? attendees.map((p, i) => p.withdrawnAt ? row(p, i) : '').join('') : '<p class="muted">ไม่มีรายชื่อคนถอนสำหรับวันนี้</p>'}</div>`;
   preview();
  }
  function cents(value) {
@@ -174,12 +180,12 @@
   const court = cents(f.get('court') || '0');
   const shuttle = f.has('perShuttle') ? cents(f.get('shuttle') || '0') * Number(f.get('shuttleCount')) : cents(f.get('shuttle') || '0');
   if (court === null || !Number.isSafeInteger(shuttle) || shuttle < 0 || (f.has('perShuttle') && cents(f.get('shuttle') || '0') === null)) return null;
-  return { date: f.get('date'), court, shuttle, transfer: f.get('transfer'), attendees: attendees.filter(p => p.attended).map(({ name, payer, payerKey }) => ({ name, payer, payerKey })) };
+  return { date: f.get('date'), court, shuttle, transfer: f.get('transfer'), attendees: attendees.filter(p => p.attended).map(({ name, payer, payerKey, withdrawnAt, lateCancellation }) => ({ name, payer, payerKey, ...(withdrawnAt ? { withdrawnAt, lateCancellation } : {}) })) };
  }
  function preview() {
   const draft = costDraft();
   const out = root.querySelector('#preview');
-  if (!draft || !draft.attendees.length) { out.textContent = 'เลือกคนที่มาตีจริงเพื่อดูยอด'; return; }
+  if (!draft || !draft.attendees.length) { out.textContent = 'เลือกรายชื่อที่ต้องการเก็บเงินเพื่อดูยอด'; return; }
   const total = draft.court + draft.shuttle;
   const byPayer = new Map();
   draft.attendees.forEach(p => {
@@ -190,7 +196,7 @@
   const payers = [...byPayer.values()];
   for (const p of payers) p.amount = Math.ceil(total * p.seats / (100 * draft.attendees.length)) * 100;
   const collection = payers.reduce((sum, p) => sum + p.amount, 0);
-  out.innerHTML = `<strong>ยอดเรียกเก็บ ${money(collection)} บาท · ผู้ตี ${draft.attendees.length} คน</strong>
+  out.innerHTML = `<strong>ยอดเรียกเก็บ ${money(collection)} บาท · ผู้ถูกเรียกเก็บ ${draft.attendees.length} คน</strong>
    <p>ค่าใช้จ่าย ${money(total)} บาท${collection > total ? ' · ปัดขึ้นรวม ' + money(collection - total) + ' บาท' : ''}</p>
    ${payers.map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · '+p.seats+' คน' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
  }
@@ -226,8 +232,13 @@
    </form>`;
   if (editing) {
    attendees = bill.payers.flatMap(p => p.names.map(name => ({
-    name, payer: p.name, payerKey: p.payerKey, guest: name !== p.name, attended: true
+    name, payer: p.name, payerKey: p.payerKey, guest: name !== p.name, attended: true,
+    ...(p.withdrawals?.find(row => row.name === name) || {})
    })));
+   const source = sessions.find(s => s.date === date);
+   for (const row of [...(source?.attendees || []), ...(source?.withdrawals || [])]) {
+    if (!attendees.some(p => p.name === row.name && p.payerKey === row.payerKey)) attendees.push({ ...row, attended: false });
+   }
    renderAttendees();
   } else fillAttendees(date);
   message('');
@@ -320,7 +331,7 @@
   if (e.target.id === 'draft') {
    const draft = costDraft();
    const savePromptPay = new FormData(e.target).has('savePromptPay');
-   if (!draft || !draft.attendees.length || draft.court + draft.shuttle < 1) { message('ตรวจค่าใช้จ่ายและเลือกผู้ตีจริงก่อน', true); return; }
+   if (!draft || !draft.attendees.length || draft.court + draft.shuttle < 1) { message('ตรวจค่าใช้จ่ายและเลือกรายชื่อที่ต้องการเก็บเงินก่อน', true); return; }
    run(async () => {
     if (editing) {
      await post('edit', { ...draft, revision: bill.revision });
@@ -359,7 +370,11 @@
    return run(async () => { await post('promptpay', { promptpay }); await load(); message('บันทึกเลขพร้อมเพย์เริ่มต้นแล้ว'); });
   }
   if (action === 'edit') {
-   if (bill.editable) { editing = true; return showDraft(); }
+   if (bill.editable) return run(async () => {
+    sessions = (await request('sessions')).sessions;
+    editing = true;
+    showDraft();
+   });
    const transfer = prompt('เลขพร้อมเพย์ 10 หรือ 13 หลัก', bill.transfer)?.trim();
    if (transfer === undefined) return;
    if (!validPromptPay(transfer)) { message('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก', true); return; }

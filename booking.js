@@ -2,7 +2,7 @@ import './public/engine.js';
 import {latestCup,cupPlayerKey} from './leaderboard.js';
 import {holidayOn,HOLIDAY_YEARS} from './booking-holidays.js';
 const reply=(v,status=200)=>Response.json(v,{status,headers:{'Cache-Control':'no-store'}});
-export class BookingError extends Error {constructor(message,status=400){super(message);this.status=status;}}
+export class BookingError extends Error {constructor(message,status=400,details={}){super(message);this.status=status;this.details=details;}}
 const fail=(message,status=400)=>{throw new BookingError(message,status);};
 const defaultVenueMaps={
  sena:'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6',
@@ -21,7 +21,7 @@ function validateVenueMap(value) {
  }
  return url.href;
 }
-export const defaultSettings=()=>({enabled:false,weekdays:[2,4],start:'18:00',end:'21:00',capacity:12,rounds:10,weeks:4,courtNumbers:'',regularIds:[],holidayPolicy:'warn',holidays:[]});
+export const defaultSettings=()=>({enabled:false,weekdays:[2,4],start:'18:00',end:'21:00',capacity:12,rounds:10,weeks:4,cancellationNoticeHours:48,courtNumbers:'',regularIds:[],holidayPolicy:'warn',holidays:[]});
 export const bangkokDate=(now=new Date())=>new Date(+now+7*3600000).toISOString().slice(0,10);
 const addDays=(date,n)=>new Date(Date.parse(date+'T00:00:00Z')+n*86400000).toISOString().slice(0,10);
 const startsAt=s=>Date.parse(s.date+'T'+s.start+':00+07:00');
@@ -39,8 +39,10 @@ function normalizeCourtNumbers(value) {
  return [...new Set(numbers)].join(', ');
 }
 export function validateSettings(input,roster) {
+ const cancellationNoticeHours=input?.cancellationNoticeHours??48;
+ if(!integer(cancellationNoticeHours,0,720))fail('กำหนดเวลาถอนปลอดภัยเป็นจำนวนชั่วโมงเต็ม 0–720 ชั่วโมง');
  if(!input||typeof input.enabled!=='boolean'||!Array.isArray(input.weekdays)||!input.weekdays.length||input.weekdays.length>7||new Set(input.weekdays).size!==input.weekdays.length||!input.weekdays.every(d=>integer(d,0,6))||!validTime(input.start)||!validTime(input.end)||input.end<=input.start||!integer(input.capacity,8,24)||!integer(input.rounds,1,30)||!integer(input.weeks,1,8)||!Array.isArray(input.regularIds)||input.regularIds.length>200||new Set(input.regularIds).size!==input.regularIds.length||!input.regularIds.every(id=>roster.some(p=>p.id===id))||!['warn','skip'].includes(input.holidayPolicy)||!Array.isArray(input.holidays)||input.holidays.length>100||!input.holidays.every(h=>h&&validDate(h.date)&&typeof h.name==='string'&&h.name.trim()&&h.name.length<=100))fail('ตรวจวัน เวลา จำนวนคน และรายชื่อขาประจำอีกครั้ง');
- return {...input,courtNumbers:normalizeCourtNumbers(input.courtNumbers??''),weekdays:[...input.weekdays].sort(),holidays:input.holidays.map(h=>({date:h.date,name:h.name.trim()})),regularIds:[...input.regularIds]};
+ return {...input,cancellationNoticeHours,courtNumbers:normalizeCourtNumbers(input.courtNumbers??''),weekdays:[...input.weekdays].sort(),holidays:input.holidays.map(h=>({date:h.date,name:h.name.trim()})),regularIds:[...input.regularIds]};
 }
 async function prepare(DB) {
  await DB.prepare('CREATE TABLE IF NOT EXISTS booking_clubs (club TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)').run();
@@ -55,6 +57,7 @@ async function clubStateFor(DB,club) {
  return row?JSON.parse(row.payload):{players:[],cup:null};
 }
 export function materialize(doc,players,now=new Date()) {
+ doc.settings.cancellationNoticeHours??=48;
  const cfg=doc.settings,today=bangkokDate(now),rosterIds=new Set(players.map(p=>p.id));
  // Retain a month of recent sessions; current/future bookings are never pruned.
  doc.sessions=doc.sessions.filter(s=>s.date>=addDays(today,-30));
@@ -142,9 +145,11 @@ async function ownerHash(req) {
 export function publicBooking(doc,revision,players,admin,now=new Date(),club='sena',awards=new Map()) {
  const cfg=doc.settings,cupWeek=cupWeekFor(doc,club);
  const upcoming=doc.sessions.filter(s=>startsAt(s)>+now);
- const sessions=admin?[...upcoming,...doc.sessions.filter(s=>startsAt(s)<=+now&&!s.skipped&&s.registrations.length).reverse()]:upcoming;
+ const sessions=admin?[...upcoming,...doc.sessions.filter(s=>startsAt(s)<=+now&&!s.skipped&&(s.registrations.length||s.withdrawals?.length)).reverse()]:upcoming;
  return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai,lv})=>({id,name,thai,award:awards.get(cupPlayerKey(name,club))||awards.get(cupPlayerKey(thai||'',club))||'',...(admin?{lv}:{})})),serverNow:now.toISOString(),sessions:sessions.map(s=>({
   id:s.id,date:s.date,started:startsAt(s)<=+now,courtNumbers:s.courtNumbers??cfg.courtNumbers??'',isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null,courtNumbersOverride:s.courtNumbers??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
+  cancellationNoticeHours:cfg.cancellationNoticeHours??48,cancellationDeadline:new Date(startsAt(s)-(cfg.cancellationNoticeHours??48)*3600000).toISOString(),
+  withdrawals:(s.withdrawals??[]).map(({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer})=>({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer})),
   registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,...(r.guest?{guest:{name:r.guest.name,hostId:r.guest.hostId,...(admin?{lv:guestLevel}:{})}}:{}),status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:startsAt(s)>+now}))
  }))};
 }
@@ -187,7 +192,7 @@ export async function bookingRoute(req,env,admin,club) {
    }
    if(input.action==='settings'){
     if(input.settingsVersion!==doc.settingsVersion)fail('ผู้จัดอีกเครื่องแก้การตั้งค่าแล้ว กรุณาโหลดใหม่',409);
-    const cfg=validateSettings({...input.settings,courtNumbers:input.settings?.courtNumbers??doc.settings.courtNumbers??''},players);
+    const cfg=validateSettings({...input.settings,cancellationNoticeHours:input.settings?.cancellationNoticeHours??doc.settings.cancellationNoticeHours??48,courtNumbers:input.settings?.courtNumbers??doc.settings.courtNumbers??''},players);
     doc.settings=cfg;doc.settingsVersion++;
     for(const s of doc.sessions){if(startsAt(s)<=+now)continue;
      s.start=cfg.start;s.end=cfg.end;s.capacity=cfg.capacity;s.rounds=cfg.rounds;
@@ -270,13 +275,26 @@ export async function bookingRoute(req,env,admin,club) {
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
+    const hours=doc.settings.cancellationNoticeHours??48;
+    const deadline=startsAt(s)-hours*3600000,late=+now>deadline;
+    if(late&&input.acceptLateCancellation!==true)throw new BookingError(
+     `เลยเวลาถอนปลอดภัย ${hours} ชั่วโมงก่อนเริ่มแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย กรุณากดรับทราบก่อนยืนยันถอนตัว`,409,
+     {code:'LATE_CANCELLATION_ACK_REQUIRED',cancellationNoticeHours:hours,cancellationDeadline:new Date(deadline).toISOString()});
+    const removed=s.registrations.filter(x=>x.id===r.id||x.guest?.hostId===r.playerId);
+    s.withdrawals??=[];
+    for(const x of removed){
+     const host=x.guest?.hostId||x.playerId,payer=players.find(p=>p.id===host)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+     s.withdrawals.push({registrationId:x.id,playerId:x.playerId,name:x.guest?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(x.guest),
+      cancelledAt:now.toISOString(),lateCancellation:late,cancellationNoticeHours:hours,acknowledgedAt:late?now.toISOString():null,
+      status:s.registrations.indexOf(x)<s.capacity?'confirmed':'waitlist',cancelledByOrganizer:admin});
+    }
     s.registrations=s.registrations.filter(x=>x.id!==r.id&&x.guest?.hostId!==r.playerId);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);
   const awards=new Map([...globalThis.Sena.cupAwards(cupHistory??outcome.cup)].map(([name,award])=>[cupPlayerKey(name,club),award]));
   return reply({...publicBooking(outcome.doc,outcome.revision,outcome.players,admin,now,club,awards),venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
- }catch(e){if(e instanceof BookingError)return reply({error:e.message},e.status);throw e;}
+ }catch(e){if(e instanceof BookingError)return reply({error:e.message,...e.details},e.status);throw e;}
 }
 export async function scheduledBookings(env) {
  for(const club of ['sena','88'])await mutateBooking(env,club,null);

@@ -17,6 +17,117 @@ function fixture(){
  const open=async regularIds=>{const cookie=await login(),settings={...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8,rounds:4,regularIds:regularIds||[]};const r=await call({action:'settings',settingsVersion:0,settings},{cookie});assert.equal(r.status,200);return{cookie,settings,data:await r.json()};};
  return {db,env,call,login,open};
 }
+test('withdrawals require late acknowledgement and preserve server-timed guest history without private fields',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-10T03:00:00Z')});
+ const f=fixture();t.after(()=>f.db.close());
+ const {cookie,data}=await f.open(),sessionId=data.sessions[0].id;
+ assert.equal(data.settings.cancellationNoticeHours,48);
+ await f.call({action:'book',playerId:'p0',sessionIds:[sessionId],acceptHoliday:true,guest:{name:'Guest A',gender:'F'}});
+ const read=async options=>(await(await f.call(null,options)).json()).sessions.find(s=>s.id===sessionId);
+ const before=await read(),host=before.registrations.find(r=>r.playerId==='p0');
+ const cancel={action:'cancel',sessionId,registrationId:host.id};
+ for(const acceptLateCancellation of [undefined,false,'true']){
+  const response=await f.call({...cancel,acceptLateCancellation});
+  assert.equal(response.status,409);
+  assert.equal((await response.json()).code,'LATE_CANCELLATION_ACK_REQUIRED');
+ }
+ assert.equal((await read()).registrations.length,2);
+ assert.equal((await read()).withdrawals.length,0);
+ const responses=await Promise.all([f.call({...cancel,acceptLateCancellation:true}),f.call({...cancel,acceptLateCancellation:true})]);
+ assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
+ const after=await read();
+ assert.equal(after.registrations.length,0);
+ assert.deepEqual(after.withdrawals.map(r=>r.name),['Player 0','Guest A']);
+ for(const r of after.withdrawals){
+  assert.equal(r.cancelledAt,'2026-11-10T03:00:00.000Z');
+  assert.equal(r.acknowledgedAt,r.cancelledAt);
+  assert.equal(r.lateCancellation,true);assert.equal(r.cancellationNoticeHours,48);
+  assert.equal(r.status,'confirmed');assert.equal(r.cancelledByOrganizer,false);
+ }
+ assert.doesNotMatch(JSON.stringify(after),/ownerHash|"lv"|"gender"/);
+ assert.equal((await(await f.call(null,{club:'88'})).json()).sessions.length,0);
+ t.mock.timers.setTime(Date.parse(sessionId+'T18:01:00+07:00'));
+ assert.equal((await read({cookie:await f.login()})).withdrawals.length,2);
+});
+
+test('48-hour boundary is inclusive, later withdrawals need consent, and rejoining preserves history',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-10T03:00:00Z')});
+ const f=fixture();t.after(()=>f.db.close());
+ const {data}=await f.open(),sessionId=data.sessions[2].id;
+ const book=()=>f.call({action:'book',playerId:'p1',sessionIds:[sessionId],acceptHoliday:true});
+ const read=async()=>(await(await f.call()).json()).sessions.find(s=>s.id===sessionId);
+ await book();
+ const deadline=Date.parse((await read()).cancellationDeadline);
+ t.mock.timers.setTime(deadline);
+ let r=(await read()).registrations[0];
+ assert.equal((await f.call({action:'cancel',sessionId,registrationId:r.id})).status,200);
+ assert.equal((await read()).withdrawals[0].lateCancellation,false);
+ assert.equal((await read()).withdrawals[0].acknowledgedAt,null);
+ await book();r=(await read()).registrations[0];
+ t.mock.timers.setTime(deadline+1);
+ assert.equal((await f.call({action:'cancel',sessionId,registrationId:r.id})).status,409);
+ assert.equal((await f.call({action:'cancel',sessionId,registrationId:r.id,acceptLateCancellation:true})).status,200);
+ await book();
+ assert.equal((await read()).registrations.length,1);
+ assert.equal((await read()).withdrawals.length,2);
+});
+
+test('organizers configure the cancellation window per club and legacy settings default to 48 hours',async t=>{
+ const f=fixture();t.after(()=>f.db.close());
+ const {cookie,settings}=await f.open();
+ const row=f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get();
+ const doc=JSON.parse(row.payload);delete doc.settings.cancellationNoticeHours;
+ f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
+ let d=await(await f.call(null,{cookie})).json();
+ assert.equal(d.settings.cancellationNoticeHours,48);
+ for(const hours of [-1,1.5,721,'24'])assert.equal((await f.call({action:'settings',settingsVersion:1,settings:{...settings,cancellationNoticeHours:hours}},{cookie})).status,400);
+ assert.equal((await f.call({action:'settings',settingsVersion:1,settings:{...settings,cancellationNoticeHours:24}})).status,401);
+ d=await(await f.call({action:'settings',settingsVersion:1,settings:{...settings,cancellationNoticeHours:24}},{cookie})).json();
+ assert.equal(d.settings.cancellationNoticeHours,24);
+ const {cancellationNoticeHours,...legacy}=settings;
+ d=await(await f.call({action:'settings',settingsVersion:2,settings:legacy},{cookie})).json();
+ assert.equal(d.settings.cancellationNoticeHours,24);
+ d=await(await f.call({action:'settings',settingsVersion:3,settings:{...settings,cancellationNoticeHours:0}},{cookie})).json();
+ const id=d.sessions[0].id;
+ await f.call({action:'book',playerId:'p0',sessionIds:[id],acceptHoliday:true});
+ const session=(await(await f.call()).json()).sessions.find(s=>s.id===id);
+ assert.equal((await f.call({action:'cancel',sessionId:id,registrationId:session.registrations[0].id})).status,200);
+ assert.equal((await(await f.call(null,{club:'88',cookie})).json()).settings.cancellationNoticeHours,48);
+});
+
+test('billing lists withdrawn players unchecked, deduplicates rebooking, and bills them only when selected',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-10T03:00:00Z')});
+ const f=fixture();t.after(()=>f.db.close());f.env.SLIPS_DB=f.env.DB;
+ const {cookie,data}=await f.open(),sessionId=data.sessions[0].id;
+ const book=(playerId,guest)=>f.call({action:'book',playerId,sessionIds:[sessionId],acceptHoliday:true,...(guest?{guest}:{})});
+ const read=async()=>(await(await f.call()).json()).sessions.find(s=>s.id===sessionId);
+ const cancel=async playerId=>{const r=(await read()).registrations.find(r=>r.playerId===playerId);return f.call({action:'cancel',sessionId,registrationId:r.id,acceptLateCancellation:true});};
+ await book('p0',{name:'Guest A',gender:'M'});await book('p1');await cancel('p0');
+ const billing=(query='',payload)=>worker.fetch(new Request(origin+'/api/billing'+query,{method:payload?'POST':'GET',headers:{Cookie:cookie,Origin:origin},...(payload?{body:JSON.stringify(payload)}:{})}),f.env);
+ const source=async()=>(await(await billing('?action=sessions')).json()).sessions.find(s=>s.date===sessionId);
+ let session=await source();
+ assert.equal(session.attendees.length,1);assert.equal(session.attendees[0].attended,true);
+ assert.deepEqual(session.withdrawals.map(p=>p.name),['Player 0','Guest A']);
+ assert(session.withdrawals.every(p=>p.attended===false&&p.withdrawnAt==='2026-11-10T03:00:00.000Z'));
+ await book('p0',{name:'Guest A',gender:'M'});assert.equal((await source()).withdrawals.length,0);
+ await cancel('p0');assert.equal((await source()).withdrawals.length,2);
+ const draft={date:sessionId,court:90000,shuttle:0,transfer:'0000000000'};
+ session=await source();
+ const id=(await(await billing('',{...draft,attendees:session.attendees})).json()).id;
+ let bill=await(await billing('?bill='+id)).json();
+ assert.equal(bill.people,1);assert.equal(bill.payers.length,1);assert.equal(bill.payers[0].name,'Player 1');
+ const selected={...session.withdrawals[0]};
+ const response=await billing('?bill='+id+'&action=edit',{...draft,revision:bill.revision,attendees:[...session.attendees,selected]});
+ assert.equal(response.status,200);
+ bill=await(await billing('?bill='+id)).json();
+ assert.equal(bill.people,2);assert.equal(bill.payers.length,2);
+ const payer=bill.payers.find(p=>p.name==='Player 0');
+ assert.equal(payer.amount,45000);
+ assert.deepEqual(payer.withdrawals,[{name:'Player 0',withdrawnAt:selected.withdrawnAt,lateCancellation:true}]);
+ await cancel('p1');assert.equal((await source()).attendees.length,0);assert.equal((await source()).withdrawals.length,3);
+ assert.equal((await(await billing('?action=sessions&club=88')).json()).sessions.length,0);
+});
+
 test('booking privacy, permissions, club isolation and invalid settings',async()=>{
  const f=fixture();let d=await(await f.call()).json();assert.equal(d.canEdit,false);assert.equal(d.settings.enabled,false);assert.equal(d.roster.length,12);assert(!JSON.stringify(d).includes('"lv"'));assert(!JSON.stringify(d).includes('ownerHash'));
  assert.equal((await f.call({action:'settings',settingsVersion:0,settings:defaultSettings()})).status,401);
@@ -37,7 +148,7 @@ test('multiweek bookings are atomic, idempotent and ownership tokens never leak'
  assert.equal((await f.call({action:'book',playerId:'p1',sessionIds:[ids[0],'1900-01-01'],acceptHoliday:true})).status,409);
  d=await(await f.call()).json();assert.equal(d.sessions.find(s=>s.id===ids[0]).registrations.length,1);
  const other=await(await f.call(null,{owner:null})).json();assert.equal(other.sessions[0].registrations[0].canCancel,true);
- const reg=d.sessions[0].registrations[0],cancel={action:'cancel',sessionId:ids[0],registrationId:reg.id};
+ const reg=d.sessions[0].registrations[0],cancel={action:'cancel',acceptLateCancellation:true,sessionId:ids[0],registrationId:reg.id};
  assert.equal((await f.call(cancel,{owner:null,headers:{Origin:'https://evil.example'}})).status,403);
  assert.equal((await f.call(cancel,{owner:otherToken})).status,200);
  assert.equal((await f.call(cancel,{owner:null})).status,409);
@@ -49,17 +160,17 @@ test('concurrent final slots, automatic promotion, rejoin at tail and stale draw
  const concurrent=await Promise.all([book(6),book(7),book(8),book(9)]);assert(concurrent.every(r=>r.status===200));
  let s=(await(await f.call()).json()).sessions[0];assert.equal(s.confirmedCount,8);assert.equal(s.waitlistCount,2);assert.equal(s.scheduleStatus,'ready');assert.equal(s.schedule.schedule.length,4);
  const version=s.scheduleVersion,firstWait=s.registrations.find(r=>r.status==='waitlist'),removed=s.registrations[0];
- assert.equal((await f.call({action:'cancel',sessionId:id,registrationId:removed.id})).status,200);
+ assert.equal((await f.call({action:'cancel',acceptLateCancellation:true,sessionId:id,registrationId:removed.id})).status,200);
  s=(await(await f.call()).json()).sessions[0];assert.equal(s.registrations.find(r=>r.id===firstWait.id).status,'confirmed');assert.equal(s.scheduleVersion,version+1);assert(!JSON.stringify(s.schedule).includes('diff'));
  await f.call({action:'book',playerId:removed.playerId,sessionIds:[id],acceptHoliday:true});s=(await(await f.call()).json()).sessions[0];assert.equal(s.registrations.at(-1).playerId,removed.playerId);assert.equal(s.registrations.at(-1).status,'waitlist');
- const before=s.scheduleVersion;await f.call({action:'cancel',sessionId:id,registrationId:s.registrations.at(-1).id});s=(await(await f.call()).json()).sessions[0];assert.equal(s.scheduleVersion,before);
- for(const r of s.registrations.filter(r=>r.status==='waitlist'))await f.call({action:'cancel',sessionId:id,registrationId:r.id});
- s=(await(await f.call()).json()).sessions[0];await f.call({action:'cancel',sessionId:id,registrationId:s.registrations[0].id});s=(await(await f.call()).json()).sessions[0];assert.equal(s.confirmedCount,7);assert.equal(s.schedule,null);assert.equal(s.scheduleStatus,'insufficient');
+ const before=s.scheduleVersion;await f.call({action:'cancel',acceptLateCancellation:true,sessionId:id,registrationId:s.registrations.at(-1).id});s=(await(await f.call()).json()).sessions[0];assert.equal(s.scheduleVersion,before);
+ for(const r of s.registrations.filter(r=>r.status==='waitlist'))await f.call({action:'cancel',acceptLateCancellation:true,sessionId:id,registrationId:r.id});
+ s=(await(await f.call()).json()).sessions[0];await f.call({action:'cancel',acceptLateCancellation:true,sessionId:id,registrationId:s.registrations[0].id});s=(await(await f.call()).json()).sessions[0];assert.equal(s.confirmedCount,7);assert.equal(s.schedule,null);assert.equal(s.scheduleStatus,'insufficient');
 });
 test('weekly regulars do not duplicate or reappear after cancellation; future weeks roll forward',async()=>{
  const f=fixture(),{cookie,settings,data}=await f.open(['p0','p1']);const s=data.sessions[0];assert.equal(s.registrations.length,2);assert(s.registrations.every(r=>r.source==='regular'));
  for(let i=0;i<2;i++)assert.equal((await(await f.call()).json()).sessions[0].registrations.length,2);
- assert.equal((await f.call({action:'cancel',sessionId:s.id,registrationId:s.registrations[0].id},{owner:null})).status,200);
+ assert.equal((await f.call({action:'cancel',acceptLateCancellation:true,sessionId:s.id,registrationId:s.registrations[0].id},{owner:null})).status,200);
  assert.equal((await(await f.call()).json()).sessions[0].registrations.length,1);
  let r=await f.call({action:'settings',settingsVersion:1,settings:{...settings,regularIds:['p0','p1','p2']}},{cookie});assert.equal(r.status,200);assert.deepEqual((await r.json()).sessions[0].registrations.map(r=>r.playerId),['p1','p2']);
  const now=new Date('2026-11-03T05:00:00Z'),doc={settings:{...settings,weekdays:[2,4],weeks:2,regularIds:['p0']},settingsVersion:0,sessions:[],seq:0};materialize(doc,players,now);assert.equal(doc.sessions.length,4);
@@ -288,6 +399,6 @@ test('guests occupy booking seats, join the draw, and retain the inviting member
  const adminData=await read({cookie});
  assert.equal(adminData.sessions.find(s=>s.id===sessionId).registrations.find(r=>r.guest).guest.lv,6.5);
  const host=session.registrations.find(r=>r.playerId==='p0');
- assert.equal((await f.call({action:'cancel',sessionId,registrationId:host.id})).status,200);
+ assert.equal((await f.call({action:'cancel',acceptLateCancellation:true,sessionId,registrationId:host.id})).status,200);
  assert.equal((await read()).sessions.find(s=>s.id===sessionId).registrations.some(r=>r.guest),false);
 });

@@ -88,7 +88,8 @@ function paymentView(p, privateView, admin, slipsRemoved) {
  return {
   id, name, amount, status, shares: shares.length, ...(p.method ? { method: p.method } : {}),
   ...(privateView ? { names: shares.map(x => x.name), note, paidAt, hasSlip: Boolean(slipKey) && !slipsRemoved } : {}),
-  ...(admin ? { token: p.token, payerKey: p.payerKey, receiptId: p.slipKey?.split('/').at(-1) } : {})
+  ...(admin ? { token: p.token, payerKey: p.payerKey, receiptId: p.slipKey?.split('/').at(-1),
+   withdrawals: shares.filter(s=>s.withdrawnAt).map(({name,withdrawnAt,lateCancellation})=>({name,withdrawnAt,lateCancellation})) } : {})
  };
 }
 function billView(bill, admin, payer) {
@@ -119,7 +120,8 @@ function readDraft(input) {
   const key = payerKey + '\n' + name.normalize('NFC').toLowerCase();
   if (keys.has(key)) return null;
   keys.add(key);
-  people.push({ name, payer, payerKey });
+  if (item.withdrawnAt !== undefined && (typeof item.withdrawnAt !== 'string' || !Number.isFinite(Date.parse(item.withdrawnAt)) || typeof item.lateCancellation !== 'boolean')) return null;
+  people.push({ name, payer, payerKey, ...(item.withdrawnAt ? { withdrawnAt: new Date(item.withdrawnAt).toISOString(), lateCancellation: item.lateCancellation } : {}) });
  }
  return { date, court, shuttle, transfer, people };
 }
@@ -136,7 +138,7 @@ function splitBill(draft, existing = []) {
    byPayer.set(person.payerKey, p);
   }
   const amount = each + Number(i < remainder);
-  p.shares.push({ name: person.name, amount });
+  p.shares.push({ name: person.name, amount, ...(person.withdrawnAt ? { withdrawnAt: person.withdrawnAt, lateCancellation: person.lateCancellation } : {}) });
  }
  for (const p of byPayer.values()) p.amount = Math.ceil(total * p.shares.length / (100 * draft.people.length)) * 100;
  return { court: draft.court, shuttle: draft.shuttle, total, transfer: draft.transfer, people: draft.people.length, payers: [...byPayer.values()] };
@@ -149,17 +151,24 @@ async function recentSessions(db, club) {
  const exists = await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").bind(table).first();
  const roster = exists ? await db.prepare(`SELECT payload FROM ${table} WHERE id=1`).first() : null;
  const players = new Map((roster ? JSON.parse(roster.payload).players : []).map(p => [p.id, p.name]));
- return JSON.parse(doc.payload).sessions.filter(s => !s.skipped && s.registrations.length)
-  .sort((a, b) => b.date.localeCompare(a.date)).map(s => ({
-   date: s.date, time: s.start + '–' + s.end, attendees: s.registrations.map((r, i) => {
-    const host = r.guest?.hostId || r.playerId;
-    const payer = players.get(host);
-    return payer ? {
-     name: r.guest?.name || payer, payer, payerKey: 'member:' + host,
-     guest: Boolean(r.guest), attended: i < s.capacity
-    } : null;
-   }).filter(Boolean)
-  }));
+ return JSON.parse(doc.payload).sessions.filter(s => !s.skipped && (s.registrations.length || s.withdrawals?.length))
+  .sort((a, b) => b.date.localeCompare(a.date)).map(s => {
+   const attendees=s.registrations.map((r, i) => {
+    const host=r.guest?.hostId||r.playerId,payer=players.get(host);
+    return payer ? {name:r.guest?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(r.guest),attended:i<s.capacity} : null;
+   }).filter(Boolean);
+   const key=p=>p.payerKey+'\n'+p.name.normalize('NFC').toLowerCase();
+   const active=new Set(attendees.map(key)),activeMembers=new Set(s.registrations.filter(r=>!r.guest).map(r=>r.playerId)),
+    activeGuests=new Set(s.registrations.filter(r=>r.guest).map(r=>'member:'+r.guest.hostId+'\n'+r.guest.name.normalize('NFC').toLowerCase())),withdrawals=new Map();
+   for(const r of s.withdrawals??[]){
+    const person={name:r.name,payer:players.get(r.payerKey.slice('member:'.length))||r.payer,payerKey:r.payerKey,guest:r.guest,attended:false,withdrawnAt:r.cancelledAt,lateCancellation:r.lateCancellation};
+    const identity=r.guest?key(person):r.playerId;
+    if(!active.has(key(person))&&!(r.guest?activeGuests.has(key(person)):activeMembers.has(r.playerId)))withdrawals.set(identity,person);
+   }
+   return {
+    date:s.date,time:s.start+'–'+s.end,attendees,withdrawals:[...withdrawals.values()]
+   };
+  });
 }
 async function readLimitedJson(req) {
  const bytes = await readLimited(req, 128 * 1024);
