@@ -19,13 +19,6 @@
  })[c]);
  const dateLabel = value => new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(new Date(value + 'T12:00:00+07:00'));
  const states = { unpaid: 'ยังไม่จ่าย', review: 'รอตรวจสลิป', rejected: 'ส่งสลิปใหม่', paid: 'จ่ายแล้ว' };
- function slipReviewLabel(review) {
-  if (review?.amount === 'match' && review.recipient === 'match') return 'Reviewed';
-  const issues = [];
-  if (review?.amount === 'mismatch') issues.push('ยอดไม่ตรง');
-  if (review?.recipient === 'mismatch') issues.push('เลขพร้อมเพย์ผู้รับไม่ตรง');
-  return issues.join(' · ') || 'รอรีวิว';
- }
  const order = { unpaid: 0, rejected: 1, review: 2, paid: 3 };
  let busy = false, slipUrl, bill, adminList, sessions = [], attendees = [], editing = false;
  const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
@@ -137,7 +130,7 @@
     <div class="card-title"><h2>${who ? 'ยอดของคุณ' : 'สถานะการชำระ'}</h2><button type="button" data-action="reload">อัปเดต</button></div>
     ${rows.map(p => `
      <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
-      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? 'จ่ายเงินสดแล้ว' : p.status === 'review' ? slipReviewLabel(p.slipReview) : states[p.status]}</div>
+      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? 'จ่ายเงินสดแล้ว' : states[p.status]}</div>
       ${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
@@ -149,7 +142,7 @@
        ${organizer && bill.canUndoCash && p.method === 'cash' ? `<button type="button" data-action="undo-cash" data-payer="${p.id}">ยกเลิกรับเงินสด</button>` : ''}
       </div></div>`).join('')}
     <input type="file" id="paymentSlip" accept="image/*" hidden>
-    ${!bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะลองอ่านยอดและเลขพร้อมเพย์ผู้รับจากรูป</p>' : ''}
+    ${!bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะบันทึกว่าจ่ายแล้วทันที</p>' : ''}
    </section>
    ${organizer ? `<div class="actions">${bill.cancelled ? '<button data-action="restore" type="button">เปิดบิลอีกครั้ง</button>' : `<button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button><button data-action="edit" type="button">${bill.editable ? 'แก้ไขบิล' : 'แก้เลขพร้อมเพย์'}</button><button data-action="cancel" type="button">ยกเลิกบิล</button>`}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
   message('');
@@ -304,17 +297,11 @@
   if (e.target.id === 'paymentSlip') {
    const input = e.target, payer = bill.payers.find(p => p.id === input.dataset.payer);
    const file = input.files[0];
-   if (file && payer && confirm('แนบสลิปสำหรับ '+payer.name+' จำนวน '+money(payer.amount)+' บาท?')) run(async () => {
+   if (file && payer && confirm('แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ '+payer.name+' จำนวน '+money(payer.amount)+' บาท?')) run(async () => {
     const blob = await compress(file);
-    const headers = new Headers({ 'Content-Type': blob.type });
-    message('กำลังอ่านสลิปบนอุปกรณ์…');
-    const fields = await import('/slip-ocr.js?v=20261110-ttb')
-     .then(({ recognizeSlip }) => recognizeSlip(blob)).catch(() => ({}));
-    if (fields.amount != null) headers.set('X-Slip-Ocr-Amount', fields.amount);
-    if (fields.recipient != null) headers.set('X-Slip-Ocr-PromptPay', fields.recipient);
-    const result = await request('upload', { method: 'POST', headers, body: blob }, payer.id, payer.amount);
+    await request('upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob }, payer.id, payer.amount);
     await load();
-    message('แนบสลิปแล้ว · ' + slipReviewLabel(result.slipReview));
+    message('แนบสลิปแล้ว · จ่ายแล้ว');
    });
    input.value = '';
    return;
