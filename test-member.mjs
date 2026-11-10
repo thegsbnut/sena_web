@@ -60,16 +60,14 @@ test('LINE login verifies server-side audience, expiry and CSRF; forged sessions
  await f.request('/api/member/logout',{},member);
  assert.equal((await(await f.request('/api/member',null,member)).json()).loggedIn,false);
 });
-test('member mapping requires organizer approval, isolates clubs, and limits booking and cancellation to self',async t=>{
+test('existing-player linking is immediate, isolates clubs, and limits booking and cancellation to self',async t=>{
  const f=fixture(t),admin=await f.admin(),member=await f.login();
  const settings={...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8};
  const configured=await(await f.request('/api/booking',{action:'settings',settingsVersion:0,settings},admin)).json(),sessionId=configured.sessions[0].id;
  const booking={action:'book',playerId:'p0',sessionIds:[sessionId],acceptHoliday:true};
  assert.equal((await f.request('/api/booking',booking)).status,403);
  assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
- assert.equal((await f.request('/api/booking',booking,member)).status,403);
- assert.equal((await f.request('/api/member/approve',{userId:uid},member)).status,401);
- assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,200);
+ assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,404);
  assert.equal((await f.request('/api/booking',booking,member)).status,200);
  assert.equal((await f.request('/api/booking',{...booking,playerId:'p1'},member)).status,403);
  assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link,null);
@@ -79,27 +77,59 @@ test('member mapping requires organizer approval, isolates clubs, and limits boo
  assert.equal(mine.canCancel,true);assert.equal(theirs.canCancel,false);
  assert.equal((await f.request('/api/booking',{action:'cancel',sessionId,registrationId:theirs.id,acceptLateCancellation:true},member)).status,403);
  assert.equal((await f.request('/api/booking',{action:'cancel',sessionId,registrationId:mine.id,acceptLateCancellation:true},member)).status,200);
- const second=await f.login(other);await f.request('/api/member/link',{playerId:'p0'},second);
- assert.equal((await f.request('/api/member/approve',{userId:other},admin)).status,409);
- await f.request('/api/member/revoke',{userId:uid},admin);
+ const second=await f.login(other);assert.equal((await f.request('/api/member/link',{playerId:'p0'},second)).status,409);
+ await f.request('/api/member/revoke',{userId:uid,previousPlayerId:'p0',previousStatus:'approved'},admin);
  assert.equal((await f.request('/api/booking',booking,member)).status,403);
 });
-test('new member approval requires organizer LV and gender; renaming keeps the same linked identity',async t=>{
+test('collection phase rejects new names and admin renaming preserves the linked ID',async t=>{
  const f=fixture(t),admin=await f.admin(),member=await f.login();
- assert.equal((await f.request('/api/member/link',{name:'New member'},member)).status,200);
- assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,400);
- assert.equal((await f.request('/api/member/approve',{userId:uid,name:'Good name',lv:6.5,gender:'F'},admin)).status,200);
- const mapping=(await(await f.request('/api/member',null,member)).json()).link;
- const before=await(await f.request('/api/state',null,admin)).json();
- const player=before.state.players.find(p=>p.id===mapping.player_id);assert.equal(player.name,'Good name');
- player.name='Edited by admin';
+ for(const body of [{name:'New member'},{playerId:'missing'},{playerId:'p0',name:'Changed'}])assert.equal((await f.request('/api/member/link',body,member)).status,400);
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
+ const choices=await(await f.request('/api/member/choices',null,await f.login(other))).json();
+ assert.deepEqual(choices.players.map(p=>p.id),['p1']);
+ const before=await(await f.request('/api/state',null,admin)).json();before.state.players[0].name='Edited by admin';
  assert.equal((await f.request('/api/state',{state:before.state,revision:before.revision},admin)).status,200);
- const after=await(await f.request('/api/member',null,member)).json();assert.equal(after.link.player_id,mapping.player_id);
- assert.equal((await(await f.request('/api/state',null,admin)).json()).state.players.find(p=>p.id===mapping.player_id).name,'Edited by admin');
+ assert.equal((await(await f.request('/api/member',null,member)).json()).link.player_id,'p0');
+ const list=await(await f.request('/api/member/requests',null,admin)).json();assert.equal(list.requests[0].name,'Edited by admin');
 });
+test('organizers can correct mappings; other users, occupied names and stale changes cannot overwrite them',async t=>{
+ const f=fixture(t),admin=await f.admin(),first=await f.login(),second=await f.login(other);
+ await f.request('/api/member/link',{playerId:'p0'},first);await f.request('/api/member/link',{playerId:'p1'},second);
+ const move={userId:uid,playerId:'p1',previousPlayerId:'p0',previousStatus:'approved'};
+ assert.equal((await f.request('/api/member/reassign',move,first)).status,401);
+ assert.equal((await f.request('/api/member/reassign',move,admin)).status,409);
+ assert.equal((await f.request('/api/member/revoke',{userId:other,previousPlayerId:'p1',previousStatus:'approved'},admin)).status,200);
+ assert.equal((await f.request('/api/member/reassign',move,admin)).status,200);
+ assert.equal((await f.request('/api/member/reassign',{...move,playerId:'p0'},admin)).status,409);
+ assert.equal((await f.request('/api/member/revoke',{userId:uid,previousPlayerId:'p0',previousStatus:'approved'},admin)).status,409);
+ assert.equal((await(await f.request('/api/member',null,first)).json()).link.player_id,'p1');
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},first)).status,409);
+});
+test('admin unlink resets the first-login picker without deleting players, bills or the LINE session',async t=>{
+ const f=fixture(t),admin=await f.admin(),member=await f.login();
+ await f.request('/api/member/link',{playerId:'p0'},member);
+ const rosterBefore=f.db.prepare('SELECT payload FROM club_state WHERE id=1').get().payload;
+ const body={userId:uid,previousPlayerId:'p0',previousStatus:'approved'};
+ assert.equal((await f.request('/api/member/unlink',body,member)).status,401);
+ assert.equal((await f.request('/api/member/unlink',{...body,previousPlayerId:'p1'},admin)).status,409);
+ assert.equal((await f.request('/api/member/unlink',body,admin)).status,200);
+ const session=await(await f.request('/api/member',null,member)).json();
+ assert.equal(session.loggedIn,true);assert.equal(session.link,null);
+ assert.equal(f.db.prepare('SELECT payload FROM club_state WHERE id=1').get().payload,rosterBefore);
+ assert((await(await f.request('/api/member/choices',null,member)).json()).players.some(p=>p.id==='p0'));
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
+ assert.equal((await(await f.request('/api/member',null,member)).json()).link.status,'approved');
+});
+
+test('pending existing-name requests from the trial activate on revisit without approval',async t=>{
+ const f=fixture(t),member=await f.login();
+ f.db.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'pending',?)").run(uid,'sena','p0','Nut','existing',new Date().toISOString());
+ assert.equal((await(await f.request('/api/member',null,member)).json()).link.status,'approved');
+});
+
 test('personal bill links reveal only the owner; uploads enforce ownership; group mentions contain no payer tokens',async t=>{
  const f=fixture(t),admin=await f.admin(),member=await f.login();
- await f.request('/api/member/link',{playerId:'p0'},member);await f.request('/api/member/approve',{userId:uid},admin);
+ await f.request('/api/member/link',{playerId:'p0'},member);
  const draft={date:'2026-11-10',court:10000,shuttle:0,transfer:'0000000000',attendees:[{name:'Nut',payer:'Nut',payerKey:'member:p0'},{name:'Pete',payer:'Pete',payerKey:'member:p1'}]};
  const {id}=await(await f.request('/api/billing',draft,admin)).json();
  const view=await(await f.request('/api/billing?bill='+id,null,admin)).json(),[mine,theirs]=view.payers;
@@ -116,4 +146,8 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
  assert.match(messages[0].text,/https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
  assert(!JSON.stringify(messages).includes(mine.token));assert(!JSON.stringify(messages).includes(theirs.token));
  assert.equal((await f.request('/api/billing?bill='+id+'&action=upload&payer='+mine.id+'&amount='+mine.amount,slip,member)).status,200);
+ await f.request('/api/member/reassign',{userId:uid,playerId:'p1',previousPlayerId:'p0',previousStatus:'approved'},admin);
+ const moved=await(await f.request('/api/member/bills?bill='+id,null,member)).json();
+ assert.equal(moved.bills[0].name,'Pete');assert(!JSON.stringify(moved).includes(mine.token));
+ assert.equal((await f.request('/api/billing?bill='+id,null,member,{'X-Bill-Token':mine.token})).status,403);
 });

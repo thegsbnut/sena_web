@@ -28,14 +28,13 @@
    });return;
   }
   button('ออกจากระบบ',async()=>{try{await api('/logout',{});if(liff.isLoggedIn())liff.logout();location.reload();}catch(e){message(e.message);}});
-  if(session.link?.status==='pending'){message('ส่งคำขอแล้ว รอผู้จัดตรวจสอบชื่อและเปิดสิทธิ์ครั้งแรก กดรีเฟรชหลังผู้จัดอนุมัติ');button('ตรวจสถานะอีกครั้ง',()=>location.reload());return;}
   if(session.link?.status!=='approved'){
-   const response=await fetch('/api/booking?club='+club),data=await response.json();if(!response.ok)throw Error(data.error);
-   for(const player of data.roster){const option=document.createElement('option');option.value=player.id;option.textContent=player.name;q('existing').append(option);}
-   q('existing').onchange=()=>{q('newNameLabel').hidden=Boolean(q('existing').value);q('newName').required=!q('existing').value;};q('existing').onchange();
+   const data=await api('/choices');
+   for(const player of data.players){const option=document.createElement('option');option.value=player.id;option.textContent=player.name;q('existing').append(option);}
+   if(!data.players.length)q('mapStatus').textContent='ไม่มีชื่อว่างให้เลือก กรุณาติดต่อผู้จัด';
    q('mapForm').onsubmit=async event=>{
     event.preventDefault();const submit=q('mapForm').querySelector('button');submit.disabled=true;
-    try{await api('/link',q('existing').value?{playerId:q('existing').value}:{name:q('newName').value});location.reload();}catch(e){q('mapStatus').textContent=e.message;submit.disabled=false;}
+    try{await api('/link',{playerId:q('existing').value});location.reload();}catch(e){q('mapStatus').textContent=e.message;submit.disabled=false;}
    };
    message('เลือกชื่อของคุณสำหรับสนาม '+(club==='88'?'88':'Sena'));q('mapping').showModal();return;
   }
