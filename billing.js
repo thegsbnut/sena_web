@@ -16,7 +16,16 @@ const json = (value, status = 200) => Response.json(value, {
 const fail = (message, status = 400) => json({ error: message }, status);
 const randomId = () => crypto.randomUUID().replaceAll('-', '');
 const token = () => randomId() + randomId();
-const billLink = (origin, bill) => new URL('/billing.html?bill=' + bill.id, origin).href;
+// Encode all 128 bits of the existing bill ID; no lookup table or truncation.
+const billCode = id => btoa(String.fromCharCode(...id.match(/../g).map(byte => parseInt(byte, 16))))
+ .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+const billLink = (origin, bill) => new URL('/b/' + billCode(bill.id), origin).href;
+export function billIdFromCode(code) {
+ if (!/^[A-Za-z0-9_-]{22}$/.test(code)) return null;
+ const id = Array.from(atob(code.replaceAll('-', '+').replaceAll('_', '/') + '=='),
+  byte => byte.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+ return billCode(id) === code ? id : null;
+}
 // Keep the first bill's date key intact; supplemental bills append a unique suffix.
 const billDate = bill => bill.session_date.slice(0, 10);
 const displayDate = date => new Intl.DateTimeFormat('th-TH', {
@@ -361,7 +370,8 @@ export async function billingLineText(env, scope, origin) {
   return [
    clubName(bill.club) + ' · ' + displayDate(billDate(bill)) + (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '') + ' · ค้าง ' + money(outstanding(bill)) + ' บ.',
    ...entries, ...(unpaid.length > 8 ? ['… ยังไม่จ่ายอีก ' + (unpaid.length - 8) + ' คน'] : []),
-   ...(reviewing.length ? ['รอตรวจสลิป ' + reviewing.length + ' คน'] : []), billLink(origin, bill)
+   ...(reviewing.length ? ['รอตรวจสลิป ' + reviewing.length + ' คน'] : []),
+   'ชำระเงินผ่านลิงก์ด้านล่าง 👇', billLink(origin, bill)
   ].join('\n');
  });
  const more = groups.some(({ results }) => results.length > limit);

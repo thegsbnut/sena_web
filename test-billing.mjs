@@ -43,6 +43,54 @@ const draft = {
 };
 const slip = Uint8Array.of(255,216,255,224,0,0,0,0,0,0,255,217);
 
+test('Badbot bill links open the exact original or supplemental bill across both clubs', async t => {
+ const f = fixture(t), cookie = await f.login();
+ const created = [];
+ for (const [club, additional] of [['sena', undefined], ['sena', 'a'.repeat(32)], ['88', undefined]]) {
+  const response = await f.request('/api/billing?club=' + club, {
+   method: 'POST', cookie, payload: { ...draft, ...(additional ? { additional } : {}) }
+  });
+  assert.equal(response.status, 200);
+  created.push((await response.json()).id);
+ }
+ const text = await billingLineText(f.env, 'all', origin);
+ const links = [...text.matchAll(/ชำระเงินผ่านลิงก์ด้านล่าง 👇\n(https:\/\/[^\s]+)/g)].map(match => match[1]);
+ assert.equal(links.length, 3);
+ assert.equal(new Set(links).size, 3);
+ const opened = [];
+ for (const link of links) {
+  const url = new URL(link);
+  assert.match(url.pathname, /^\/b\/[A-Za-z0-9_-]{22}$/);
+  const response = await worker.fetch(new Request(link), {});
+  assert.equal(response.status, 302);
+  const destination = new URL(response.headers.get('Location'));
+  assert.equal(destination.origin, origin);
+  assert.equal(destination.pathname, '/billing.html');
+  const id = destination.searchParams.get('bill');
+  opened.push(id);
+  const bill = await (await f.request('/api/billing?bill=' + id)).json();
+  assert.equal(bill.id, id);
+  assert.equal(bill.date, draft.date);
+ }
+ assert.deepEqual(opened.sort(), created.sort());
+ assert.doesNotMatch(text, /billing\.html|#pay=/);
+});
+
+test('short bill routes preserve old IDs and reject malformed links', async () => {
+ const path = '/b/rfFI1eWeRyKCdK87TA4icw';
+ for (const method of ['GET', 'HEAD']) {
+  const response = await worker.fetch(new Request(origin + path, { method }), {});
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('Location'), origin + '/billing.html?bill=adf148d5e59e47228274af3b4c0e2273');
+ }
+ for (const code of ['', 'abc', 'a'.repeat(23), 'a'.repeat(21) + '!', 'a'.repeat(22), '../billing.html']) {
+  const response = await worker.fetch(new Request(origin + '/b/' + code), { ASSETS: { fetch: () => new Response('', { status: 404 }) } });
+  assert.equal(response.status, 404);
+ }
+ const response = await worker.fetch(new Request(origin + path, { method: 'POST' }), {});
+ assert.equal(response.status, 405);
+});
+
 test('PromptPay encodes the receiver and amount with the expected checksum', () => {
  assert.equal(promptPayPayload('0123456789', 12700),
   '00020101021229370016A0000006770101110113006612345678953037645406127.005802TH6304E848');

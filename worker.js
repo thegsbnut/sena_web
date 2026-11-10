@@ -1,4 +1,4 @@
-import {billingRoute,prunePaidSlips} from './billing.js';
+import {billingRoute,prunePaidSlips,billIdFromCode} from './billing.js';
 import {lineAdmin,lineWebhook} from './line.js';
 import {bookingRoute,scheduledBookings} from './booking.js';
 import {backupsRoute,prepareBackups} from './backups.js';
@@ -37,6 +37,12 @@ function guestResult(result) {
   return {schedule: result.schedule.map(({round,ids,locked}) => ({round,ids,locked})), counts: result.counts};
 }
 export default {async scheduled(event,env,ctx){if(event.cron==='0 18 * * *'){ctx.waitUntil(scheduledBookings(env));ctx.waitUntil(prunePaidSlips(env));}},async fetch(req,env){const url=new URL(req.url),path=url.pathname;try{
+if(path.startsWith('/b/')){
+ if(!['GET','HEAD'].includes(req.method))return json({error:'Method not allowed'},405);
+ const id=billIdFromCode(path.slice(3));
+ if(!id)return json({error:'ไม่พบลิงก์บิล'},404);
+ return Response.redirect(new URL('/billing.html?bill='+id,url.origin).href,302);
+}
 const club=url.searchParams.get('club')||'sena';
 if(!['sena','88'].includes(club))return json({error:'ไม่พบก๊วนที่เลือก'},400);
 const stateTable=club==='88'?'club_state_88':'club_state';
