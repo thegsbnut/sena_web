@@ -8,6 +8,32 @@ const promptPayLine = new RegExp('^(?:เลข)?' + promptPayLabel + '(?:\\s*' 
 const transferAmount = /^(?:จำนวนเงิน(?:ที่โอน)?|ยอดโอน|ยอดเงินที่โอน|(?:transfer )?amount)\s*[:：]?\s*(.*)$/i;
 const bahtAmount = /^(?:฿\s*)?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?)\s*(?:บาท|THB|฿)?$/i;
 
+function promptPaySuffix(value) {
+ const number = value.replace(/[\s-]/g, '');
+ return /^(?:[0-9Xx*•]{6}|[0-9Xx*•]{9})\d{4}$/.test(number) ? number.slice(-4) : null;
+}
+
+function readTtbFields(lines) {
+ // ttb places the amount above its fee and the PromptPay label below the recipient number.
+ const success = lines.findIndex(line => /^โอนเงินสำเร็จ$/.test(line));
+ const fee = lines.findIndex((line, i) => i > success && /^ค่าธรรมเนียม(?:\s|:|$)/.test(line));
+ const sender = lines.findIndex((line, i) => i > fee && /^ttb$/i.test(line));
+ const reference = lines.findIndex((line, i) => i > sender && /^รหัสอ้างอิง/.test(line));
+ if (success < 0 || fee < 0 || sender < 0 || reference < 0) return {};
+
+ const amounts = lines.slice(success + 1, fee).filter(line => /^(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}$/.test(line));
+ const destination = lines.slice(sender + 1, reference);
+ const recipients = destination.flatMap((line, i) => {
+  if (i === 0 || !/^พร้อม\s*เพย์$/.test(line)) return [];
+  const suffix = promptPaySuffix(destination[i - 1]);
+  return suffix ? [suffix] : [];
+ });
+ return {
+  amount: amounts.length === 1 ? Number(amounts[0].replace(/[,.]/g, '')) : null,
+  recipient: recipients.length === 1 ? recipients[0] : null
+ };
+}
+
 export function readSlipFields(text) {
  const lines = text.normalize('NFC').replaceAll('ํา', 'ำ').replace(/[๐-๙]/g, digit => String(digit.charCodeAt(0) - 0x0e50))
   .split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -30,10 +56,12 @@ export function readSlipFields(text) {
   const field = receiver ? compact.slice(receiver[0].length).replace(/^\s*[:：]?\s*/, '') : compact;
   const match = promptPayLine.exec(field);
   if (!match || (!inReceiver && !explicitReceiver.test(field))) continue;
-  const number = (match[1] || lines[index + 1] || '').replace(/[\s-]/g, '');
-  // The visible suffix must consist of four digits in a PromptPay field.
-  if (/^(?:[0-9Xx*•]{6}|[0-9Xx*•]{9})\d{4}$/.test(number)) recipients.add(number.slice(-4));
+  const suffix = promptPaySuffix(match[1] || lines[index + 1] || '');
+  if (suffix) recipients.add(suffix);
  }
+ const ttb = readTtbFields(lines);
+ if (Number.isSafeInteger(ttb.amount) && ttb.amount > 0) amounts.add(ttb.amount);
+ if (ttb.recipient) recipients.add(ttb.recipient);
  return {
   amount: amounts.size === 1 ? amounts.values().next().value : null,
   recipient: recipients.size === 1 ? recipients.values().next().value : null

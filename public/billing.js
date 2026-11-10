@@ -306,9 +306,15 @@
    const file = input.files[0];
    if (file && payer && confirm('แนบสลิปสำหรับ '+payer.name+' จำนวน '+money(payer.amount)+' บาท?')) run(async () => {
     const blob = await compress(file);
-    await request('upload', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob }, payer.id, payer.amount);
+    const headers = new Headers({ 'Content-Type': blob.type });
+    message('กำลังอ่านสลิปบนอุปกรณ์…');
+    const fields = await import('/slip-ocr.js?v=20261110-ttb')
+     .then(({ recognizeSlip }) => recognizeSlip(blob)).catch(() => ({}));
+    if (fields.amount != null) headers.set('X-Slip-Ocr-Amount', fields.amount);
+    if (fields.recipient != null) headers.set('X-Slip-Ocr-PromptPay', fields.recipient);
+    const result = await request('upload', { method: 'POST', headers, body: blob }, payer.id, payer.amount);
     await load();
-    message('แนบสลิปแล้ว · จ่ายแล้ว');
+    message('แนบสลิปแล้ว · ' + slipReviewLabel(result.slipReview));
    });
    input.value = '';
    return;

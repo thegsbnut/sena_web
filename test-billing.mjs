@@ -234,3 +234,13 @@ test('slip OCR only uses an explicit transfer amount and a recipient PromptPay n
  assert.deepEqual(readSlipFields('From Nut\nPromptPay XXX-XXX-0123\nTo Bua\nบัญชี XXX-XXX-0123\nAmount: 401\nยอดโอน 402'),
   { amount: null, recipient: null });
 });
+
+test('ttb OCR reads the standalone amount and the PromptPay number directly above its label', () => {
+ const slip = ['โอนเงินสําเร็จ', '1 ม.ค. 69, 12:00 น.', '10.00', 'ค่าธรรมเนียม 0.00',
+  'Sender', 'XXX-X-XX000-0', 'ttb', 'Receiver', 'XXX-XXX-2468', 'พร้อมเพย์', 'รหัสอ้างอิง: 1234567890'].join('\n');
+ assert.deepEqual(readSlipFields(slip), { amount: 1000, recipient: '2468' });
+ assert.deepEqual(readSlipFields(slip.replace('XXX-XXX-2468', 'XXX-XXX-24X8')), { amount: 1000, recipient: null });
+ assert.deepEqual(readSlipFields(slip.replace('พร้อมเพย์', 'ชื่อธนาคาร')), { amount: 1000, recipient: null });
+ assert.deepEqual(readSlipFields(slip.replace('\nttb\n', '\nBank\n')), { amount: null, recipient: null });
+ assert.deepEqual(readSlipFields(slip.replace('10.00', '10.00\n20.00')), { amount: null, recipient: '2468' });
+});
