@@ -30,6 +30,9 @@ const cookie = (req, name) =>
 // Sessions slide: each visit through the LIFF entry (GET /api/member) renews an
 // active session to a fresh 7 days, at most once a day, so regular players stay
 // signed in while an idle session still expires after a week.
+// New members sign themselves up and are linked straight away; the organizer
+// adjusts the level or name later from the player list if needed.
+const NEW_MEMBER_LV = 6.5;
 const SESSION_MS = 7 * 86400000,
   RENEW_AFTER_MS = 86400000;
 const sessionCookie = value =>
@@ -326,6 +329,20 @@ async function route(req, env, admin, club) {
     return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
   if (action === 'link') {
     if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
+    if (input.newMember !== undefined) {
+      const name = String(input.newMember?.name ?? '')
+          .normalize('NFC')
+          .replace(/\s+/g, ' ')
+          .trim(),
+        gender = input.newMember?.gender;
+      if (!name || name.length > 30 || /[\u0000-\u001f<>]/.test(name))
+        return json({ error: 'กรุณาใส่ชื่อเล่นในก๊วน ไม่เกิน 30 ตัวอักษร' }, 400);
+      if (!['M', 'F'].includes(gender)) return json({ error: 'กรุณาเลือกเพศ' }, 400);
+      await mapBoth(env.DB, member.userId, club, null, {
+        create: { name, gender, lv: NEW_MEMBER_LV },
+      });
+      return json({ ok: true });
+    }
     const sourceClub = input.sourceClub ?? club;
     if (!isClub(sourceClub)) return json({ error: 'สนามไม่ถูกต้อง' }, 400);
     const { state } = await roster(env.DB, sourceClub),

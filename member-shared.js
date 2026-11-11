@@ -25,6 +25,12 @@ async function readRoster(db, club) {
       : { players: [], selected: [], rounds: 10, locks: [], result: null, cup: null },
   };
 }
+const rosterWrite = (db, r, time) =>
+  r.row
+    ? db
+        .prepare(`UPDATE ${r.table} SET payload=?,revision=revision+1,updated_at=? WHERE id=1`)
+        .bind(JSON.stringify(r.state), time)
+    : db.prepare(`INSERT INTO ${r.table} VALUES(1,1,?,?)`).bind(JSON.stringify(r.state), time);
 // D1 batch is a transaction. The CHECK guard aborts the entire batch when any
 // roster or binding changed since it was read, including inserts into empty rows.
 export async function mapBoth(
@@ -32,7 +38,7 @@ export async function mapBoth(
   userId,
   club,
   playerId,
-  { expected = null, remove = false, allowMove = false } = {},
+  { expected = null, remove = false, allowMove = false, create = null } = {},
 ) {
   const clubs = CLUB_IDS,
     rosters = {},
@@ -50,7 +56,28 @@ export async function mapBoth(
     (!current || current.player_id !== expected.playerId || current.status !== expected.status)
   )
     fail('การผูกเปลี่ยนแล้ว กรุณาโหลดล่าสุด');
-  const source = rosters[club].state.players.find(p => p.id === playerId);
+  // A brand-new member: add them to this club's roster in the same transaction,
+  // then the loop below mirrors them into the other club exactly like a mapping.
+  let source;
+  if (create) {
+    if (CLUB_IDS.some(c => links[c]?.status === 'approved'))
+      fail('บัญชี LINE นี้ผูกชื่อไว้แล้ว กรุณาโหลดหน้าใหม่');
+    if (CLUB_IDS.some(c => rosters[c].state.players.some(p => key(p.name) === key(create.name))))
+      fail(
+        'มีชื่อ "' +
+          create.name +
+          '" ในระบบอยู่แล้ว ถ้าเป็นชื่อของคุณให้เลือกจากรายชื่อ ถ้าไม่ใช่ให้ใช้ชื่ออื่น',
+      );
+    if (rosters[club].state.players.length >= 200) fail('รายชื่อเต็ม กรุณาติดต่อผู้จัด');
+    source = {
+      id: 'new:' + crypto.randomUUID().replaceAll('-', '').slice(0, 20),
+      name: create.name,
+      thai: '',
+      lv: create.lv,
+      gender: create.gender,
+    };
+    rosters[club].state.players.push(source);
+  } else source = rosters[club].state.players.find(p => p.id === playerId);
   if (!remove && !source) fail('ไม่พบชื่อผู้เล่นที่เลือก');
   const conditions = [],
     args = [],
@@ -82,6 +109,7 @@ export async function mapBoth(
     if (r.row)
       condition(`EXISTS(SELECT 1 FROM ${r.table} WHERE id=1 AND revision=?)`, r.row.revision);
     else condition(`NOT EXISTS(SELECT 1 FROM ${r.table} WHERE id=1)`);
+    if (create && c === club) writes.push(rosterWrite(db, r, time));
     const matches =
       c === club ? [source] : r.state.players.filter(p => key(p.name) === key(source.name));
     if (matches.length > 1) fail('มีชื่อซ้ำในอีกสนาม ให้ผู้จัดตรวจการแมพก่อน');
@@ -107,17 +135,7 @@ export async function mapBoth(
       if (!existing) {
         if (r.state.players.length >= 200) fail('รายชื่ออีกสนามเต็ม ให้ผู้จัดตรวจสอบก่อน');
         r.state.players.push(target);
-        writes.push(
-          r.row
-            ? db
-                .prepare(
-                  `UPDATE ${r.table} SET payload=?,revision=revision+1,updated_at=? WHERE id=1`,
-                )
-                .bind(JSON.stringify(r.state), time)
-            : db
-                .prepare(`INSERT INTO ${r.table} VALUES(1,1,?,?)`)
-                .bind(JSON.stringify(r.state), time),
-        );
+        writes.push(rosterWrite(db, r, time));
       }
     }
     if (!allowMove && snapshot?.status === 'approved' && snapshot.player_id !== target.id)
@@ -133,7 +151,7 @@ export async function mapBoth(
         .prepare(
           "INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?) ON CONFLICT(user_id,club) DO UPDATE SET player_id=excluded.player_id,name=excluded.name,kind=excluded.kind,status=excluded.status,created_at=excluded.created_at",
         )
-        .bind(userId, c, target.id, target.name, 'existing', time),
+        .bind(userId, c, target.id, target.name, create ? 'new' : 'existing', time),
     );
   }
   await db
