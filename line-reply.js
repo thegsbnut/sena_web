@@ -60,6 +60,8 @@ function command(event) {
     const data = event.postback?.data;
     if (data === 'badbot:menu') return { kind: 'menu' };
     if (data === 'badbot:roster') return { kind: 'roster', scope: 'all' }; // Existing cards still work.
+    const tag = /^badbot:billtag:(all|sena|88):(\d{1,3})$/.exec(data || '');
+    if (tag) return { kind: 'billTag', scope: tag[1], offset: Number(tag[2]) };
     const match = /^badbot:roster:(all|sena|88)$/.exec(data || '');
     return match ? { kind: 'roster', scope: match[1] } : null;
   }
@@ -498,6 +500,17 @@ export async function replyToGroupCommand(event, env) {
         thaiTime.format(now) +
         ' น.';
       messages.push(...textMessages(text));
+    } else if (action.kind === 'billTag' && memberMode(env) && env.LINE_LIFF_ID) {
+      messages.push(
+        ...(await billingLineMessages(
+          env,
+          action.scope,
+          new URL(urls.sena).origin,
+          group,
+          mentionDiagnostics,
+          { tagsFrom: action.offset },
+        )),
+      );
     } else if (action.kind === 'bill' && memberMode(env) && env.LINE_LIFF_ID) {
       messages.push(
         ...(await billingLineMessages(
