@@ -118,8 +118,33 @@
         option.textContent = player.name;
         q('existing').append(option);
       }
-      if (!data.players.length)
-        q('mapStatus').textContent = 'ไม่มีชื่อว่างให้เลือก กรุณาติดต่อผู้จัด';
+      if (!data.players.length) {
+        q('mapForm').hidden = true;
+        q('newForm').hidden = false;
+        q('mapStatus').textContent = 'ยังไม่มีชื่อว่างให้เลือก สมัครเป็นสมาชิกใหม่ได้เลย';
+      }
+      q('newMemberToggle').onclick = () => {
+        q('newForm').hidden = !q('newForm').hidden;
+        if (!q('newForm').hidden) q('newName').focus();
+      };
+      q('newForm').onsubmit = async event => {
+        event.preventDefault();
+        const submit = q('newForm').querySelector('button[type=submit]');
+        submit.disabled = true;
+        q('mapStatus').textContent = 'กำลังสมัคร…';
+        try {
+          await api('/link', {
+            newMember: {
+              name: q('newName').value,
+              gender: q('newForm').querySelector('input[name=newGender]:checked')?.value,
+            },
+          });
+          location.reload();
+        } catch (e) {
+          q('mapStatus').textContent = e.message;
+          submit.disabled = false;
+        }
+      };
       q('mapForm').onsubmit = async event => {
         event.preventDefault();
         const submit = q('mapForm').querySelector('button');

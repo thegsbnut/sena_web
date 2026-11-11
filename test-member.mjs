@@ -463,6 +463,70 @@ test('active member sessions slide to a fresh week at most once a day; expired o
   assert.deepEqual(sessionCookies(r), []);
   assert(expiry() < Date.now());
 });
+test('a new member signs up with a unique name and is linked in both clubs at LV 6.5 without approval', async t => {
+  const f = fixture(t),
+    member = await f.login();
+  const signUp = (body, cookie = member) =>
+    f.request('/api/member/link', { newMember: body }, cookie);
+  // Bad input is refused before anything is written.
+  for (const bad of [
+    { name: '', gender: 'M' },
+    { name: 'x'.repeat(31), gender: 'M' },
+    { name: 'Ok' },
+    { name: '<b>', gender: 'F' },
+  ])
+    assert.equal((await signUp(bad)).status, 400);
+  // Existing names (any case or spacing, either club) are reported as already in the system.
+  for (const name of ['Nut', '  nut ', 'PETE'])
+    assert.match(
+      (await (await signUp({ name, gender: 'M' })).json()).error,
+      /มีชื่อ .* ในระบบอยู่แล้ว/,
+    );
+  // A unique name: linked straight away, both clubs, default level.
+  const r = await signUp({ name: '  มด  ', gender: 'F' });
+  assert.equal(r.status, 200);
+  const me = await (await f.request('/api/member', null, member)).json();
+  assert.equal(me.link.status, 'approved');
+  assert.equal(me.link.name, 'มด');
+  for (const table of ['club_state', 'club_state_88']) {
+    const players = JSON.parse(
+      f.db.prepare(`SELECT payload FROM ${table} WHERE id=1`).get().payload,
+    ).players;
+    const added = players.filter(p => p.name === 'มด');
+    assert.equal(added.length, 1, table);
+    assert.deepEqual([added[0].lv, added[0].gender, added[0].thai], [6.5, 'F', ''], table);
+  }
+  const links = f.db
+    .prepare('SELECT club,kind,status FROM member_links WHERE user_id=? ORDER BY club')
+    .all(uid);
+  assert.deepEqual(
+    links.map(l => [l.club, l.kind, l.status]),
+    [
+      ['88', 'new', 'approved'],
+      ['sena', 'new', 'approved'],
+    ],
+  );
+  // Signing up again with the same account, or someone else taking the same name, is refused.
+  assert.equal((await signUp({ name: 'อีกชื่อ', gender: 'F' })).status, 409);
+  const second = await f.login(other);
+  assert.match(
+    (await (await signUp({ name: 'มด', gender: 'M' }, second)).json()).error,
+    /ในระบบอยู่แล้ว/,
+  );
+  // The new player is a normal roster entry: the organizer can rename it and the link stays.
+  const admin = await f.admin();
+  const state = await (await f.request('/api/state', null, admin)).json();
+  state.state.players.find(p => p.name === 'มด').name = 'มดแดง';
+  assert.equal(
+    (await f.request('/api/state', { state: state.state, revision: state.revision }, admin)).status,
+    200,
+  );
+  assert.equal(
+    (await (await f.request('/api/member', null, member)).json()).link.status,
+    'approved',
+  );
+});
+
 test('existing-player linking is immediate, isolates clubs, and limits booking and cancellation to self', async t => {
   const f = fixture(t),
     admin = await f.admin(),
@@ -527,7 +591,7 @@ test('existing-player linking is immediate, isolates clubs, and limits booking a
   );
   assert.equal((await f.request('/api/booking', booking, member)).status, 403);
 });
-test('collection phase rejects new names and admin renaming preserves the linked ID', async t => {
+test('linking rejects malformed choices and admin renaming preserves the linked ID', async t => {
   const f = fixture(t),
     admin = await f.admin(),
     member = await f.login();
