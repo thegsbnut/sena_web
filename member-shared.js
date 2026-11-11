@@ -75,6 +75,8 @@ export async function mapBoth(
       thai: '',
       lv: create.lv,
       gender: create.gender,
+      // Shown to the organizer as "new, LV not reviewed" until they edit the player.
+      selfSignup: { lineName: create.lineName || '', at: new Date().toISOString() },
     };
     rosters[club].state.players.push(source);
   } else source = rosters[club].state.players.find(p => p.id === playerId);
@@ -129,6 +131,7 @@ export async function mapBoth(
         thai: source.thai || '',
         lv: source.lv,
         gender: source.gender,
+        ...(source.selfSignup ? { selfSignup: source.selfSignup } : {}),
       };
       if (!Number.isFinite(target.lv) || !['M', 'F'].includes(target.gender))
         fail('รายชื่อเดิมยังไม่มี LV หรือเพศ ให้ผู้จัดตรวจสอบก่อน');

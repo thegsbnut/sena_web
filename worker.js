@@ -1,3 +1,4 @@
+import { syncLinkedPlayers } from './roster-sync.js';
 import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
 import { memberRoute, memberFor, memberMode } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
@@ -348,26 +349,47 @@ export default {
         if (!valid(input.state) || !Number.isInteger(input.revision) || input.revision < 0)
           return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
         await prepareBackups(env.DB, club);
+        const previous = await env.DB.prepare(
+          `SELECT payload FROM ${stateTable} WHERE id=1 AND revision=?`,
+        )
+          .bind(input.revision)
+          .first();
         const now = new Date().toISOString(),
           payload = JSON.stringify(input.state);
-        const r =
+        // RETURNING yields a row only if this write happened. meta.changes is not
+        // usable here: D1 also counts the row the backup trigger inserts.
+        const written =
           input.revision === 0
             ? await env.DB.prepare(
-                `INSERT OR IGNORE INTO ${stateTable} (id,revision,payload,updated_at) VALUES (1,1,?,?)`,
+                `INSERT OR IGNORE INTO ${stateTable} (id,revision,payload,updated_at) VALUES (1,1,?,?) RETURNING revision`,
               )
                 .bind(payload, now)
-                .run()
+                .first()
             : await env.DB.prepare(
-                `UPDATE ${stateTable} SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?`,
+                `UPDATE ${stateTable} SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=? RETURNING revision`,
               )
                 .bind(payload, now, input.revision)
-                .run();
-        if (r.meta.changes !== 1)
+                .first();
+        if (!written)
           return json(
             { error: 'มีข้อมูลใหม่จากอีกเครื่อง กรุณาสำรองข้อมูลแล้วโหลดข้อมูลกลางใหม่' },
             409,
           );
-        return json({ revision: input.revision + 1, updatedAt: now });
+        // Copy edits of LINE-linked players to their entry in the other club.
+        let sync = { synced: 0, skipped: [] };
+        if (previous)
+          try {
+            sync = await syncLinkedPlayers(
+              env.DB,
+              club,
+              JSON.parse(previous.payload).players,
+              input.state.players,
+            );
+          } catch (error) {
+            logError('roster-sync', error, { club });
+            sync = { synced: 0, skipped: [{ reason: 'error' }] };
+          }
+        return json({ revision: input.revision + 1, updatedAt: now, ...sync });
       }
       if (path.startsWith('/api/')) return json({ error: 'Not found' }, 404);
       return env.ASSETS.fetch(req);

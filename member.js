@@ -338,8 +338,16 @@ async function route(req, env, admin, club) {
       if (!name || name.length > 30 || /[\u0000-\u001f<>]/.test(name))
         return json({ error: 'กรุณาใส่ชื่อเล่นในก๊วน ไม่เกิน 30 ตัวอักษร' }, 400);
       if (!['M', 'F'].includes(gender)) return json({ error: 'กรุณาเลือกเพศ' }, 400);
+      const profile = await env.DB.prepare('SELECT line_name FROM member_profiles WHERE user_id=?')
+        .bind(member.userId)
+        .first();
       await mapBoth(env.DB, member.userId, club, null, {
-        create: { name, gender, lv: NEW_MEMBER_LV },
+        create: {
+          name,
+          gender,
+          lv: NEW_MEMBER_LV,
+          lineName: String(profile?.line_name || '').slice(0, 60),
+        },
       });
       return json({ ok: true });
     }
