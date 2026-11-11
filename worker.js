@@ -1,4 +1,3 @@
-// Includes the direct LINE tagtest command for production diagnosis.
 import { memberRoute, memberFor, memberMode } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
 import { lineAdmin, lineWebhook } from './line.js';

@@ -1,4 +1,4 @@
-import { escapeMentionText, groupMentionTarget } from './line-mentions.js';
+import { groupMentionTarget } from './line-mentions.js';
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
 import qrcode from 'qrcode-generator';
 
@@ -764,39 +764,20 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         text: '✅ ไม่มีบิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
       },
     ];
+  // LINE renders every mention in a message as plain text once the message
+  // contains more than one mention (confirmed in the real group with a bare
+  // "{a} {b}" probe). So the bill summary is plain text, and each payer is
+  // tagged in their own single-mention message, within the 5-message reply cap.
   const messages = [],
-    membership = new Map();
-  let text = '',
-    substitution = {};
+    membership = new Map(),
+    owed = new Map();
+  let text = '';
   const flush = () => {
-    if (!text) return;
-    messages.push(
-      Object.keys(substitution).length
-        ? { type: 'textV2', text, substitution }
-        : { type: 'text', text: text.replaceAll('{{', '{').replaceAll('}}', '}') },
-    );
+    if (text) messages.push({ type: 'text', text });
     text = '';
-    substitution = {};
   };
-  // Split by message size / LINE's 20-mention limit, never one message per person.
-  const append = (prefix, userId, suffix = '') => {
-    const make = () =>
-      escapeMentionText(prefix) +
-      (userId ? '{member' + Object.keys(substitution).length + '}' : '') +
-      escapeMentionText(suffix);
-    let line = make();
-    if (
-      text &&
-      (text.length + line.length + 1 > 4500 || (userId && Object.keys(substitution).length === 20))
-    ) {
-      flush();
-      line = make();
-    }
-    if (userId)
-      substitution['member' + Object.keys(substitution).length] = {
-        type: 'mention',
-        mentionee: { type: 'user', userId },
-      };
+  const append = line => {
+    if (text && text.length + line.length + 1 > 4500) flush();
     text += (text ? '\n' : '') + line;
   };
   append('💸 บิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)));
@@ -835,8 +816,10 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         ' บ.',
     );
     for (const { p, userId, reason } of entries) {
-      if (userId) append('• ', userId, ' (' + p.name + ') ' + money(p.amount) + ' บ.');
-      else
+      if (userId) {
+        owed.set(userId, (owed.get(userId) || 0) + p.amount);
+        append('• ' + p.name + ' ' + money(p.amount) + ' บ.');
+      } else
         append(
           '• ' +
             p.name +
@@ -857,15 +840,26 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
   if (groups.some(g => g.results.length > limit))
     append('แสดง ' + limit + ' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด');
   flush();
-  // Never silently drop recipients or send an invalid >5-message reply.
   if (messages.length > 5) {
     diagnostics.push({ reason: 'reply_message_limit' });
     return [
       {
         type: 'text',
-        text: 'บิลมีรายชื่อมากเกินส่งครบในคำตอบเดียว จึงยังไม่ได้แท็กใคร กรุณาใช้ badbot bill sena หรือ badbot bill 88 หรือให้ผู้จัดแยกบิล',
+        text: 'บิลมีรายชื่อมากเกินส่งครบในคำตอบเดียว กรุณาใช้ badbot bill sena หรือ badbot bill 88 หรือให้ผู้จัดแยกบิล',
       },
     ];
   }
+  // Everyone is already listed by name above; tag as many as the reply allows,
+  // largest outstanding total first.
+  const slots = 5 - messages.length,
+    targets = [...owed].sort((x, y) => y[1] - x[1]);
+  for (const [userId, amount] of targets.slice(0, slots))
+    messages.push({
+      type: 'textV2',
+      text: '{member} ค้างรวม ' + money(amount) + ' บ.',
+      substitution: { member: { type: 'mention', mentionee: { type: 'user', userId } } },
+    });
+  if (targets.length > slots)
+    diagnostics.push({ reason: 'mention_slots_exhausted', untagged: targets.length - slots });
   return messages;
 }

@@ -667,7 +667,7 @@ test('organizer mention diagnostics report the actual fallback and verify the we
   assert(!JSON.stringify(report).includes(uid));
 });
 
-test('maximum bill reminders include every payer inline and stay within five LINE messages', async t => {
+test('maximum bill reminders list every payer by name, tag one per message, and stay within five LINE messages', async t => {
   const f = fixture(t);
   await f.request('/api/member');
   f.db.exec(
@@ -695,15 +695,15 @@ test('maximum bill reminders include every payer inline and stay within five LIN
   const messages = await billingLineMessages(f.env, 'all', origin, 'Ctest');
   assert(messages.length <= 5);
   assert(messages.every(m => m.text.length <= 5000));
-  assert(messages.every(m => m.type === 'textV2'));
-  const mentions = messages.filter(m => m.type === 'textV2');
-  assert.equal(mentions.length, 3);
-  assert(mentions.every(m => Object.keys(m.substitution).length <= 20));
-  assert.deepEqual(
-    mentions.flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId)).sort(),
-    ids.sort(),
-  );
-  const billText = messages.map(m => m.text).join('\n');
+  const mentions = messages.filter(m => m.type === 'textV2'),
+    summaries = messages.filter(m => m.type === 'text');
+  assert.equal(messages.length, 5);
+  assert.equal(summaries.length, 2);
+  assert(mentions.every(m => Object.keys(m.substitution).length === 1));
+  const tagged = mentions.map(m => m.substitution.member.mentionee.userId);
+  assert.equal(new Set(tagged).size, 3);
+  assert(tagged.every(id => ids.includes(id)));
+  const billText = summaries.map(m => m.text).join('\n');
   assert.equal((billText.match(/• /g) || []).length, 48);
 });
 
@@ -742,7 +742,7 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
   );
   const messages = await billingLineMessages(f.env, 'all', origin, 'C' + 'a'.repeat(32));
   assert.equal(messages.at(-1).type, 'textV2');
-  assert.equal(messages[0].type, 'textV2');
+  assert.equal(messages[0].type, 'text');
   assert.equal(Object.values(messages.at(-1).substitution)[0].mentionee.userId, uid);
   assert.match(messages[0].text, /https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
   assert(!JSON.stringify(messages).includes(mine.token));

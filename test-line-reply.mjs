@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import worker from './worker.js';
 import { defaultSettings, bangkokDate } from './booking.js';
 import { prepareMembers } from './member.js';
-import { mentionMessage, groupMentionTarget } from './line-mentions.js';
+import { groupMentionTarget } from './line-mentions.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -150,109 +150,6 @@ const textOf = call =>
     .map(m => m.text)
     .join('\n');
 
-test('tagtest verifies the webhook sender in the target group without any roster lookup', async t => {
-  const f = fixture(t),
-    userId = 'U' + 'b'.repeat(32);
-  const event = f.event('badbot tagtest');
-  event.source.userId = userId;
-  assert.equal((await f.hook([event])).status, 200);
-  const messages = f.calls[0].messages;
-  assert.equal(messages.length, 1);
-  assert.match(messages[0].text, /ทดสอบแท็กผู้พิมพ์คำสั่ง: \{you\}/);
-  for (const message of messages) {
-    assert.equal(message.type, 'textV2');
-    assert.deepEqual(message.substitution.you, {
-      type: 'mention',
-      mentionee: { type: 'user', userId },
-    });
-    assert(!message.text.includes(userId));
-  }
-  assert.equal(
-    f.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='member_links'").get().n,
-    0,
-  );
-});
-
-test('tagtest does not fabricate a user ID when LINE does not provide one', async t => {
-  const f = fixture(t);
-  assert.equal((await f.hook([f.event('badbot tagtest')])).status, 200);
-  assert.equal(f.calls[0].messages[0].type, 'text');
-  assert.match(textOf(f.calls[0]), /ไม่ส่งรหัสบัญชี/);
-});
-
-test('tagtest with a selected friend uses native mention data and ignores display names and duplicates', async t => {
-  const f = fixture(t),
-    userId = 'U' + 'd'.repeat(32);
-  const event = f.event('badbot tagtest @Strange name');
-  event.message.mention = {
-    mentionees: [
-      { type: 'user', userId },
-      { type: 'user', userId },
-      { type: 'all' },
-      { type: 'user', userId: 'not-a-user' },
-    ],
-  };
-  assert.equal((await f.hook([event])).status, 200);
-  const messages = f.calls[0].messages;
-  assert.equal(messages.length, 1);
-  for (const message of messages) {
-    assert.equal(message.type, 'textV2');
-    assert.deepEqual(message.substitution, {
-      friend0: { type: 'mention', mentionee: { type: 'user', userId } },
-    });
-  }
-  assert.match(messages[0].text, /ทดสอบแท็กเพื่อน: \{friend0\}/);
-});
-
-test('tagtest with two distinct accounts produces one final mention message with both recipients', async t => {
-  const f = fixture(t),
-    nut = 'U' + 'a'.repeat(32),
-    tom = 'U' + 'b'.repeat(32);
-  const event = f.event('badbot tagtest @Nut @Tom');
-  event.message.mention = {
-    mentionees: [
-      { type: 'user', userId: nut },
-      { type: 'user', userId: tom },
-    ],
-  };
-  assert.equal((await f.hook([event])).status, 200);
-  const messages = f.calls[0].messages;
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].type, 'textV2');
-  assert.deepEqual(
-    Object.values(messages[0].substitution).map(v => v.mentionee.userId),
-    [nut, tom],
-  );
-});
-
-test('tagtest mentions ten distinct people in one message with ten matching substitutions', async t => {
-  const f = fixture(t),
-    ids = Array.from({ length: 10 }, (_, i) => 'U' + (i + 1).toString(16).padStart(32, '0'));
-  const event = f.event('badbot tagtest ' + ids.map((_, i) => '@Player' + i).join(' '));
-  event.message.mention = { mentionees: ids.map(userId => ({ type: 'user', userId })) };
-  assert.equal((await f.hook([event])).status, 200);
-  const messages = f.calls[0].messages;
-  assert.equal(messages.length, 1);
-  const message = messages[0];
-  assert.equal(message.type, 'textV2');
-  assert.equal(Object.keys(message.substitution).length, 10);
-  ids.forEach((userId, i) => {
-    const key = 'friend' + i;
-    assert.equal(message.text.split('{' + key + '}').length - 1, 1);
-    assert.deepEqual(message.substitution[key], {
-      type: 'mention',
-      mentionee: { type: 'user', userId },
-    });
-  });
-});
-
-test('typing an ordinary at-name cannot make tagtest guess a friend account', async t => {
-  const f = fixture(t);
-  assert.equal((await f.hook([f.event('badbot tagtest @Nut')])).status, 200);
-  assert.equal(f.calls[0].messages[0].type, 'text');
-  assert.match(textOf(f.calls[0]), /แตะเลือกชื่อเพื่อน/);
-});
-
 test('signed bill webhook sends a real LINE mention object all the way to the reply API', async t => {
   const f = fixture(t),
     userId = 'U' + 'a'.repeat(32);
@@ -281,21 +178,22 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
     return Response.json({ sentMessages: [{ id: 'test-message' }] });
   });
   assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
-  const message = f.calls[0].messages.at(-1);
+  const [summary, message] = f.calls[0].messages;
+  assert.equal(f.calls[0].messages.length, 2);
+  assert.equal(summary.type, 'text');
+  assert.match(summary.text, /• Nut 85 บ\./);
   assert.equal(message.type, 'textV2');
-  assert.deepEqual(message.substitution.member0, {
-    type: 'mention',
-    mentionee: { type: 'user', userId },
+  assert.deepEqual(message.substitution, {
+    member: { type: 'mention', mentionee: { type: 'user', userId } },
   });
-  assert.match(message.text, /• \{member0\} \(Nut\) 85 บ\./);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.doesNotMatch(message.text, /@Nut/);
+  assert.equal(message.text, '{member} ค้างรวม 85 บ.');
+  assert.doesNotMatch(JSON.stringify(f.calls[0].messages), /@Nut/);
   const diagnostic = JSON.parse(
     f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload,
   );
   assert.equal(diagnostic.replyStatus, 200);
   assert.equal(diagnostic.mentionCount, 1);
-  assert.deepEqual(diagnostic.messageTypes, ['textV2']);
+  assert.deepEqual(diagnostic.messageTypes, ['text', 'textV2']);
   assert.doesNotMatch(JSON.stringify(diagnostic), new RegExp(userId));
 });
 
@@ -372,42 +270,66 @@ async function billFixture(t, count = 1) {
       ),
   };
 }
-for (const count of [1, 2, 10, 20, 21])
-  test(
-    'bill webhook keeps ' +
-      count +
-      ' mentions inline, including Unicode names and every payer after eight',
-    async t => {
-      const f = await billFixture(t, count);
-      assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
-      const messages = f.calls[0].messages;
-      assert.equal(f.calls[0].notificationDisabled, false);
-      assert.equal(messages.length, Math.ceil(count / 20));
-      assert(messages.every(m => m.type === 'textV2'));
-      assert.deepEqual(
-        messages.flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId)),
-        f.ids,
-      );
-      assert.deepEqual([...f.profileCalls].sort(), [...f.ids].sort());
-      messages.forEach(m => {
-        assert(Object.keys(m.substitution).length <= 20);
-        assert(m.text.length <= 5000);
-        for (const key of Object.keys(m.substitution)) assert(m.text.includes('{' + key + '}'));
-      });
-      assert(messages[0].text.includes('นัท 🏸 {{friend0}}'));
-      if (count > 1) assert(messages[0].text.includes('ทอม 👨‍👩‍👧‍👦 "&<>"'));
-      assert(!JSON.stringify(messages).includes('@นัท'));
-      const report = f.report();
-      assert.equal(report.outcome, 'accepted');
-      assert.equal(report.renderingConfirmed, false);
-      assert.equal(report.mentionCount, count);
-      assert.equal(report.requestId, 'request-audit-123');
-      assert.deepEqual(report.sentMessageIds, ['line-message-id']);
-      for (const id of f.ids) assert(!JSON.stringify(report).includes(id));
-      assert(!JSON.stringify(report).includes(f.calls[0].replyToken));
-      assert(!JSON.stringify(report).includes(f.env.LINE_CHANNEL_ACCESS_TOKEN));
-    },
+// LINE renders mentions as plain text when one message holds several, so each
+// payer is tagged in their own message after a plain-text summary.
+for (const count of [1, 2, 4, 10, 21])
+  test('bill webhook tags ' + count + ' payers with one mention per message', async t => {
+    const f = await billFixture(t, count);
+    assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
+    const messages = f.calls[0].messages,
+      tagged = Math.min(count, 4);
+    assert.equal(f.calls[0].notificationDisabled, false);
+    assert.equal(messages.length, 1 + tagged);
+    assert.equal(messages[0].type, 'text');
+    for (const name of f.names.slice(0, count))
+      assert(messages[0].text.includes('• ' + name + ' 17 บ.'));
+    assert(messages[0].text.length <= 5000);
+    const mentions = messages.slice(1);
+    for (const m of mentions) {
+      assert.equal(m.type, 'textV2');
+      assert.deepEqual(Object.keys(m.substitution), ['member']);
+      assert.equal(m.text, '{member} ค้างรวม 17 บ.');
+    }
+    assert.deepEqual(
+      mentions.map(m => m.substitution.member.mentionee.userId),
+      f.ids.slice(0, tagged),
+    );
+    assert.deepEqual([...f.profileCalls].sort(), [...f.ids].sort());
+    assert(!JSON.stringify(messages).includes('@นัท'));
+    const report = f.report();
+    assert.equal(report.outcome, 'accepted');
+    assert.equal(report.renderingConfirmed, false);
+    assert.equal(report.mentionCount, tagged);
+    assert.equal(
+      report.payers.find(p => p.reason === 'mention_slots_exhausted')?.untagged,
+      count > 4 ? count - 4 : undefined,
+    );
+    assert.equal(report.requestId, 'request-audit-123');
+    assert.deepEqual(report.sentMessageIds, ['line-message-id']);
+    for (const id of f.ids) assert(!JSON.stringify(report).includes(id));
+    assert(!JSON.stringify(report).includes(f.calls[0].replyToken));
+    assert(!JSON.stringify(report).includes(f.env.LINE_CHANNEL_ACCESS_TOKEN));
+  });
+test('a payer owing on several bills is tagged once with the combined total, largest first', async t => {
+  const f = await billFixture(t, 2);
+  f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+    'audit-bill-2',
+    'sena',
+    future(1),
+    JSON.stringify({
+      payers: [{ name: f.names[1], payerKey: 'member:audit1', amount: 3000, status: 'unpaid' }],
+    }),
   );
+  await f.hook([f.event('badbot bill')]);
+  const mentions = f.calls[0].messages.slice(1);
+  assert.deepEqual(
+    mentions.map(m => [m.substitution.member.mentionee.userId, m.text]),
+    [
+      [f.ids[1], '{member} ค้างรวม 47 บ.'],
+      [f.ids[0], '{member} ค้างรวม 17 บ.'],
+    ],
+  );
+});
 
 for (const failure of [
   { status: 404 },
@@ -423,11 +345,8 @@ for (const failure of [
       f.profileFailure({ userId: f.ids[1], ...failure });
       assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
       const messages = f.calls[0].messages;
-      assert.equal(messages.length, 1);
-      assert.deepEqual(
-        Object.values(messages[0].substitution).map(v => v.mentionee.userId),
-        [f.ids[0]],
-      );
+      assert.equal(messages.length, 2);
+      assert.equal(messages[1].substitution.member.mentionee.userId, f.ids[0]);
       assert.match(messages[0].text, /แท็กไม่สำเร็จ:/);
       assert(!JSON.stringify(messages).includes('@ทอม'));
       assert.notEqual(f.report().payers.find(p => p.name === f.names[1]).reason, 'mention_ready');
@@ -467,136 +386,23 @@ test('bill records an uncertain network failure and permits a webhook retry', as
   assert.equal((await f.hook([event])).status, 200);
   assert.equal(f.report().outcome, 'accepted');
 });
-test('mention builder rejects invalid IDs and over-limit lists rather than silently dropping targets', async t => {
+test('group membership check rejects malformed user IDs without calling LINE', async t => {
   fixture(t);
-  assert.throws(() => mentionMessage(['ชื่อคน'], 'test'), /Invalid/);
-  assert.throws(
-    () =>
-      mentionMessage(
-        Array.from({ length: 21 }, (_, i) => 'U' + i.toString(16).padStart(32, '0')),
-        'test',
-      ),
-    /at most 20/,
-  );
   const result = await groupMentionTarget({}, group, 'not-a-user');
   assert.equal(result.reason, 'invalid_line_user_id');
 });
-test('native friend tagtest reports unverified friends while keeping verified friends in one message', async t => {
-  const f = fixture(t),
-    a = 'U' + 'a'.repeat(32),
-    b = 'U' + 'b'.repeat(32);
-  t.mock.method(globalThis, 'fetch', async (url, options) => {
-    if (String(url).includes('/group/'))
-      return url.endsWith(a) ? Response.json({ userId: a }) : Response.json({}, { status: 404 });
-    assert(String(url).endsWith('/message/reply'));
-    f.calls.push(JSON.parse(options.body));
-    return Response.json({});
-  });
-  const event = f.event('badbot tagtest @หนึ่ง @สอง');
-  event.message.mention = {
-    mentionees: [
-      { type: 'user', userId: a },
-      { type: 'user', userId: b },
-    ],
-  };
-  await f.hook([event]);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.deepEqual(
-    Object.values(f.calls[0].messages[0].substitution).map(v => v.mentionee.userId),
-    [a],
-  );
-  assert.match(f.calls[0].messages[0].text, /แท็กไม่สำเร็จ 1 คน/);
-});
-test('oversized bills explicitly decline the whole reminder instead of dropping recipients', async t => {
+test('very long bills still list every payer by name and stay within five LINE messages', async t => {
   const f = await billFixture(t, 101);
   await f.hook([f.event('badbot bill')]);
   const messages = f.calls[0].messages;
-  assert.equal(messages.length, 1);
-  assert.equal(messages[0].type, 'text');
-  assert.match(messages[0].text, /ยังไม่ได้แท็กใคร/);
-  assert.equal(f.report().mentionCount, 0);
-});
-
-for (const count of [1, 2, 10, 20])
-  test(
-    'tagprobe sends exactly one minimal message for the same ' + count + ' bill payer IDs',
-    async t => {
-      const f = await billFixture(t, count);
-      await f.hook([f.event('badbot bill')]);
-      const billIds = f.calls[0].messages.flatMap(m =>
-        Object.values(m.substitution || {}).map(v => v.mentionee.userId),
-      );
-      await f.hook([f.event('badbot tagprobe')]);
-      const request = f.calls[1];
-      assert.equal(request.messages.length, 1);
-      assert.equal(request.notificationDisabled, false);
-      const message = request.messages[0];
-      assert.equal(message.type, 'textV2');
-      const keys = Array.from({ length: count }, (_, i) => String.fromCharCode(97 + i));
-      assert.equal(message.text, keys.map(k => '{' + k + '}').join(' '));
-      assert.deepEqual(Object.keys(message.substitution), keys);
-      assert.deepEqual(
-        Object.values(message.substitution).map(v => v.mentionee.userId),
-        billIds,
-      );
-      assert.doesNotMatch(message.text, /https|บิล|Nut|Tom|นัท|ทอม|\n/);
-      const report = f.report();
-      assert.equal(report.command, 'badbot tagprobe');
-      assert.equal(report.mentionCount, count);
-      assert.equal(report.requestId, 'request-audit-123');
-      assert.equal(report.renderingConfirmed, false);
-    },
-  );
-test('tagprobe also accepts native selected users without requiring bills or roster links', async t => {
-  const f = fixture(t),
-    ids = ['U' + 'a'.repeat(32), 'U' + 'b'.repeat(32)];
-  const event = f.event('badbot tagprobe @หนึ่ง 🏸 @สอง');
-  event.message.mention = { mentionees: ids.map(userId => ({ type: 'user', userId })) };
-  await f.hook([event]);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.equal(f.calls[0].messages[0].text, '{a} {b}');
-  assert.deepEqual(
-    Object.values(f.calls[0].messages[0].substitution).map(v => v.mentionee.userId),
-    ids,
-  );
-  assert.equal(
-    f.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='member_links'").get().n,
-    0,
-  );
-});
-test('tagprobe does not silently reduce a selected pair when one group membership check fails', async t => {
-  const f = fixture(t),
-    a = 'U' + 'a'.repeat(32),
-    b = 'U' + 'b'.repeat(32);
-  t.mock.method(globalThis, 'fetch', async (url, options) => {
-    if (String(url).includes('/group/'))
-      return url.endsWith(a) ? Response.json({ userId: a }) : Response.json({}, { status: 404 });
-    assert(String(url).endsWith('/message/reply'));
-    f.calls.push(JSON.parse(options.body));
-    return Response.json({});
-  });
-  const event = f.event('badbot tagprobe @หนึ่ง @สอง');
-  event.message.mention = {
-    mentionees: [
-      { type: 'user', userId: a },
-      { type: 'user', userId: b },
-    ],
-  };
-  await f.hook([event]);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.equal(f.calls[0].messages[0].type, 'text');
-  assert.match(f.calls[0].messages[0].text, /ยังไม่ส่งแท็กทดสอบ/);
-});
-test('tagprobe reports no eligible bill targets and over-limit bill targets instead of splitting per user', async t => {
-  const f = await billFixture(t, 21);
-  await f.hook([f.event('badbot tagprobe')]);
-  assert.equal(f.calls[0].messages.length, 1);
-  assert.equal(f.calls[0].messages[0].type, 'text');
-  assert.match(f.calls[0].messages[0].text, /เกิน 20 คน/);
-  f.db.prepare('DELETE FROM bills').run();
-  await f.hook([f.event('badbot tagprobe')]);
-  assert.equal(f.calls[1].messages.length, 1);
-  assert.match(f.calls[1].messages[0].text, /ไม่พบผู้จ่ายบิล/);
+  assert(messages.length <= 5);
+  const summary = messages
+    .filter(m => m.type === 'text')
+    .map(m => m.text)
+    .join('\n');
+  for (const name of f.names.slice(0, 101)) assert(summary.includes('• ' + name + ' 17 บ.'));
+  for (const m of messages.filter(m => m.type === 'textV2'))
+    assert.equal(Object.keys(m.substitution).length, 1);
 });
 
 test('enabled member mode sends both booking buttons through the configured LIFF app', async t => {

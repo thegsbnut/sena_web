@@ -1,42 +1,4 @@
-// Shared by the real-group tagtest command and billing reminders.
 export const validLineUserId = id => /^U[a-f0-9]{32}$/.test(id || '');
-export const escapeMentionText = text => String(text).replaceAll('{', '{{').replaceAll('}', '}}');
-export function mentionMessage(userIds, prefix, suffix = '') {
-  const ids = [...new Set(userIds)];
-  if (ids.some(id => !validLineUserId(id))) throw Error('Invalid LINE mention user ID');
-  if (ids.length > 20) throw Error('LINE allows at most 20 mentions per message');
-  if (!ids.length) return null;
-  const substitution = Object.fromEntries(
-    ids.map((userId, i) => [
-      'friend' + i,
-      { type: 'mention', mentionee: { type: 'user', userId } },
-    ]),
-  );
-  return {
-    type: 'textV2',
-    text:
-      escapeMentionText(prefix) +
-      ids.map((_, i) => '{friend' + i + '}').join(' ') +
-      escapeMentionText(suffix),
-    substitution,
-  };
-}
-
-// Independent minimal control for diagnosing LINE rendering. No bill text,
-// display names, emoji, links or repeated mention messages are included.
-export function minimalMentionMessage(userIds) {
-  const ids = [...new Set(userIds)];
-  if (!ids.length) return null;
-  if (ids.length > 20 || ids.some(id => !validLineUserId(id)))
-    throw Error('Invalid minimal mention targets');
-  const substitution = {};
-  const keys = ids.map((userId, i) => {
-    const key = String.fromCharCode(97 + i);
-    substitution[key] = { type: 'mention', mentionee: { type: 'user', userId } };
-    return '{' + key + '}';
-  });
-  return { type: 'textV2', text: keys.join(' '), substitution };
-}
 
 // A successful validate/reply checks syntax, not destination membership.
 export async function groupMentionTarget(env, groupId, userId) {

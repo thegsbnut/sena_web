@@ -1,10 +1,4 @@
-import {
-  mentionMessage,
-  minimalMentionMessage,
-  groupMentionTarget,
-  lineReplyEvidence,
-  redactedMentionPayload,
-} from './line-mentions.js';
+import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
 import { billingLineText, billingLineMessages } from './billing.js';
 import { bookingRoute } from './booking.js';
@@ -33,8 +27,6 @@ export const normalizeLineText = text =>
     .trim();
 
 const shortcuts = new Map([
-  ['tagprobe', { kind: 'tagProbe', description: 'ทดสอบแท็กผู้จ่ายบิลด้วยข้อความแท็กล้วน' }],
-  ['tagtest', { kind: 'tagTest', description: 'ทดสอบแท็กบัญชีผู้พิมพ์คำสั่งโดยตรง' }],
   ['book 88', { kind: 'book', club: '88', description: 'ลิงก์จอง 88' }],
   ['book sena', { kind: 'book', club: 'sena', description: 'ลิงก์จอง Sena' }],
   ['list', { kind: 'roster', scope: 'all', description: 'รายชื่อทั้งสองสนาม' }],
@@ -67,8 +59,6 @@ function command(event) {
   const match = /^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  if (/^tagprobe\s+/.test(action)) return { kind: 'tagProbe', friends: true };
-  if (/^tagtest\s+/.test(action)) return { kind: 'tagTest', friends: true };
   if (shortcuts.has(action)) return shortcuts.get(action);
   // Pairing codes are consumed by the existing administrator-only pairing flow.
   if (/^[a-f0-9]{32}$/i.test(action)) return null;
@@ -412,118 +402,7 @@ export async function replyToGroupCommand(event, env) {
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'tagProbe') {
-      let ids = [];
-      if (action.friends) {
-        const selected = [
-          ...new Set(
-            (event.message.mention?.mentionees || [])
-              .filter(m => m.type === 'user' && !m.isSelf && /^U[a-f0-9]{32}$/.test(m.userId || ''))
-              .map(m => m.userId),
-          ),
-        ];
-        const results = await Promise.all(
-          selected.map(userId => groupMentionTarget(env, group, userId)),
-        );
-        if (selected.length && results.every(r => r.userId)) ids = results.map(r => r.userId);
-        else
-          messages.push({
-            type: 'text',
-            text: 'ยังไม่ส่งแท็กทดสอบ: ต้องเลือกชื่อจาก @ ของ LINE และตรวจสมาชิกทุกคนผ่าน เพื่อทดสอบรายชื่อครบชุด',
-          });
-      } else if (memberMode(env) && env.LINE_LIFF_ID) {
-        const billMessages = await billingLineMessages(
-          env,
-          'all',
-          new URL(urls.sena).origin,
-          group,
-          mentionDiagnostics,
-        );
-        ids = [
-          ...new Set(
-            billMessages.flatMap(m =>
-              Object.values(m.substitution || {})
-                .filter(v => v.type === 'mention' && v.mentionee.type === 'user')
-                .map(v => v.mentionee.userId),
-            ),
-          ),
-        ];
-      }
-      if (!messages.length) {
-        if (ids.length > 20)
-          messages.push({
-            type: 'text',
-            text: 'ยังไม่ส่งแท็กทดสอบ: มีผู้จ่ายเกิน 20 คน กรุณาใช้ badbot tagprobe แล้ว @ เลือกคนที่ต้องการไม่เกิน 20 คน',
-          });
-        else if (ids.length) messages.push(minimalMentionMessage(ids));
-        else
-          messages.push({
-            type: 'text',
-            text: 'ยังไม่ส่งแท็กทดสอบ: ไม่พบผู้จ่ายบิลที่ตรวจสมาชิกกลุ่มผ่าน ใช้ badbot tagprobe แล้ว @ เลือกคนที่ต้องการทดสอบได้',
-          });
-      }
-    } else if (action.kind === 'tagTest') {
-      if (action.friends) {
-        const ids = [
-          ...new Set(
-            (event.message.mention?.mentionees || [])
-              .filter(m => m.type === 'user' && !m.isSelf && /^U[a-f0-9]{32}$/.test(m.userId || ''))
-              .map(m => m.userId),
-          ),
-        ].slice(0, 20);
-        if (!ids.length)
-          messages.push({
-            type: 'text',
-            text: 'พิมพ์ badbot tagtest แล้วพิมพ์ @ และแตะเลือกชื่อเพื่อนจากรายชื่อของ LINE ก่อนส่ง แค่พิมพ์ @ชื่อเป็นตัวหนังสือจะทดสอบไม่ได้',
-          });
-        else {
-          const results = await Promise.all(
-            ids.map(userId => groupMentionTarget(env, group, userId)),
-          );
-          const verified = results.filter(r => r.userId).map(r => r.userId),
-            failed = results.filter(r => !r.userId);
-          if (verified.length)
-            messages.push(
-              mentionMessage(
-                verified,
-                'ทดสอบแท็กเพื่อน: ',
-                '\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง' +
-                  (failed.length
-                    ? '\nแท็กไม่สำเร็จ ' + failed.length + ' คน: ตรวจยืนยันสมาชิกกลุ่มไม่ได้'
-                    : ''),
-              ),
-            );
-          else
-            messages.push({
-              type: 'text',
-              text: 'แท็กไม่สำเร็จ: ตรวจยืนยันสมาชิกทุกคนในกลุ่มปลายทางไม่ได้',
-            });
-        }
-      } else {
-        const userId = event.source.userId;
-        if (!/^U[a-f0-9]{32}$/.test(userId || '')) {
-          messages.push({
-            type: 'text',
-            text: 'LINE ไม่ส่งรหัสบัญชีของผู้พิมพ์มา จึงยังทดสอบแท็กไม่ได้',
-          });
-        } else {
-          const target = await groupMentionTarget(env, group, userId);
-          if (!target.userId)
-            messages.push({
-              type: 'text',
-              text: 'แท็กไม่สำเร็จ: ตรวจยืนยันบัญชีผู้พิมพ์ในกลุ่มปลายทางไม่ได้',
-            });
-          else {
-            const substitution = { you: { type: 'mention', mentionee: { type: 'user', userId } } };
-            messages.push({
-              type: 'textV2',
-              text: 'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อและตรวจการแจ้งเตือนการกล่าวถึง',
-              substitution,
-            });
-          }
-        }
-      }
-    } else if (action.kind === 'roster') {
+    if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
       const sections = await Promise.all(selected.map(club => rosterSection(env, club, now)));
       const text =
@@ -574,7 +453,7 @@ export async function replyToGroupCommand(event, env) {
         renderingConfirmed: false,
       };
     }
-    if (['bill', 'tagProbe'].includes(action.kind))
+    if (action.kind === 'bill')
       try {
         await db
           .prepare(
@@ -583,7 +462,7 @@ export async function replyToGroupCommand(event, env) {
           .run();
         const report = {
           ...evidence,
-          command: action.kind === 'tagProbe' ? 'badbot tagprobe' : 'badbot bill',
+          command: 'badbot bill',
           mentionCount: messages.reduce(
             (n, m) =>
               n + Object.values(m.substitution || {}).filter(v => v.type === 'mention').length,
