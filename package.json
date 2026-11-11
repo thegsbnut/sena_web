@@ -1,1 +1,20 @@
-{"name": "sena-web", "version": "1.0.0", "private": true, "type": "module", "scripts": {"build": "node --check worker.js && node --check booking.js && node --check public/booking.js && node --check line.js && node --check line-reply.js && node --check line-mentions.js && node --check billing.js && node --check public/billing.js && node --check member.js && node --check member-shared.js && node --check public/liff.js && node --check public/member-admin.js", "deploy": "wrangler deploy", "test": "node --test test.mjs test-clubs.mjs test-backups.mjs test-history-form.mjs test-cup-sync.mjs test-buddy.mjs test-booking.mjs test-line-reply.mjs test-billing.mjs test-member.mjs"}, "devDependencies": {"wrangler": "4.92.0"}, "dependencies": {"qrcode-generator": "2.0.4"}}
+{
+  "name": "sena-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node --check worker.js && node --check booking.js && node --check public/booking.js && node --check line.js && node --check line-reply.js && node --check line-mentions.js && node --check billing.js && node --check public/billing.js && node --check member.js && node --check member-shared.js && node --check public/liff.js && node --check public/member-admin.js",
+    "deploy": "wrangler deploy",
+    "test": "node --test test.mjs test-clubs.mjs test-backups.mjs test-history-form.mjs test-cup-sync.mjs test-buddy.mjs test-booking.mjs test-line-reply.mjs test-billing.mjs test-member.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "wrangler": "4.92.0"
+  },
+  "dependencies": {
+    "qrcode-generator": "2.0.4"
+  }
+}

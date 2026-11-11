@@ -1,82 +1,351 @@
 :root {
-  --green:#092e24;
-  --ink:#112a20;
-  --lime:#dbfa30;
-  --paper:#f6f2dd;
-  --muted:#43594a;
-  --line:#a2ad91;
+  --green: #092e24;
+  --ink: #112a20;
+  --lime: #dbfa30;
+  --paper: #f6f2dd;
+  --muted: #43594a;
+  --line: #a2ad91;
 }
 body {
-  background-color:var(--green);
-  background-image:radial-gradient(#315443 0.8px, transparent 1px);
-  background-size:7px 7px;
+  background-color: var(--green);
+  background-image: radial-gradient(#315443 0.8px, transparent 1px);
+  background-size: 7px 7px;
 }
-header,main { max-width:1160px; margin:auto; box-sizing:border-box; }
-header { height:65px; padding:0 24px; background:var(--green); border:0; }
-.brand,.brand b { color:#fffae6; font-size:25px; font-weight:950; font-style:italic; letter-spacing:-1px; }
-.brand b span { color:var(--lime); font-weight:900; margin:0; }
-.pill { color:var(--paper); background:transparent; border:1px solid #728d79; text-decoration:none; padding:7px 12px; }
-main { padding:0 24px 20px; }
-.rally-hero { display:grid; grid-template-columns:1fr 1.1fr; overflow:hidden; background:#edefd6; border-radius:14px 14px 0 0; }
-.rally-copy { display:flex; flex-direction:column; justify-content:center; padding:30px clamp(20px,5vw,70px); background:repeating-linear-gradient(119deg,transparent 0 23px,#819a4317 24px,transparent 26px),var(--paper); }
-.rally-copy small,.eyebrow { font-weight:900; letter-spacing:.13em; }
-.rally-copy h1 { font:italic 1000 clamp(58px,8vw,108px)/.85 system-ui,sans-serif; letter-spacing:-.085em; margin:17px 0; }
-.rally-copy h1 span { color:#458039; }
-.rally-copy p { font-weight:800; margin:0; }
-.rally-art { width:100%; height:100%; max-height:335px; object-fit:cover; object-position:50% 39%; }
-nav { gap:4px; background:#041f17; border:1px solid #738b62; border-radius:0 0 12px 12px; padding:5px; margin-bottom:20px; }
-.tab { flex:1; color:#fff8de; border:0; border-radius:7px; padding:10px 4px; min-height:44px; }
-.tab.active,.primary { background:var(--lime); color:#102219; }
-.primary { border:1px solid #445321; font-weight:850; }
-.primary span { color:inherit; }
-.panel,.match,dialog,.empty { background:var(--paper); border:1px solid #8e9c7d; box-shadow:3px 4px 0 #031c14; }
-.empty { color:var(--muted); }
-.panel h2, .resulthead h2 { font-weight:900; }
-.resulthead { color:var(--paper); }
-.matchtop { background:#173f30; color:var(--paper); }
-.match.locked .matchtop { color:var(--ink); }
-.secondary,.stat,.lock { background:#e9ecd4; color:var(--ink); }
-.secondary { display:inline-block; text-decoration:none; }
-[hidden] { display:none!important; }
-.textbtn { color:#285c32; min-height:40px; }
-#generate { font-size:18px; }
-#club-tools { scroll-margin-top:12px; margin-top:20px; }
-footer,footer a { color:#eef1d9; }
-#cupResults { overflow-x:auto; }
-button:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid #449b56; outline-offset:2px; }
-@media(max-width:760px){
-  header { height:54px; padding:0 14px; }
-  main { padding:0 10px 16px; }
-  .rally-hero { display:flex; flex-direction:column-reverse; }
-  .rally-art { height:auto; aspect-ratio:483 / 365; max-height:300px; }
-  .rally-copy { display:flex; flex-direction:row; align-items:center; justify-content:space-between; padding:7px 12px; background:var(--lime); }
-  .rally-copy small { display:none; }
-  .rally-copy h1 { margin:0; font-size:24px; letter-spacing:-.05em; }
-  .rally-copy h1 br { display:none; }
-  .rally-copy h1 br::after { content:' '; }
-  .rally-copy p { font-size:12px; }
-  nav { margin-bottom:12px; }
-  .panel { padding:15px; margin-bottom:14px; }
-  .layout { min-width:0; grid-template-columns:minmax(0,1fr); }
-  .players,.config,.rosterrow { min-width:0; }
-  .rosterrow { flex-wrap:wrap; }
-  .panel input,.panel textarea,.panel select { font-size:16px; }
+header,
+main {
+  max-width: 1160px;
+  margin: auto;
+  box-sizing: border-box;
+}
+header {
+  height: 65px;
+  padding: 0 24px;
+  background: var(--green);
+  border: 0;
+}
+.brand,
+.brand b {
+  color: #fffae6;
+  font-size: 25px;
+  font-weight: 950;
+  font-style: italic;
+  letter-spacing: -1px;
+}
+.brand b span {
+  color: var(--lime);
+  font-weight: 900;
+  margin: 0;
+}
+.pill {
+  color: var(--paper);
+  background: transparent;
+  border: 1px solid #728d79;
+  text-decoration: none;
+  padding: 7px 12px;
+}
+main {
+  padding: 0 24px 20px;
+}
+.rally-hero {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  overflow: hidden;
+  background: #edefd6;
+  border-radius: 14px 14px 0 0;
+}
+.rally-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 30px clamp(20px, 5vw, 70px);
+  background:
+    repeating-linear-gradient(119deg, transparent 0 23px, #819a4317 24px, transparent 26px),
+    var(--paper);
+}
+.rally-copy small,
+.eyebrow {
+  font-weight: 900;
+  letter-spacing: 0.13em;
+}
+.rally-copy h1 {
+  font:
+    italic 1000 clamp(58px, 8vw, 108px)/0.85 system-ui,
+    sans-serif;
+  letter-spacing: -0.085em;
+  margin: 17px 0;
+}
+.rally-copy h1 span {
+  color: #458039;
+}
+.rally-copy p {
+  font-weight: 800;
+  margin: 0;
+}
+.rally-art {
+  width: 100%;
+  height: 100%;
+  max-height: 335px;
+  object-fit: cover;
+  object-position: 50% 39%;
+}
+nav {
+  gap: 4px;
+  background: #041f17;
+  border: 1px solid #738b62;
+  border-radius: 0 0 12px 12px;
+  padding: 5px;
+  margin-bottom: 20px;
+}
+.tab {
+  flex: 1;
+  color: #fff8de;
+  border: 0;
+  border-radius: 7px;
+  padding: 10px 4px;
+  min-height: 44px;
+}
+.tab.active,
+.primary {
+  background: var(--lime);
+  color: #102219;
+}
+.primary {
+  border: 1px solid #445321;
+  font-weight: 850;
+}
+.primary span {
+  color: inherit;
+}
+.panel,
+.match,
+dialog,
+.empty {
+  background: var(--paper);
+  border: 1px solid #8e9c7d;
+  box-shadow: 3px 4px 0 #031c14;
+}
+.empty {
+  color: var(--muted);
+}
+.panel h2,
+.resulthead h2 {
+  font-weight: 900;
+}
+.resulthead {
+  color: var(--paper);
+}
+.matchtop {
+  background: #173f30;
+  color: var(--paper);
+}
+.match.locked .matchtop {
+  color: var(--ink);
+}
+.secondary,
+.stat,
+.lock {
+  background: #e9ecd4;
+  color: var(--ink);
+}
+.secondary {
+  display: inline-block;
+  text-decoration: none;
+}
+[hidden] {
+  display: none !important;
+}
+.textbtn {
+  color: #285c32;
+  min-height: 40px;
+}
+#generate {
+  font-size: 18px;
+}
+#club-tools {
+  scroll-margin-top: 12px;
+  margin-top: 20px;
+}
+footer,
+footer a {
+  color: #eef1d9;
+}
+#cupResults {
+  overflow-x: auto;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #449b56;
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  header {
+    height: 54px;
+    padding: 0 14px;
+  }
+  main {
+    padding: 0 10px 16px;
+  }
+  .rally-hero {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+  .rally-art {
+    height: auto;
+    aspect-ratio: 483 / 365;
+    max-height: 300px;
+  }
+  .rally-copy {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    background: var(--lime);
+  }
+  .rally-copy small {
+    display: none;
+  }
+  .rally-copy h1 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: -0.05em;
+  }
+  .rally-copy h1 br {
+    display: none;
+  }
+  .rally-copy h1 br::after {
+    content: ' ';
+  }
+  .rally-copy p {
+    font-size: 12px;
+  }
+  nav {
+    margin-bottom: 12px;
+  }
+  .panel {
+    padding: 15px;
+    margin-bottom: 14px;
+  }
+  .layout {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .players,
+  .config,
+  .rosterrow {
+    min-width: 0;
+  }
+  .rosterrow {
+    flex-wrap: wrap;
+  }
+  .panel input,
+  .panel textarea,
+  .panel select {
+    font-size: 16px;
+  }
 }
 
-.leaderboard-head h1 {font-size:clamp(28px,6vw,58px);font-style:italic;margin:12px 0;letter-spacing:-2px;overflow-wrap:anywhere}
-.leaderboard-scroll {overflow-x:auto;max-width:100%}
-.leaderboard-scroll table {white-space:nowrap;margin:12px 0;min-width:790px}
-.leaderboard-scroll th {font-weight:800}
-.leaderboard-scroll td:first-child {font-weight:900}
-.rank-1 {background:#e9d44b}.rank-2 {background:#d6dfd3}.rank-3 {background:#cd9d66}
-.up {color:#235f28;background:#e0f4b9}.down {color:#9a2a24;background:#ffe0d4}
-.board-status,.history-heading {color:var(--paper)}
-#historyForm>label {display:block;margin:15px 0}
-#historyForm>label>input:not([type=checkbox]) {display:block;width:100%;box-sizing:border-box}
-#historyScores input {width:70px}
-.baseline-option {font-weight:700}
-@media(max-width:760px){nav{flex-wrap:wrap}.tab{flex:1 0 40%}.leaderboard-scroll th,.leaderboard-scroll td {padding:10px 8px}.leaderboard-scroll th:nth-child(2){position:sticky;left:0;background:var(--paper)}}
+.leaderboard-head h1 {
+  font-size: clamp(28px, 6vw, 58px);
+  font-style: italic;
+  margin: 12px 0;
+  letter-spacing: -2px;
+  overflow-wrap: anywhere;
+}
+.leaderboard-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.leaderboard-scroll table {
+  white-space: nowrap;
+  margin: 12px 0;
+  min-width: 790px;
+}
+.leaderboard-scroll th {
+  font-weight: 800;
+}
+.leaderboard-scroll td:first-child {
+  font-weight: 900;
+}
+.rank-1 {
+  background: #e9d44b;
+}
+.rank-2 {
+  background: #d6dfd3;
+}
+.rank-3 {
+  background: #cd9d66;
+}
+.up {
+  color: #235f28;
+  background: #e0f4b9;
+}
+.down {
+  color: #9a2a24;
+  background: #ffe0d4;
+}
+.board-status,
+.history-heading {
+  color: var(--paper);
+}
+#historyForm > label {
+  display: block;
+  margin: 15px 0;
+}
+#historyForm > label > input:not([type='checkbox']) {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+#historyScores input {
+  width: 70px;
+}
+.baseline-option {
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  nav {
+    flex-wrap: wrap;
+  }
+  .tab {
+    flex: 1 0 40%;
+  }
+  .leaderboard-scroll th,
+  .leaderboard-scroll td {
+    padding: 10px 8px;
+  }
+  .leaderboard-scroll th:nth-child(2) {
+    position: sticky;
+    left: 0;
+    background: var(--paper);
+  }
+}
 
-.venue-picker {display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:8px 16px;background:var(--paper);padding:14px 18px;margin:12px 0;border-radius:10px;border:1px solid var(--line)}
-.venue-picker label{font-weight:850}.venue-picker select{min-height:44px;font-weight:850;font-size:18px;background:var(--lime)}.venue-picker small{grid-column:1/-1;color:var(--muted)}
-#clubBrand {color:var(--paper)}
+.venue-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 8px 16px;
+  background: var(--paper);
+  padding: 14px 18px;
+  margin: 12px 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.venue-picker label {
+  font-weight: 850;
+}
+.venue-picker select {
+  min-height: 44px;
+  font-weight: 850;
+  font-size: 18px;
+  background: var(--lime);
+}
+.venue-picker small {
+  grid-column: 1/-1;
+  color: var(--muted);
+}
+#clubBrand {
+  color: var(--paper);
+}
