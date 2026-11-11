@@ -1,3 +1,4 @@
+import { clubOf, counterpartClub, CLUB_IDS, DEFAULT_CLUB, isClub } from './clubs.js';
 import { mapBoth, MappingError } from './member-shared.js';
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
@@ -6,7 +7,7 @@ const json = (data, status = 200, headers = {}) =>
   });
 export const memberMode = env => env.LINE_MEMBER_AUTH_ENABLED === 'true';
 export const loginEnabled = env => memberMode(env) || env.LINE_LOGIN_ENABLED === 'true';
-export const liffUrl = (env, club = 'sena', page = 'book', bill = '') => {
+export const liffUrl = (env, club = DEFAULT_CLUB, page = 'book', bill = '') => {
   const url = new URL('https://liff.line.me/' + env.LINE_LIFF_ID);
   url.searchParams.set('club', club);
   url.searchParams.set('page', page);
@@ -70,7 +71,7 @@ export async function memberFor(req, env, club) {
     .bind(tokenHash, Date.now())
     .first();
   if (!session) return null;
-  const otherClub = club === 'sena' ? '88' : 'sena';
+  const otherClub = counterpartClub(club);
   const linkFor = c =>
     env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?')
       .bind(session.user_id, c)
@@ -105,7 +106,7 @@ export async function memberFor(req, env, club) {
 }
 
 async function roster(db, club) {
-  const table = club === '88' ? 'club_state_88' : 'club_state';
+  const table = clubOf(club).stateTable;
   await db
     .prepare(
       `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
@@ -176,7 +177,7 @@ async function route(req, env, admin, club) {
     if (member.link?.status === 'approved') return json({ players: [], linked: true });
     const states = {},
       taken = {};
-    for (const c of ['sena', '88']) {
+    for (const c of CLUB_IDS) {
       states[c] = (await roster(env.DB, c)).state;
       const rows = await env.DB.prepare(
         "SELECT player_id FROM member_links WHERE club=? AND status='approved' AND user_id<>?",
@@ -187,11 +188,11 @@ async function route(req, env, admin, club) {
     }
     const names = new Set(),
       players = [];
-    for (const c of [club, club === 'sena' ? '88' : 'sena'])
+    for (const c of [club, counterpartClub(club)])
       for (const p of states[c].players) {
         const key = p.name.normalize('NFC').trim().toLowerCase();
         if (names.has(key)) continue;
-        const blocked = ['sena', '88'].some(v =>
+        const blocked = CLUB_IDS.some(v =>
           states[v].players.some(
             x => x.name.normalize('NFC').trim().toLowerCase() === key && taken[v].has(x.id),
           ),
@@ -326,7 +327,7 @@ async function route(req, env, admin, club) {
   if (action === 'link') {
     if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
     const sourceClub = input.sourceClub ?? club;
-    if (!['sena', '88'].includes(sourceClub)) return json({ error: 'สนามไม่ถูกต้อง' }, 400);
+    if (!isClub(sourceClub)) return json({ error: 'สนามไม่ถูกต้อง' }, 400);
     const { state } = await roster(env.DB, sourceClub),
       player = state.players.find(p => p.id === input.playerId);
     if (!player || input.name !== undefined)

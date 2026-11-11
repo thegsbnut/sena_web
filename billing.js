@@ -1,3 +1,4 @@
+import { clubOf, CLUB_IDS } from './clubs.js';
 import { logError } from './log.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
@@ -10,7 +11,7 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const idPattern = /^[a-f0-9]{32}$/;
 const tokenPattern = /^[a-f0-9]{64}$/;
 const promptPayPattern = /^[0-9]{10}$|^[0-9]{13}$/;
-const clubName = club => (club === '88' ? '88' : 'Sena');
+const clubName = club => clubOf(club).label;
 const money = cents => (cents / 100).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const clean = value => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '');
 const json = (value, status = 200) =>
@@ -288,7 +289,7 @@ async function recentSessions(db, club) {
     return [];
   const doc = await db.prepare('SELECT payload FROM booking_clubs WHERE club=?').bind(club).first();
   if (!doc) return [];
-  const table = club === '88' ? 'club_state_88' : 'club_state';
+  const table = clubOf(club).stateTable;
   const exists = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
     .bind(table)
@@ -698,7 +699,7 @@ export async function billingLineText(env, scope, origin) {
   await prepare(env.DB);
   const query =
     "SELECT * FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload, '$.cancelled'), 0)=0";
-  const clubs = scope === 'all' ? ['sena', '88'] : [scope];
+  const clubs = scope === 'all' ? CLUB_IDS : [scope];
   const limit = scope === 'all' ? 3 : 5;
   const groups = await Promise.all(
     clubs.map(club =>
@@ -773,7 +774,7 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
   if (!memberMode(env) || !env.LINE_LIFF_ID) return null;
   await prepare(env.DB);
   await prepareMembers(env.DB);
-  const clubs = scope === 'all' ? ['sena', '88'] : [scope],
+  const clubs = scope === 'all' ? CLUB_IDS : [scope],
     limit = scope === 'all' ? 3 : 5;
   const groups = await Promise.all(
     clubs.map(club =>

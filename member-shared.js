@@ -1,3 +1,4 @@
+import { clubOf, CLUB_IDS } from './clubs.js';
 export class MappingError extends Error {
   constructor(message) {
     super(message);
@@ -9,7 +10,7 @@ const fail = message => {
 };
 const key = name => name.normalize('NFC').trim().toLowerCase();
 async function readRoster(db, club) {
-  const table = club === '88' ? 'club_state_88' : 'club_state';
+  const table = clubOf(club).stateTable;
   await db
     .prepare(
       `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
@@ -33,7 +34,7 @@ export async function mapBoth(
   playerId,
   { expected = null, remove = false, allowMove = false } = {},
 ) {
-  const clubs = ['sena', '88'],
+  const clubs = CLUB_IDS,
     rosters = {},
     links = {};
   for (const c of clubs) {

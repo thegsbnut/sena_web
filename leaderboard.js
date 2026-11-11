@@ -1,3 +1,4 @@
+import { clubOf, DEFAULT_CLUB } from './clubs.js';
 import { baseline } from './leaderboard-data.js';
 import './public/engine.js';
 const senaAliases = new Map([
@@ -6,12 +7,13 @@ const senaAliases = new Map([
   ['beau', 'Bo'],
   ['bo', 'Bo'],
 ]);
-const canonicalName = (name, club = 'sena') =>
-  club === '88' ? name.trim() : senaAliases.get(name.trim().toLowerCase()) || name.trim();
-const key = (name, club = 'sena') => canonicalName(name, club).toLowerCase();
+const aliasesByClub = { sena: senaAliases };
+const canonicalName = (name, club = DEFAULT_CLUB) =>
+  aliasesByClub[club]?.get(name.trim().toLowerCase()) || name.trim();
+const key = (name, club = DEFAULT_CLUB) => canonicalName(name, club).toLowerCase();
 export { key as cupPlayerKey };
 async function cupHistoryTable(db, club) {
-  const table = club === '88' ? 'cup_history_88' : 'cup_history';
+  const table = clubOf(club).cupTable;
   await db
     .prepare(
       `CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL)`,
@@ -28,7 +30,7 @@ export async function latestCup(db, club) {
     .first();
   return row ? JSON.parse(row.payload) : null;
 }
-export function cleanCup(value, club = 'sena') {
+export function cleanCup(value, club = DEFAULT_CLUB) {
   if (
     !value ||
     typeof value.title !== 'string' ||
@@ -111,15 +113,17 @@ function addCup(totals, cup, club) {
     }
 }
 function ordered(cups, club) {
-  const totals = new Map((club === '88' ? [] : baseline).map(p => [key(p.name, club), { ...p }]));
+  const totals = new Map(
+    (clubOf(club).hasBaseline ? baseline : []).map(p => [key(p.name, club), { ...p }]),
+  );
   for (const cup of cups) addCup(totals, cup, club);
   return [...totals.values()].sort(
     (a, b) =>
       b.w - a.w || b.pf - b.pa - (a.pf - a.pa) || b.pf - a.pf || a.name.localeCompare(b.name),
   );
 }
-export function standings(history, club = 'sena') {
-  const starting = club === '88' ? [] : baseline;
+export function standings(history, club = DEFAULT_CLUB) {
+  const starting = clubOf(club).hasBaseline ? baseline : [];
   const counted = history.filter(c => !c.inBaseline).sort((a, b) => a.sequence - b.sequence);
   if (!counted.length)
     return starting.map(p => ({ ...p, diff: p.pf - p.pa, winPercent: (p.w / p.played) * 100 }));
@@ -133,7 +137,7 @@ export function standings(history, club = 'sena') {
     change: ranks.has(key(p.name, club)) ? ranks.get(key(p.name, club)) - (i + 1) : 'NEW',
   }));
 }
-export async function leaderboardRoute(req, env, isAdmin, club = 'sena') {
+export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
   const reply = (value, status = 200) =>
     Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
   if (req.method !== 'GET' && !isAdmin) return reply({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
@@ -146,7 +150,7 @@ export async function leaderboardRoute(req, env, isAdmin, club = 'sena') {
       if (text.length > 100000) throw Error('ข้อมูลใหญ่เกินไป');
       input = JSON.parse(text);
       input.cup = cleanCup(input.cup, club);
-      if (club === '88' && input.cup.inBaseline)
+      if (!clubOf(club).hasBaseline && input.cup.inBaseline)
         throw Error('ก๊วน 88 ยังไม่มียอดสะสมตั้งต้น กรุณานับรายการนี้เป็นผลใหม่');
       if (
         typeof input.id !== 'string' ||
