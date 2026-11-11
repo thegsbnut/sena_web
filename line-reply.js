@@ -1,5 +1,6 @@
 import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
+import { logError } from './log.js';
 import { billingLineText, billingLineMessages } from './billing.js';
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
@@ -443,7 +444,8 @@ export async function replyToGroupCommand(event, env) {
         signal: AbortSignal.timeout(10000),
       });
       evidence = await lineReplyEvidence(response, messages);
-    } catch {
+    } catch (error) {
+      logError('line-reply:send', error, { command: action.kind });
       evidence = {
         replyStatus: 0,
         outcome: 'network_error',
@@ -477,19 +479,17 @@ export async function replyToGroupCommand(event, env) {
           )
           .bind(group, JSON.stringify(report), new Date().toISOString())
           .run();
-      } catch {
-        console.error('Unable to store bill mention diagnostic');
+      } catch (error) {
+        logError('line-reply:store-diagnostic', error);
       }
     if (!response) throw Error('LINE reply unavailable');
     if (!response.ok)
-      console.error(
-        'LINE reply rejected',
-        JSON.stringify({
-          status: evidence.replyStatus,
-          requestId: evidence.requestId,
-          error: evidence.error,
-        }),
-      );
+      logError('line-reply:rejected', evidence.error?.message, {
+        command: action.kind,
+        status: evidence.replyStatus,
+        requestId: evidence.requestId,
+        details: evidence.error?.details,
+      });
     // Expired/used tokens and other permanent failures must never become Pushes.
     if (!response.ok && response.status !== 400) throw Error('LINE reply unavailable');
   } catch (error) {

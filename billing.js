@@ -1,3 +1,4 @@
+import { logError } from './log.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
 import qrcode from 'qrcode-generator';
@@ -584,7 +585,7 @@ export async function billingRoute(req, env, admin, club) {
         .prepare('DELETE FROM bill_slips WHERE key=?')
         .bind(oldKey)
         .run()
-        .catch(console.error);
+        .catch(error => logError('billing:delete-old-slip', error));
     return json({ ok: true });
   }
   if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);

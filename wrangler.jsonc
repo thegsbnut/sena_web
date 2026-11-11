@@ -8,6 +8,7 @@
     "run_worker_first": ["/api/*", "/b/*", "/liff.html", "/admin", "/"]
   },
   "keep_vars": true,
+  "observability": { "enabled": true },
   "vars": {
     "LINE_LOGIN_CHANNEL_ID": "2012537788",
     "LINE_LIFF_ID": "2012537788-9E2msitp",

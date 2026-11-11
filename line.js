@@ -1,5 +1,6 @@
 import { billingLineMessages } from './billing.js';
 import { normalizeLineText, replyToGroupCommand } from './line-reply.js';
+import { logError } from './log.js';
 
 const reply = (data, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -69,7 +70,8 @@ export async function lineWebhook(req, env) {
     }
     try {
       await replyToGroupCommand(event, env);
-    } catch {
+    } catch (error) {
+      logError('line-webhook:reply', error, { eventType: event?.type });
       replyFailed = true;
     }
   }
@@ -118,7 +120,8 @@ async function diagnoseLine(req, env, expiresAt) {
       String(basicId || '').replace(/^@/, '') +
       ' อยู่ในกลุ่ม แล้วคัดลอกคำสั่งเต็มไปส่งในกลุ่มนั้น'
     );
-  } catch {
+  } catch (error) {
+    logError('line-admin:diagnose', error);
     return 'ติดต่อ LINE เพื่อตรวจการตั้งค่าไม่สำเร็จ กรุณาลองอีกครั้ง';
   }
 }
