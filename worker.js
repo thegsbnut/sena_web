@@ -6,6 +6,7 @@ import { backupsRoute, prepareBackups } from './backups.js';
 import { leaderboardRoute } from './leaderboard.js';
 import './public/engine.js';
 import seed from './seed.json' with { type: 'json' };
+import { logError } from './log.js';
 const enc = new TextEncoder();
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
@@ -58,7 +59,8 @@ export async function authorized(req, env) {
   if (!/^[0-9a-f]{64}$/.test(sig || '')) return false;
   try {
     return await equal(sig, await sessionSignature(exp, env));
-  } catch {
+  } catch (error) {
+    logError('admin-session', error);
     return false;
   }
 }
@@ -133,10 +135,16 @@ export function valid(s) {
     return false;
   return true;
 }
+// Malformed or oversized client input: answered with 400 and not logged as a server fault.
+class RequestError extends Error {}
 async function body(req, max) {
   const text = await req.text();
-  if (text.length > max) throw Error('body too large');
-  return JSON.parse(text);
+  if (text.length > max) throw new RequestError('body too large');
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new RequestError('invalid JSON');
+  }
 }
 export function guestState(state) {
   return {
@@ -157,8 +165,8 @@ function guestResult(result) {
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === '0 18 * * *') {
-      ctx.waitUntil(scheduledBookings(env));
-      ctx.waitUntil(prunePaidSlips(env));
+      ctx.waitUntil(scheduledBookings(env).catch(error => logError('cron:bookings', error)));
+      ctx.waitUntil(prunePaidSlips(env).catch(error => logError('cron:prune-slips', error)));
     }
   },
   async fetch(req, env) {
@@ -352,7 +360,9 @@ export default {
       }
       if (path.startsWith('/api/')) return json({ error: 'Not found' }, 404);
       return env.ASSETS.fetch(req);
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestError) return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
+      logError('request', error, { method: req.method, path });
       return json(
         {
           error:
