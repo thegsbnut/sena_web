@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withSchemaCache } from './schema-cache.js';
+import { withSchemaCache, once } from './schema-cache.js';
 
 function fakeD1({ failFirst = false } = {}) {
   const executed = [];
@@ -58,4 +58,24 @@ test('separate databases keep separate caches and other statements pass through'
   assert.deepEqual(a.executed, [ddl, 'INSERT INTO t VALUES(1)', 'DELETE FROM t']);
   assert.deepEqual(b.executed, [ddl]);
   assert.equal(withSchemaCache(undefined), undefined);
+});
+
+test('once() runs a seed a single time per binding, retries after failure, and runs always on unwrapped bindings', async () => {
+  const raw = fakeD1();
+  let runs = 0;
+  const seed = async () => void runs++;
+  for (let i = 0; i < 3; i++) await once(withSchemaCache(raw), 'seed', seed);
+  assert.equal(runs, 1);
+  let attempts = 0;
+  const flaky = async () => {
+    if (!attempts++) throw Error('boom');
+    runs++;
+  };
+  await assert.rejects(once(withSchemaCache(raw), 'flaky', flaky), /boom/);
+  await once(withSchemaCache(raw), 'flaky', flaky);
+  await once(withSchemaCache(raw), 'flaky', flaky);
+  assert.equal(runs, 2);
+  await once(raw, 'seed', seed);
+  await once(raw, 'seed', seed);
+  assert.equal(runs, 4);
 });

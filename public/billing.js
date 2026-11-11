@@ -192,16 +192,18 @@
       .map(
         p => `
      <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
-      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? 'จ่ายเงินสดแล้ว' : states[p.status]}</div>
+      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? (p.status === 'paid' ? 'จ่ายเงินสดแล้ว' : 'แจ้งจ่ายเงินสด รอผู้จัดยืนยัน') : states[p.status]}</div>
       ${organizer && p.withdrawals?.length ? p.withdrawals.map(r => `<small class="withdrawal-time">${escape(r.name)} · ถอน ${escape(withdrawalTime(r.withdrawnAt))}</small>`).join('') : ''}${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
        ${!memberReadOnly && !bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
        ${!memberReadOnly && !bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
+       ${who && !organizer && !memberReadOnly && !bill.cancelled && ['unpaid', 'rejected'].includes(p.status) && !p.hasSlip ? `<button type="button" data-action="cash-request" data-payer="${p.id}">จ่ายด้วยเงินสด</button>` : ''}
+       ${who && !organizer && !bill.cancelled && p.status === 'review' && p.method === 'cash' ? `<button type="button" data-action="cash-cancel" data-payer="${p.id}">ยกเลิกแจ้งจ่ายเงินสด</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.status === 'review' ? `<button type="button" class="primary" data-action="approve" data-payer="${p.id}">ยืนยันจ่าย</button>` : ''}
        ${organizer && !bill.cancelled && p.hasSlip && p.method !== 'cash' && ['review', 'paid'].includes(p.status) ? `<button type="button" data-action="reject" data-payer="${p.id}">ให้ส่งใหม่</button>` : ''}
-       ${organizer && !bill.cancelled && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="cash" data-payer="${p.id}">รับเงินสด</button>` : ''}
-       ${organizer && bill.canUndoCash && p.method === 'cash' ? `<button type="button" data-action="undo-cash" data-payer="${p.id}">ยกเลิกรับเงินสด</button>` : ''}
+       ${organizer && !bill.cancelled && (['unpaid', 'rejected'].includes(p.status) || (p.status === 'review' && p.method === 'cash' && !p.hasSlip)) ? `<button type="button" class="${p.status === 'review' ? 'primary' : ''}" data-action="cash" data-payer="${p.id}">รับเงินสด</button>` : ''}
+       ${organizer && bill.canUndoCash && p.method === 'cash' ? `<button type="button" data-action="undo-cash" data-payer="${p.id}">${p.status === 'review' ? 'ยังไม่ได้รับเงิน' : 'ยกเลิกรับเงินสด'}</button>` : ''}
       </div></div>`,
       )
       .join('')}
@@ -699,6 +701,21 @@
           URL.revokeObjectURL(url);
         }
       });
+    if ((action === 'cash-request' || action === 'cash-cancel') && payer) {
+      if (
+        action === 'cash-request' &&
+        !confirm(
+          'แจ้งว่าจะจ่ายด้วยเงินสด ' +
+            money(payer.amount) +
+            ' บาท? ยอดจะยังไม่ถูกบันทึกว่าจ่าย จนกว่าผู้จัดจะยืนยันว่าได้รับเงินแล้ว',
+        )
+      )
+        return;
+      return run(async () => {
+        await post(action, {});
+        await load();
+      });
+    }
     if ((action === 'cash' || action === 'undo-cash') && payer) {
       const received = action === 'cash';
       if (
@@ -727,7 +744,7 @@
       for (const p of bill.payers.filter(p => ['unpaid', 'rejected'].includes(p.status)))
         lines.push('• ' + p.name + ' ' + money(p.amount) + ' บาท · ' + states[p.status]);
       const reviewing = bill.payers.filter(p => p.status === 'review').length;
-      if (reviewing) lines.push('รอตรวจสลิป ' + reviewing + ' คน');
+      if (reviewing) lines.push('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
       lines.push(linkToBill(id).href);
       return run(() => copy(lines.join('\n')));
     }
