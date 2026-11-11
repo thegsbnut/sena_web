@@ -54,8 +54,8 @@ test('tagtest mentions the verified webhook sender directly without any roster o
  const event=f.event('badbot tagtest');event.source.userId=userId;
  assert.equal((await f.hook([event])).status,200);
  const messages=f.calls[0].messages;
- assert.equal(messages.length,2);
- assert.equal(messages[0].text,'Mention test: {you}');
+ assert.equal(messages.length,1);
+ assert.match(messages[0].text,/ทดสอบแท็กผู้พิมพ์คำสั่ง: \{you\}/);
  for(const message of messages){
   assert.equal(message.type,'textV2');
   assert.deepEqual(message.substitution.you,{type:'mention',mentionee:{type:'user',userId}});
@@ -76,9 +76,32 @@ test('tagtest with a selected friend uses native mention data and ignores displa
  event.message.mention={mentionees:[{type:'user',userId},{type:'user',userId},{type:'all'},{type:'user',userId:'not-a-user'}]};
  assert.equal((await f.hook([event])).status,200);
  const messages=f.calls[0].messages;
- assert.equal(messages.length,2);
+ assert.equal(messages.length,1);
  for(const message of messages){assert.equal(message.type,'textV2');assert.deepEqual(message.substitution,{friend0:{type:'mention',mentionee:{type:'user',userId}}});}
- assert.equal(messages[0].text,'Mention test: {friend0}');
+ assert.match(messages[0].text,/ทดสอบแท็กเพื่อน: \{friend0\}/);
+});
+
+test('tagtest with two distinct accounts produces one final mention message with both recipients',async t=>{
+ const f=fixture(t),nut='U'+'a'.repeat(32),tom='U'+'b'.repeat(32);
+ const event=f.event('badbot tagtest @Nut @Tom');event.message.mention={mentionees:[{type:'user',userId:nut},{type:'user',userId:tom}]};
+ assert.equal((await f.hook([event])).status,200);
+ const messages=f.calls[0].messages;assert.equal(messages.length,1);
+ assert.equal(messages[0].type,'textV2');assert.deepEqual(Object.values(messages[0].substitution).map(v=>v.mentionee.userId),[nut,tom]);
+});
+
+test('tagtest mentions ten distinct people in one message with ten matching substitutions',async t=>{
+ const f=fixture(t),ids=Array.from({length:10},(_,i)=>'U'+(i+1).toString(16).padStart(32,'0'));
+ const event=f.event('badbot tagtest '+ids.map((_,i)=>'@Player'+i).join(' '));
+ event.message.mention={mentionees:ids.map(userId=>({type:'user',userId}))};
+ assert.equal((await f.hook([event])).status,200);
+ const messages=f.calls[0].messages;assert.equal(messages.length,1);
+ const message=messages[0];assert.equal(message.type,'textV2');
+ assert.equal(Object.keys(message.substitution).length,10);
+ ids.forEach((userId,i)=>{
+  const key='friend'+i;
+  assert.equal(message.text.split('{'+key+'}').length-1,1);
+  assert.deepEqual(message.substitution[key],{type:'mention',mentionee:{type:'user',userId}});
+ });
 });
 
 test('typing an ordinary at-name cannot make tagtest guess a friend account',async t=>{
@@ -99,15 +122,15 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
   f.calls.push(JSON.parse(options.body));return Response.json({sentMessages:[{id:'test-message'}]});
  });
  assert.equal((await f.hook([f.event('badbot bill')])).status,200);
- const message=f.calls[0].messages[0];
+ const message=f.calls[0].messages.at(-1);
  assert.equal(message.type,'textV2');
  assert.deepEqual(message.substitution.friend0,{type:'mention',mentionee:{type:'user',userId}});
  assert.match(message.text,/ผู้รับผิดชอบบิลที่ยังค้าง: \{friend0\}/);
- assert.match(f.calls[0].messages[1].text,/Nut 85 บ\./);
- assert.equal(f.calls[0].messages[1].type,'text');
+ assert.match(f.calls[0].messages[0].text,/Nut 85 บ\./);
+ assert.equal(f.calls[0].messages[0].type,'text');
  assert.doesNotMatch(message.text,/@Nut/);
  const diagnostic=JSON.parse(f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload);
- assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['textV2','text']);
+ assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['text','textV2']);
  assert.doesNotMatch(JSON.stringify(diagnostic),new RegExp(userId));
 });
 

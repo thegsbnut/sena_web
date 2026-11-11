@@ -263,6 +263,8 @@ test('maximum bill reminders keep short mentions separate and stay within five L
  }
  const messages=await billingLineMessages(f.env,'all',origin,'Ctest');
  assert(messages.length<=5);assert(messages.every(m=>m.text.length<=5000));
+ assert.equal(messages[0].type,'text');assert.equal(messages.at(-1).type,'textV2');
+ const firstTag=messages.findIndex(m=>m.type==='textV2');assert(messages.slice(firstTag).every(m=>m.type==='textV2'));
  const mentions=messages.filter(m=>m.type==='textV2');
  assert.equal(mentions.length,3);assert(mentions.every(m=>Object.keys(m.substitution).length<=20));
  assert.deepEqual(mentions.flatMap(m=>Object.values(m.substitution).map(v=>v.mentionee.userId)).sort(),ids.sort());
@@ -284,8 +286,9 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
  assert.equal((await f.request(path,slip,member)).status,403);assert.equal((await f.request(path,slip)).status,403);
  assert.equal((await f.request('/api/billing?bill='+id,null,member,{'X-Bill-Token':theirs.token})).status,403);
  const messages=await billingLineMessages(f.env,'all',origin,'C'+'a'.repeat(32));
- assert.equal(messages[0].type,'textV2');
- assert.equal(Object.values(messages[0].substitution)[0].mentionee.userId,uid);
+ assert.equal(messages.at(-1).type,'textV2');
+ assert.equal(messages[0].type,'text');
+ assert.equal(Object.values(messages.at(-1).substitution)[0].mentionee.userId,uid);
  assert.match(messages.find(m=>m.type==='text').text,/https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
  assert(!JSON.stringify(messages).includes(mine.token));assert(!JSON.stringify(messages).includes(theirs.token));
  assert.equal((await f.request('/api/billing?bill='+id+'&action=upload&payer='+mine.id+'&amount='+mine.amount,slip,member)).status,200);

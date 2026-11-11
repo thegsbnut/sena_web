@@ -218,8 +218,7 @@ export async function replyToGroupCommand(event,env){
     const ids=[...new Set((event.message.mention?.mentionees||[]).filter(m=>m.type==='user'&&!m.isSelf&&/^U[a-f0-9]{32}$/.test(m.userId||'')).map(m=>m.userId))].slice(0,20);
     if(!ids.length)messages.push({type:'text',text:'พิมพ์ badbot tagtest แล้วพิมพ์ @ และแตะเลือกชื่อเพื่อนจากรายชื่อของ LINE ก่อนส่ง แค่พิมพ์ @ชื่อเป็นตัวหนังสือจะทดสอบไม่ได้'});
     else{
-     messages.push(mentionMessage(ids,'Mention test: '));
-     messages.push(mentionMessage(ids,'ทดสอบแท็กเพื่อนจากบัญชีที่ LINE ส่งมา: ','\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง'));
+     messages.push(mentionMessage(ids,'ทดสอบแท็กเพื่อน: ','\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง'));
     }
    }else{
    const userId=event.source.userId;
@@ -227,8 +226,7 @@ export async function replyToGroupCommand(event,env){
     messages.push({type:'text',text:'LINE ไม่ส่งรหัสบัญชีของผู้พิมพ์มา จึงยังทดสอบแท็กไม่ได้'});
    }else{
     const substitution={you:{type:'mention',mentionee:{type:'user',userId}}};
-    messages.push({type:'textV2',text:'Mention test: {you}',substitution});
-    messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อในข้อความทั้งสองอัน และตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+    messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อและตรวจการแจ้งเตือนการกล่าวถึง',substitution});
    }
    }
   }else if(action.kind==='roster'){

@@ -451,5 +451,5 @@ export async function billingLineMessages(env,scope,origin,groupId,diagnostics=[
  if(part)chunks.push({type:'text',text:part});
  const ids=[...tagIds],tags=[];
  for(let i=0;i<ids.length;i+=20)tags.push(mentionMessage(ids.slice(i,i+20),'ผู้รับผิดชอบบิลที่ยังค้าง: '));
- return [...tags,...chunks];
+ return [...chunks,...tags];
 }
