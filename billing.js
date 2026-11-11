@@ -1,4 +1,4 @@
-import {mentionMessage} from './line-mentions.js';
+import {escapeMentionText,groupMentionTarget} from './line-mentions.js';
 import {memberMode,memberFor,liffUrl,prepareMembers} from './member.js';
 import qrcode from 'qrcode-generator';
 
@@ -420,36 +420,44 @@ export async function billingLineMessages(env,scope,origin,groupId,diagnostics=[
  const groups=await Promise.all(clubs.map(club=>env.DB.prepare("SELECT * FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload,'$.cancelled'),0)=0 AND club=? ORDER BY session_date LIMIT ?").bind(club,limit+1).all()));
  const rows=groups.flatMap(g=>g.results.slice(0,limit)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
  if(!rows.length)return [{type:'text',text:'✅ ไม่มีบิลค้าง · '+(scope==='all'?'ทุกสนาม':clubName(scope))}];
- const chunks=[],tagIds=new Set();let text='💸 บิลค้าง · '+(scope==='all'?'ทุกสนาม':clubName(scope));
- const safe=value=>String(value).replaceAll('{','｛').replaceAll('}','｝');
+ const messages=[],membership=new Map();let text='',substitution={};
+ const flush=()=>{
+  if(!text)return;
+  messages.push(Object.keys(substitution).length?{type:'textV2',text,substitution}:{type:'text',text:text.replaceAll('{{','{').replaceAll('}}','}')});
+  text='';substitution={};
+ };
+ // Split by message size / LINE's 20-mention limit, never one message per person.
+ const append=(prefix,userId,suffix='')=>{
+  const make=()=>escapeMentionText(prefix)+(userId?'{member'+Object.keys(substitution).length+'}':'')+escapeMentionText(suffix);
+  let line=make();
+  if(text&&(text.length+line.length+1>4500||(userId&&Object.keys(substitution).length===20))){flush();line=make();}
+  if(userId)substitution['member'+Object.keys(substitution).length]={type:'mention',mentionee:{type:'user',userId}};
+  text+=(text?'\n':'')+line;
+ };
+ append('💸 บิลค้าง · '+(scope==='all'?'ทุกสนาม':clubName(scope)));
  for(const row of rows){
   const bill={...row,...JSON.parse(row.payload)},pending=bill.payers.filter(p=>p.status!=='paid'),unpaid=pending.filter(p=>p.status!=='review');
-  const entries=await Promise.all(unpaid.slice(0,8).map(async p=>{
+  const entries=await Promise.all(unpaid.map(async p=>{
    const link=await env.DB.prepare("SELECT user_id FROM member_links WHERE club=? AND player_id=? AND status='approved'").bind(bill.club,p.payerKey?.startsWith('member:')?p.payerKey.slice(7):'').first();
-   if(!link){diagnostics.push({name:p.name,reason:p.payerKey?.startsWith('member:')?'not_linked':'legacy_payer_key'});return {p};}
-   try{
-    const response=await fetch('https://api.line.me/v2/bot/group/'+encodeURIComponent(groupId)+'/member/'+link.user_id,{headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN},signal:AbortSignal.timeout(2000)});
-    diagnostics.push({name:p.name,reason:response.ok?'mention_ready':response.status===404?'not_in_group_or_provider_mismatch':response.status===401||response.status===403?'line_credentials_rejected':'line_profile_error',httpStatus:response.status});
-    return {p,userId:response.ok?link.user_id:null};
-   }catch{diagnostics.push({name:p.name,reason:'line_profile_timeout_or_network'});return {p};}
+   if(!link){const reason=p.payerKey?.startsWith('member:')?'not_linked':'legacy_payer_key';diagnostics.push({name:p.name,reason});return {p,reason};}
+   if(!membership.has(link.user_id))membership.set(link.user_id,groupMentionTarget(env,groupId,link.user_id));
+   const result=await membership.get(link.user_id),{userId,...evidence}=result;
+   diagnostics.push({name:p.name,...evidence});return {p,...result};
   }));
-  text+='\n\n'+clubName(bill.club)+' · '+displayDate(billDate(bill))+(bill.session_date.length>10?' · บิลเพิ่มเติม':'')+' · ค้าง '+money(outstanding(bill))+' บ.';
-  for(const {p,userId} of entries){
-   if(userId)tagIds.add(userId);
-   text+='\n• '+safe(p.name)+' '+money(p.amount)+' บ.'+(userId?'':' · ยังไม่ได้แท็ก LINE');
+  append('\n'+clubName(bill.club)+' · '+displayDate(billDate(bill))+(bill.session_date.length>10?' · บิลเพิ่มเติม':'')+' · ค้าง '+money(outstanding(bill))+' บ.');
+  for(const {p,userId,reason} of entries){
+   if(userId)append('• ',userId,' ('+p.name+') '+money(p.amount)+' บ.');
+   else append('• '+p.name+' '+money(p.amount)+' บ. · แท็กไม่สำเร็จ: '+({not_linked:'ยังไม่ผูกบัญชี LINE',legacy_payer_key:'บิลยังไม่อ้างอิงสมาชิก',not_in_group_or_provider_mismatch:'ไม่พบสมาชิกในกลุ่มปลายทาง'}[reason]||'ตรวจยืนยันสมาชิก LINE ไม่สำเร็จ'));
   }
-  if(unpaid.length>8)text+='\n… ยังไม่จ่ายอีก '+(unpaid.length-8)+' คน';
-  const reviewing=pending.length-unpaid.length;if(reviewing)text+='\nรอตรวจสลิป '+reviewing+' คน';
-  text+='\nชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n'+liffUrl(env,bill.club,'pay',bill.id);
+  const reviewing=pending.length-unpaid.length;if(reviewing)append('รอตรวจสลิป '+reviewing+' คน');
+  append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n'+liffUrl(env,bill.club,'pay',bill.id));
  }
- if(groups.some(g=>g.results.length>limit))text+='\nแสดง '+limit+' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด';
- let part='';
- for(const line of text.split('\n')){
-  if(part.length+line.length+1>4500){chunks.push({type:'text',text:part});part='';}
-  part+=(part?'\n':'')+line;
+ if(groups.some(g=>g.results.length>limit))append('แสดง '+limit+' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด');
+ flush();
+ // Never silently drop recipients or send an invalid >5-message reply.
+ if(messages.length>5){
+  diagnostics.push({reason:'reply_message_limit'});
+  return [{type:'text',text:'บิลมีรายชื่อมากเกินส่งครบในคำตอบเดียว จึงยังไม่ได้แท็กใคร กรุณาใช้ badbot bill sena หรือ badbot bill 88 หรือให้ผู้จัดแยกบิล'}];
  }
- if(part)chunks.push({type:'text',text:part});
- const ids=[...tagIds],tags=[];
- for(let i=0;i<ids.length;i+=20)tags.push(mentionMessage(ids.slice(i,i+20),'ผู้รับผิดชอบบิลที่ยังค้าง: '));
- return [...chunks,...tags];
+ return messages;
 }

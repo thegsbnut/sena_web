@@ -1,4 +1,4 @@
-import {mentionMessage} from './line-mentions.js';
+import {mentionMessage,groupMentionTarget,lineReplyEvidence,redactedMentionPayload} from './line-mentions.js';
 import {memberMode,liffUrl} from './member.js';
 import {billingLineText,billingLineMessages} from './billing.js';
 import {bookingRoute} from './booking.js';
@@ -218,15 +218,22 @@ export async function replyToGroupCommand(event,env){
     const ids=[...new Set((event.message.mention?.mentionees||[]).filter(m=>m.type==='user'&&!m.isSelf&&/^U[a-f0-9]{32}$/.test(m.userId||'')).map(m=>m.userId))].slice(0,20);
     if(!ids.length)messages.push({type:'text',text:'พิมพ์ badbot tagtest แล้วพิมพ์ @ และแตะเลือกชื่อเพื่อนจากรายชื่อของ LINE ก่อนส่ง แค่พิมพ์ @ชื่อเป็นตัวหนังสือจะทดสอบไม่ได้'});
     else{
-     messages.push(mentionMessage(ids,'ทดสอบแท็กเพื่อน: ','\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง'));
+     const results=await Promise.all(ids.map(userId=>groupMentionTarget(env,group,userId)));
+     const verified=results.filter(r=>r.userId).map(r=>r.userId),failed=results.filter(r=>!r.userId);
+     if(verified.length)messages.push(mentionMessage(verified,'ทดสอบแท็กเพื่อน: ','\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง'+(failed.length?'\nแท็กไม่สำเร็จ '+failed.length+' คน: ตรวจยืนยันสมาชิกกลุ่มไม่ได้':'')));
+     else messages.push({type:'text',text:'แท็กไม่สำเร็จ: ตรวจยืนยันสมาชิกทุกคนในกลุ่มปลายทางไม่ได้'});
     }
    }else{
    const userId=event.source.userId;
    if(!/^U[a-f0-9]{32}$/.test(userId||'')){
     messages.push({type:'text',text:'LINE ไม่ส่งรหัสบัญชีของผู้พิมพ์มา จึงยังทดสอบแท็กไม่ได้'});
    }else{
-    const substitution={you:{type:'mention',mentionee:{type:'user',userId}}};
-    messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อและตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+    const target=await groupMentionTarget(env,group,userId);
+    if(!target.userId)messages.push({type:'text',text:'แท็กไม่สำเร็จ: ตรวจยืนยันบัญชีผู้พิมพ์ในกลุ่มปลายทางไม่ได้'});
+    else{
+     const substitution={you:{type:'mention',mentionee:{type:'user',userId}}};
+     messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อและตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+    }
    }
    }
   }else if(action.kind==='roster'){
@@ -242,15 +249,21 @@ export async function replyToGroupCommand(event,env){
   }else{
    messages.push(...textMessages(await shortcutText(action,env,urls)));
   }
-  const response=await fetch('https://api.line.me/v2/bot/message/reply',{
-   method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},
-   body:JSON.stringify({replyToken:event.replyToken,messages}),signal:AbortSignal.timeout(10000)
-  });
+  let response,evidence;
+  try{
+   response=await fetch('https://api.line.me/v2/bot/message/reply',{
+    method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},
+    body:JSON.stringify({replyToken:event.replyToken,messages,notificationDisabled:false}),signal:AbortSignal.timeout(10000)
+   });
+   evidence=await lineReplyEvidence(response,messages);
+  }catch{evidence={replyStatus:0,outcome:'network_error',error:{message:'LINE reply timed out or network failed'},payload:redactedMentionPayload(messages),payloadRedacted:true,renderingConfirmed:false};}
   if(action.kind==='bill')try{
    await db.prepare('CREATE TABLE IF NOT EXISTS line_bill_diagnostics (group_id TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
-   const report={replyStatus:response.status,mentionCount:messages.reduce((n,m)=>n+Object.values(m.substitution||{}).filter(v=>v.type==='mention').length,0),messageTypes:messages.map(m=>m.type),payers:mentionDiagnostics};
+   const report={...evidence,mentionCount:messages.reduce((n,m)=>n+Object.values(m.substitution||{}).filter(v=>v.type==='mention').length,0),messageTypes:messages.map(m=>m.type),payers:mentionDiagnostics};
    await db.prepare('INSERT INTO line_bill_diagnostics VALUES(?,?,?) ON CONFLICT(group_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at').bind(group,JSON.stringify(report),new Date().toISOString()).run();
   }catch{console.error('Unable to store bill mention diagnostic');}
+  if(!response)throw Error('LINE reply unavailable');
+  if(!response.ok)console.error('LINE reply rejected',JSON.stringify({status:evidence.replyStatus,requestId:evidence.requestId,error:evidence.error}));
   // Expired/used tokens and other permanent failures must never become Pushes.
   if(!response.ok&&response.status!==400)throw Error('LINE reply unavailable');
  }catch(error){

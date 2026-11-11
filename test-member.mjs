@@ -14,7 +14,7 @@ function fixture(t){
  const env={DB:binding,SLIPS_DB:binding,ADMIN_KEY:'test-key',LINE_MEMBER_AUTH_ENABLED:'true',LINE_LOGIN_CHANNEL_ID:'12345',LINE_LIFF_ID:'12345-test',LINE_CHANNEL_ACCESS_TOKEN:'fixture-token'};
  let identity=uid,profileOverride={},calls=0;
  t.mock.method(globalThis,'fetch',async(url,options)=>{
-  if(String(url).startsWith('https://api.line.me/v2/bot/group/'))return new Response('{}',{status:200});
+  if(String(url).startsWith('https://api.line.me/v2/bot/group/'))return Response.json({userId:String(url).split('/').at(-1)});
   assert.equal(url,'https://api.line.me/oauth2/v2.1/verify');calls++;
   assert.equal(options.body.get('client_id'),'12345');
   return Response.json({sub:identity,iss:'https://access.line.me',aud:'12345',exp:Math.floor(Date.now()/1000)+3600,name:'Odd LINE name',...profileOverride});
@@ -229,7 +229,7 @@ test('organizer mention diagnostics report the actual fallback and verify the we
  let profileStatus=200,networkFailure=false;
  t.mock.method(globalThis,'fetch',async(url,options)=>{
   assert(!String(url).endsWith('/message/reply'));assert(!String(url).endsWith('/message/push'));
-  if(String(url).includes('/group/')){if(networkFailure)throw Error('network');return new Response('{}',{status:profileStatus});}
+  if(String(url).includes('/group/')){if(networkFailure)throw Error('network');return Response.json({userId:String(url).split('/').at(-1)},{status:profileStatus});}
   if(String(url).endsWith('/message/validate/reply')){const payload=JSON.parse(options.body);assert(payload.messages.every(m=>['textV2','text'].includes(m.type)));return new Response('{}');}
   assert(String(url).endsWith('/channel/webhook/endpoint'));
   return Response.json({endpoint:origin+'/api/line/webhook',active:true});
@@ -247,7 +247,7 @@ test('organizer mention diagnostics report the actual fallback and verify the we
  assert(!JSON.stringify(report).includes(uid));
 });
 
-test('maximum bill reminders keep short mentions separate and stay within five LINE messages',async t=>{
+test('maximum bill reminders include every payer inline and stay within five LINE messages',async t=>{
  const f=fixture(t);await f.request('/api/member');
  f.db.exec('CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)');
  let n=0;const ids=[];
@@ -263,12 +263,11 @@ test('maximum bill reminders keep short mentions separate and stay within five L
  }
  const messages=await billingLineMessages(f.env,'all',origin,'Ctest');
  assert(messages.length<=5);assert(messages.every(m=>m.text.length<=5000));
- assert.equal(messages[0].type,'text');assert.equal(messages.at(-1).type,'textV2');
- const firstTag=messages.findIndex(m=>m.type==='textV2');assert(messages.slice(firstTag).every(m=>m.type==='textV2'));
+ assert(messages.every(m=>m.type==='textV2'));
  const mentions=messages.filter(m=>m.type==='textV2');
  assert.equal(mentions.length,3);assert(mentions.every(m=>Object.keys(m.substitution).length<=20));
  assert.deepEqual(mentions.flatMap(m=>Object.values(m.substitution).map(v=>v.mentionee.userId)).sort(),ids.sort());
- const billText=messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
+ const billText=messages.map(m=>m.text).join('\n');
  assert.equal((billText.match(/• /g)||[]).length,48);
 });
 
@@ -287,9 +286,9 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
  assert.equal((await f.request('/api/billing?bill='+id,null,member,{'X-Bill-Token':theirs.token})).status,403);
  const messages=await billingLineMessages(f.env,'all',origin,'C'+'a'.repeat(32));
  assert.equal(messages.at(-1).type,'textV2');
- assert.equal(messages[0].type,'text');
+ assert.equal(messages[0].type,'textV2');
  assert.equal(Object.values(messages.at(-1).substitution)[0].mentionee.userId,uid);
- assert.match(messages.find(m=>m.type==='text').text,/https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
+ assert.match(messages[0].text,/https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
  assert(!JSON.stringify(messages).includes(mine.token));assert(!JSON.stringify(messages).includes(theirs.token));
  assert.equal((await f.request('/api/billing?bill='+id+'&action=upload&payer='+mine.id+'&amount='+mine.amount,slip,member)).status,200);
  await f.request('/api/member/reassign',{userId:uid,playerId:'p1',previousPlayerId:'p0',previousStatus:'approved'},admin);

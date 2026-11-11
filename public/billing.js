@@ -370,14 +370,20 @@
   if (action === 'mention-diagnostics') return run(async () => {
    const response=await fetch('/api/line?mentionDiagnostics=1&club='+club,{cache:'no-store'}),data=await response.json();
    if(!response.ok)throw Error(data.error||'ตรวจไม่ได้');
-   const reasons={mention_ready:'พร้อมแท็กจริง',not_linked:'ยังไม่พบการผูกบัญชีผู้จ่าย',legacy_payer_key:'บิลเก่าไม่ได้อ้างอิงรหัสสมาชิก',not_in_group_or_provider_mismatch:'LINE หาในกลุ่มไม่เจอ: ตรวจสมาชิกกลุ่มและ Provider',line_credentials_rejected:'LINE ไม่รับสิทธิ์ Access Token',line_profile_error:'LINE ตรวจสมาชิกไม่สำเร็จ',line_profile_timeout_or_network:'ตรวจสมาชิกหมดเวลาหรือเครือข่ายขัดข้อง'};
+   const reasons={mention_ready:'ยืนยัน userId ในกลุ่มแล้ว',not_linked:'ยังไม่พบการผูกบัญชีผู้จ่าย',legacy_payer_key:'บิลเก่าไม่ได้อ้างอิงรหัสสมาชิก',not_in_group_or_provider_mismatch:'LINE หาในกลุ่มไม่เจอ: ตรวจสมาชิกกลุ่มและ Provider',line_credentials_rejected:'LINE ไม่รับสิทธิ์ Access Token',invalid_line_user_id:'รหัส LINE ไม่ถูกต้อง',line_profile_identity_mismatch:'LINE ตอบรหัสสมาชิกไม่ตรงกับที่ขอ',reply_message_limit:'รายชื่อเกินขีดจำกัดคำตอบ: ยังไม่ได้แท็กใคร',line_profile_error:'LINE ตรวจสมาชิกไม่สำเร็จ',line_profile_timeout_or_network:'ตรวจสมาชิกหมดเวลาหรือเครือข่ายขัดข้อง'};
    const lines=['ผลตรวจแท็ก LINE · '+clubName(club),
     'รูปแบบข้อความ: HTTP '+data.validation.status,
     'พร้อมแท็กตอนตรวจ: '+data.mentionCount+' คน',
     data.webhook.checked?'Webhook: '+(data.webhook.endpointMatches?'URL ถูกต้อง':'URL ไม่ตรงกับเว็บนี้')+' · '+(data.webhook.active?'เปิดอยู่':'ปิดอยู่'):'ยังตรวจ Webhook ไม่ได้',
     ...data.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)+(p.httpStatus?' (HTTP '+p.httpStatus+')':''))];
-   if(data.latest)lines.push('คำสั่งบิลล่าสุด: '+new Date(data.latest.updatedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}),'ส่งถึง LINE: HTTP '+data.latest.replyStatus+' · แท็กจริง '+data.latest.mentionCount+' รายการ · '+data.latest.messageTypes.join(', '),...data.latest.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)));
+   if(data.latest)lines.push('คำสั่งบิลล่าสุด: '+new Date(data.latest.updatedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}),'ส่งถึง LINE: HTTP '+data.latest.replyStatus+' · ส่งข้อมูล mention '+data.latest.mentionCount+' รายการ · '+data.latest.messageTypes.join(', '),...data.latest.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)));
    else lines.push('ยังไม่มีบันทึกคำสั่งจริง ให้พิมพ์ badbot bill ในกลุ่มแล้วกดตรวจอีกครั้ง');
+   if(data.latest){
+    lines.push('ผล API: '+({accepted:'LINE รับคำขอแล้ว แต่ยังไม่ยืนยันสีแท็กหรือการแจ้งเตือน',rejected:'LINE ปฏิเสธข้อความ — การแท็กไม่สำเร็จ',network_error:'ติดต่อ LINE ไม่สำเร็จ — ยังยืนยันการส่งไม่ได้'}[data.latest.outcome]||'บันทึกเก่ามีเฉพาะ HTTP status'));
+    if(data.latest.requestId)lines.push('LINE request ID: '+data.latest.requestId);
+    if(data.latest.error)lines.push('Error: '+JSON.stringify(data.latest.error));
+    if(data.latest.payload)lines.push('Payload ที่ส่ง (แทน userId ด้วยรหัสตัวอย่าง; ไม่เก็บ replyToken):',JSON.stringify(data.latest.payload,null,2));
+   }
    if(data.validation.message)lines.push(data.validation.message);
    let report=root.querySelector('#mentionReport');if(!report){report=document.createElement('textarea');report.id='mentionReport';report.readOnly=true;report.rows=12;report.setAttribute('aria-label','ผลตรวจแท็ก LINE สำหรับคัดลอก');root.prepend(report);}report.value=lines.join('\n');
    message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้');

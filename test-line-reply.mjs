@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import worker from './worker.js';
 import {defaultSettings,bangkokDate} from './booking.js';
 import {prepareMembers} from './member.js';
+import {mentionMessage,groupMentionTarget} from './line-mentions.js';
 
 const origin='https://example.com',group='C'+'a'.repeat(32);
 const future=n=>bangkokDate(new Date(Date.now()+n*86400000));
@@ -29,6 +30,7 @@ function fixture(t){
  seed('sena');seed('88',[],false);
  const calls=[];let status=200;
  t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(String(url).startsWith('https://api.line.me/v2/bot/group/'))return Response.json({userId:String(url).split('/').at(-1)});
   assert.equal(url,'https://api.line.me/v2/bot/message/reply');
   assert.equal(options.headers.Authorization,'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN);
   calls.push(JSON.parse(options.body));return Response.json({}, {status});
@@ -49,7 +51,7 @@ function session(date,{names=2,closed=false,holiday=null,capacity=8}={}){
 }
 const textOf=call=>call.messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
 
-test('tagtest mentions the verified webhook sender directly without any roster or profile lookup',async t=>{
+test('tagtest verifies the webhook sender in the target group without any roster lookup',async t=>{
  const f=fixture(t),userId='U'+'b'.repeat(32);
  const event=f.event('badbot tagtest');event.source.userId=userId;
  assert.equal((await f.hook([event])).status,200);
@@ -124,14 +126,110 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
  assert.equal((await f.hook([f.event('badbot bill')])).status,200);
  const message=f.calls[0].messages.at(-1);
  assert.equal(message.type,'textV2');
- assert.deepEqual(message.substitution.friend0,{type:'mention',mentionee:{type:'user',userId}});
- assert.match(message.text,/ผู้รับผิดชอบบิลที่ยังค้าง: \{friend0\}/);
- assert.match(f.calls[0].messages[0].text,/Nut 85 บ\./);
- assert.equal(f.calls[0].messages[0].type,'text');
+ assert.deepEqual(message.substitution.member0,{type:'mention',mentionee:{type:'user',userId}});
+ assert.match(message.text,/• \{member0\} \(Nut\) 85 บ\./);
+ assert.equal(f.calls[0].messages.length,1);
  assert.doesNotMatch(message.text,/@Nut/);
  const diagnostic=JSON.parse(f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload);
- assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['text','textV2']);
+ assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['textV2']);
  assert.doesNotMatch(JSON.stringify(diagnostic),new RegExp(userId));
+});
+
+// Exercise the production route: signed webhook -> D1 payer mapping -> group
+// membership check -> JSON serialization -> LINE reply API (mocked transport).
+async function billFixture(t,count=1){
+ const f=fixture(t);f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
+ await prepareMembers(f.env.DB);
+ f.db.exec('CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)');
+ const names=['นัท 🏸 {friend0}','ทอม 👨‍👩‍👧‍👦 "&<>"',...Array.from({length:count},(_,i)=>'เพื่อน '+i)];
+ const ids=Array.from({length:count},(_,i)=>'U'+(100+i).toString(16).padStart(32,'0'));
+ const payers=ids.map((userId,i)=>{
+  f.db.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)").run(userId,'sena','audit'+i,names[i],'existing',new Date().toISOString());
+  return {name:names[i],payerKey:'member:audit'+i,amount:1700,status:'unpaid'};
+ });
+ f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run('audit-bill','sena',future(0),JSON.stringify({payers}));
+ const profileCalls=[];let replyStatus=200,network=false,profileFailure=null;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(String(url).startsWith('https://api.line.me/v2/bot/group/')){
+   const userId=String(url).split('/').at(-1);profileCalls.push(userId);
+   assert.equal(url,'https://api.line.me/v2/bot/group/'+group+'/member/'+userId);
+   if(profileFailure?.userId===userId){
+    if(profileFailure.network)throw Error('profile network');
+    return Response.json(profileFailure.body||{}, {status:profileFailure.status||200});
+   }
+   return Response.json({userId,displayName:'ชื่อ LINE ต่างจากชื่อในก๊วน 🥳'});
+  }
+  assert.equal(url,'https://api.line.me/v2/bot/message/reply');
+  f.calls.push(JSON.parse(options.body));if(network)throw Error('network');
+  return Response.json(replyStatus===200?{sentMessages:[{id:'line-message-id'}]}:{message:'Invalid message for '+ids[0],details:[{property:'messages[0].substitution.member0',message:'Mention rejected'}]}, {status:replyStatus,headers:{'x-line-request-id':'request-audit-123'}});
+ });
+ return {...f,ids,names,profileCalls,replyStatus:value=>replyStatus=value,network:value=>network=value,profileFailure:value=>profileFailure=value,
+  report:()=>JSON.parse(f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload)};
+}
+for(const count of [1,2,10,20,21])test('bill webhook keeps '+count+' mentions inline, including Unicode names and every payer after eight',async t=>{
+ const f=await billFixture(t,count);assert.equal((await f.hook([f.event('badbot bill')])).status,200);
+ const messages=f.calls[0].messages;
+ assert.equal(f.calls[0].notificationDisabled,false);
+ assert.equal(messages.length,Math.ceil(count/20));
+ assert(messages.every(m=>m.type==='textV2'));
+ assert.deepEqual(messages.flatMap(m=>Object.values(m.substitution).map(v=>v.mentionee.userId)),f.ids);
+ assert.deepEqual([...f.profileCalls].sort(),[...f.ids].sort());
+ messages.forEach(m=>{
+  assert(Object.keys(m.substitution).length<=20);assert(m.text.length<=5000);
+  for(const key of Object.keys(m.substitution))assert(m.text.includes('{'+key+'}'));
+ });
+ assert(messages[0].text.includes('นัท 🏸 {{friend0}}'));if(count>1)assert(messages[0].text.includes('ทอม 👨‍👩‍👧‍👦 "&<>"'));
+ assert(!JSON.stringify(messages).includes('@นัท'));
+ const report=f.report();assert.equal(report.outcome,'accepted');assert.equal(report.renderingConfirmed,false);
+ assert.equal(report.mentionCount,count);assert.equal(report.requestId,'request-audit-123');assert.deepEqual(report.sentMessageIds,['line-message-id']);
+ for(const id of f.ids)assert(!JSON.stringify(report).includes(id));
+ assert(!JSON.stringify(report).includes(f.calls[0].replyToken));
+ assert(!JSON.stringify(report).includes(f.env.LINE_CHANNEL_ACCESS_TOKEN));
+});
+
+for(const failure of [{status:404},{status:403},{network:true},{body:{userId:'U'+'f'.repeat(32)}}])test('bill explicitly marks an unverified member without fabricating an at-name '+JSON.stringify(failure),async t=>{
+ const f=await billFixture(t,2);f.profileFailure({userId:f.ids[1],...failure});
+ assert.equal((await f.hook([f.event('badbot bill')])).status,200);
+ const messages=f.calls[0].messages;assert.equal(messages.length,1);
+ assert.deepEqual(Object.values(messages[0].substitution).map(v=>v.mentionee.userId),[f.ids[0]]);
+ assert.match(messages[0].text,/แท็กไม่สำเร็จ:/);
+ assert(!JSON.stringify(messages).includes('@ทอม'));
+ assert.notEqual(f.report().payers.find(p=>p.name===f.names[1]).reason,'mention_ready');
+});
+for(const status of [400,429,500])test('bill records LINE rejection details and request ID without plain-text or Push fallback '+status,async t=>{
+ const f=await billFixture(t,2);f.replyStatus(status);const event=f.event('badbot bill');
+ assert.equal((await f.hook([event])).status,status===400?200:503);
+ const report=f.report();assert.equal(report.replyStatus,status);assert.equal(report.outcome,'rejected');
+ assert.equal(report.requestId,'request-audit-123');assert.match(report.error.message,/Invalid message/);
+ assert.equal(report.error.details[0].property,'messages[0].substitution.member0');
+ assert(!JSON.stringify(report).includes(f.ids[0]));assert.equal(f.calls.length,1);
+ if(status===400){await f.hook([event]);assert.equal(f.calls.length,1);}
+});
+test('bill records an uncertain network failure and permits a webhook retry',async t=>{
+ const f=await billFixture(t,2),event=f.event('badbot bill');f.network(true);
+ assert.equal((await f.hook([event])).status,503);assert.equal(f.report().outcome,'network_error');assert.equal(f.report().replyStatus,0);
+ f.network(false);assert.equal((await f.hook([event])).status,200);assert.equal(f.report().outcome,'accepted');
+});
+test('mention builder rejects invalid IDs and over-limit lists rather than silently dropping targets',async t=>{
+ fixture(t);assert.throws(()=>mentionMessage(['ชื่อคน'],'test'),/Invalid/);
+ assert.throws(()=>mentionMessage(Array.from({length:21},(_,i)=>'U'+i.toString(16).padStart(32,'0')),'test'),/at most 20/);
+ const result=await groupMentionTarget({},group,'not-a-user');assert.equal(result.reason,'invalid_line_user_id');
+});
+test('native friend tagtest reports unverified friends while keeping verified friends in one message',async t=>{
+ const f=fixture(t),a='U'+'a'.repeat(32),b='U'+'b'.repeat(32);
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(String(url).includes('/group/'))return url.endsWith(a)?Response.json({userId:a}):Response.json({}, {status:404});
+  assert(String(url).endsWith('/message/reply'));f.calls.push(JSON.parse(options.body));return Response.json({});
+ });
+ const event=f.event('badbot tagtest @หนึ่ง @สอง');event.message.mention={mentionees:[{type:'user',userId:a},{type:'user',userId:b}]};
+ await f.hook([event]);assert.equal(f.calls[0].messages.length,1);
+ assert.deepEqual(Object.values(f.calls[0].messages[0].substitution).map(v=>v.mentionee.userId),[a]);
+ assert.match(f.calls[0].messages[0].text,/แท็กไม่สำเร็จ 1 คน/);
+});
+test('oversized bills explicitly decline the whole reminder instead of dropping recipients',async t=>{
+ const f=await billFixture(t,101);await f.hook([f.event('badbot bill')]);
+ const messages=f.calls[0].messages;assert.equal(messages.length,1);assert.equal(messages[0].type,'text');
+ assert.match(messages[0].text,/ยังไม่ได้แท็กใคร/);assert.equal(f.report().mentionCount,0);
 });
 
 test('enabled member mode sends both booking buttons through the configured LIFF app',async t=>{
