@@ -1,5 +1,10 @@
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
-import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
+import {
+  lineReplyEvidence,
+  redactedMentionPayload,
+  groupMentionTarget,
+  validLineUserId,
+} from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
 import { logError } from './log.js';
 import { billingLineText, billingLineMessages } from './billing.js';
@@ -61,6 +66,8 @@ function command(event) {
   const match = /^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  // TEMPORARY diagnostic (remove once the mention rule is known): hidden from `help`.
+  if (/^tagtest2(\s|$)/.test(action)) return { kind: 'tagTest2' };
   if (shortcuts.has(action)) return shortcuts.get(action);
   // Pairing codes are consumed by the existing administrator-only pairing flow.
   if (/^[a-f0-9]{32}$/i.test(action)) return null;
@@ -403,7 +410,61 @@ export async function replyToGroupCommand(event, env) {
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'roster') {
+    if (action.kind === 'tagTest2') {
+      // Which multi-mention layouts does the LINE app render as real mentions?
+      // Three accounts (the friends picked with @, plus the sender) are mentioned in
+      // four layouts that differ only in position, trailing text and repetition.
+      const friends = (event.message.mention?.mentionees || [])
+        .filter(m => m.type === 'user' && !m.isSelf && validLineUserId(m.userId))
+        .map(m => m.userId);
+      const ids = [...new Set([...friends, event.source.userId].filter(validLineUserId))].slice(
+        0,
+        3,
+      );
+      if (ids.length < 3)
+        messages.push({
+          type: 'text',
+          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest2 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
+        });
+      else {
+        const checks = await Promise.all(ids.map(userId => groupMentionTarget(env, group, userId)));
+        if (!checks.every(c => c.userId))
+          messages.push({
+            type: 'text',
+            text: 'ทดสอบแท็กไม่ได้: ตรวจยืนยันสมาชิกในกลุ่มไม่ครบทั้ง 3 คน',
+          });
+        else {
+          const [a, b, c] = ids,
+            who = id => ({ type: 'mention', mentionee: { type: 'user', userId: id } }),
+            run = Math.random().toString(36).slice(2, 6);
+          messages.push(
+            {
+              type: 'text',
+              text:
+                'ทดสอบแท็ก รอบ ' +
+                run +
+                '\nดูว่าข้อความ [2]–[5] อันไหนชื่อเป็นสีฟ้า (แตะได้) แล้วบอกเลขที่เป็นสีฟ้า พร้อมบอกว่าดูจาก iPhone หรือ Android',
+            },
+            {
+              type: 'textV2',
+              text: '[2] {a} {b}\nมีข้อความต่อท้ายชื่อ',
+              substitution: { a: who(a), b: who(b) },
+            },
+            { type: 'textV2', text: '[3] {a} {b}', substitution: { a: who(a), b: who(b) } },
+            {
+              type: 'textV2',
+              text: '[4] {a} {b} {c}\nมีข้อความต่อท้ายชื่อ',
+              substitution: { a: who(a), b: who(b), c: who(c) },
+            },
+            {
+              type: 'textV2',
+              text: '[5] {c} {b} {a} 👆 ต่อท้ายบรรทัดเดียวกัน',
+              substitution: { a: who(a), b: who(b), c: who(c) },
+            },
+          );
+        }
+      }
+    } else if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
       const sections = await Promise.all(selected.map(club => rosterSection(env, club, now)));
       const text =

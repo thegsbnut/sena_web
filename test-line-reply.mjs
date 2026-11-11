@@ -405,6 +405,68 @@ test('very long bills still list every payer by name and stay within five LINE m
     assert.equal(Object.keys(m.substitution).length, 1);
 });
 
+test('tagtest2 diagnostic sends the four layouts with the picked friends plus the sender', async t => {
+  const f = fixture(t),
+    sender = 'U' + 'c'.repeat(32),
+    a = 'U' + 'a'.repeat(32),
+    b = 'U' + 'b'.repeat(32);
+  const profile = (url, status = 200) => {
+    const userId = String(url).split('/').at(-1);
+    return status === 200 ? Response.json({ userId }) : Response.json({}, { status });
+  };
+  let missing = null;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (String(url).includes('/group/'))
+      return profile(url, String(url).endsWith(missing) ? 404 : 200);
+    assert(String(url).endsWith('/message/reply'));
+    f.calls.push(JSON.parse(options.body));
+    return Response.json({ sentMessages: [] });
+  });
+  const send = async (text, mentionees, userId = sender) => {
+    const event = f.event(text);
+    event.source.userId = userId;
+    event.message.mention = { mentionees: mentionees.map(id => ({ type: 'user', userId: id })) };
+    await f.hook([event]);
+    return f.calls.at(-1).messages;
+  };
+  // Full run: plain header + four mention layouts, 5 messages (the LINE reply cap).
+  const run = await send('badbot tagtest2 @a @b', [a, b]);
+  assert.deepEqual(
+    run.map(m => m.type),
+    ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
+  );
+  const ids = m => Object.values(m.substitution).map(v => v.mentionee.userId);
+  assert.deepEqual(ids(run[1]), [a, b]);
+  assert.deepEqual(ids(run[3]), [a, b, sender]);
+  assert.match(run[1].text, /^\[2\] \{a\} \{b\}\n.+/); // trailing text on its own line
+  assert.match(run[2].text, /^\[3\] \{a\} \{b\}$/); // ends with the mention
+  assert.match(run[3].text, /\{c\}\n.+/);
+  assert.match(run[4].text, /\{a\} 👆/); // trailing text on the same line
+  for (const m of run.slice(1))
+    for (const key of Object.keys(m.substitution)) assert(m.text.includes('{' + key + '}'));
+  // The command is not advertised in the help list.
+  assert.doesNotMatch(textOf(await sendHelp(f)), /tagtest2/);
+  // Too few people picked: explain how, send no mentions.
+  const few = await send('badbot tagtest2 @a', [a]);
+  assert.deepEqual(
+    few.map(m => m.type),
+    ['text'],
+  );
+  assert.match(few[0].text, /เลือกเพื่อนอีก 2 คน/);
+  // A picked account that is not verifiably in the group: refuse rather than send a misleading test.
+  missing = b;
+  const bad = await send('badbot tagtest2 @a @b', [a, b]);
+  assert.deepEqual(
+    bad.map(m => m.type),
+    ['text'],
+  );
+  assert.match(bad[0].text, /ตรวจยืนยันสมาชิกในกลุ่มไม่ครบ/);
+});
+async function sendHelp(f) {
+  await f.hook([f.event('badbot help')]);
+  return f.calls.at(-1);
+}
+
 test('enabled member mode sends both booking buttons through the configured LIFF app', async t => {
   const f = fixture(t);
   f.env.LINE_MEMBER_AUTH_ENABLED = 'true';
