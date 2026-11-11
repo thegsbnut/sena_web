@@ -676,3 +676,16 @@ dialog::backdrop {
   width: auto;
   margin: 0;
 }
+
+/* Collapsible organizer panel (LINE accounts and mapping). */
+.member-collapse > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.member-collapse > summary h2 {
+  display: inline;
+  margin: 0;
+}
+.member-collapse[open] > summary {
+  margin-bottom: 0.75rem;
+}

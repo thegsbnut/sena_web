@@ -6,10 +6,12 @@
   if (!container) return;
   const panel = document.createElement('section');
   panel.className = 'panel';
+  // Collapsed by default: the list is long and rarely needed. It loads on first open.
   panel.innerHTML =
-    '<h2>บัญชี LINE และการแมพผู้เล่น</h2><p>ช่วงเก็บตก ผู้เล่นเลือกชื่อเดิมแล้วใช้งานได้ทันที ผู้จัดแก้ชื่อได้จากรายชื่อผู้เล่นด้านล่าง และแก้การแมพ LINE ได้ที่นี่ การแก้และลบการผูกมีผลทั้งสองสนาม หากชื่อเป้าหมายผูกกับบัญชีอื่น ให้ยกเลิกการผูกนั้นก่อนย้าย</p><button type="button">โหลดการแมพล่าสุด</button><div class="member-requests"></div><p role="status"></p>';
+    '<details class="member-collapse"><summary><h2>บัญชี LINE และการแมพผู้เล่น</h2></summary><p>ช่วงเก็บตก ผู้เล่นเลือกชื่อเดิมแล้วใช้งานได้ทันที ผู้จัดแก้ชื่อได้จากรายชื่อผู้เล่นด้านล่าง และแก้การแมพ LINE ได้ที่นี่ การแก้และลบการผูกมีผลทั้งสองสนาม หากชื่อเป้าหมายผูกกับบัญชีอื่น ให้ยกเลิกการผูกนั้นก่อนย้าย</p><button type="button" class="member-reload">โหลดการแมพล่าสุด</button><div class="member-requests"></div><p role="status"></p></details>';
   container.prepend(panel);
-  const rows = panel.querySelector('.member-requests'),
+  const details = panel.querySelector('details'),
+    rows = panel.querySelector('.member-requests'),
     status = panel.querySelector('[role=status]');
   const api = async (action, body) => {
     const r = await venueFetch('/api/member/' + action, {
@@ -105,6 +107,12 @@
       status.textContent = e.message;
     }
   }
-  panel.querySelector('button').onclick = load;
-  await load();
+  panel.querySelector('.member-reload').onclick = load;
+  let loaded = false;
+  details.addEventListener('toggle', () => {
+    if (details.open && !loaded) {
+      loaded = true;
+      load();
+    }
+  });
 })();
