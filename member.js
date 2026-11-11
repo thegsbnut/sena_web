@@ -26,11 +26,16 @@ const cookie = (req, name) =>
     .map(s => s.trim())
     .find(s => s.startsWith(name + '='))
     ?.slice(name.length + 1) || '';
+// Sessions slide: each visit through the LIFF entry (GET /api/member) renews an
+// active session to a fresh 7 days, at most once a day, so regular players stay
+// signed in while an idle session still expires after a week.
+const SESSION_MS = 7 * 86400000,
+  RENEW_AFTER_MS = 86400000;
 const sessionCookie = value =>
   '__Host-sena-member=' +
   value +
   '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' +
-  (value ? 604800 : 0);
+  (value ? SESSION_MS / 1000 : 0);
 export async function prepareMembers(db) {
   await db
     .prepare(
@@ -58,10 +63,11 @@ export async function memberFor(req, env, club) {
   const token = cookie(req, '__Host-sena-member');
   if (!/^[a-f0-9]{64}$/.test(token)) return null;
   await prepareMembers(env.DB);
+  const tokenHash = await hash(token);
   const session = await env.DB.prepare(
-    'SELECT user_id FROM member_sessions WHERE token_hash=? AND expires_at>?',
+    'SELECT user_id,expires_at FROM member_sessions WHERE token_hash=? AND expires_at>?',
   )
-    .bind(await hash(token), Date.now())
+    .bind(tokenHash, Date.now())
     .first();
   if (!session) return null;
   let link = await env.DB.prepare(
@@ -94,7 +100,12 @@ export async function memberFor(req, env, club) {
       if (!(error instanceof MappingError)) throw error;
       mappingError = error.message;
     }
-  return { userId: session.user_id, link: link || null, mappingError };
+  return {
+    userId: session.user_id,
+    link: link || null,
+    mappingError,
+    session: { tokenHash, expiresAt: session.expires_at },
+  };
 }
 
 async function roster(db, club) {
@@ -129,8 +140,27 @@ async function route(req, env, admin, club) {
     action = url.pathname.split('/').at(-1);
   if (req.method === 'GET' && action === 'member') {
     const member = await memberFor(req, env, club),
-      csrf = random();
-    return json(
+      csrf = random(),
+      headers = new Headers({
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      });
+    headers.append(
+      'Set-Cookie',
+      '__Host-sena-member-csrf=' +
+        csrf +
+        '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600',
+    );
+    if (member && member.session.expiresAt - Date.now() < SESSION_MS - RENEW_AFTER_MS) {
+      const renewed = await env.DB.prepare(
+        'UPDATE member_sessions SET expires_at=? WHERE token_hash=? AND expires_at>?',
+      )
+        .bind(Date.now() + SESSION_MS, member.session.tokenHash, Date.now())
+        .run();
+      if (renewed.meta.changes === 1)
+        headers.append('Set-Cookie', sessionCookie(cookie(req, '__Host-sena-member')));
+    }
+    return Response.json(
       {
         enabled: loginEnabled(env),
         requireLogin: memberMode(env),
@@ -141,13 +171,7 @@ async function route(req, env, admin, club) {
         mappingError: member?.mappingError || null,
         link: member?.link || null,
       },
-      200,
-      {
-        'Set-Cookie':
-          '__Host-sena-member-csrf=' +
-          csrf +
-          '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600',
-      },
+      { headers },
     );
   }
   if (req.method === 'GET' && action === 'choices') {
@@ -246,7 +270,7 @@ async function route(req, env, admin, club) {
     await env.DB.prepare('DELETE FROM member_sessions WHERE expires_at<=?').bind(Date.now()).run();
     const token = random();
     await env.DB.prepare('INSERT INTO member_sessions VALUES(?,?,?)')
-      .bind(await hash(token), profile.sub, Date.now() + 604800000)
+      .bind(await hash(token), profile.sub, Date.now() + SESSION_MS)
       .run();
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(token) });
   }

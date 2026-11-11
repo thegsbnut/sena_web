@@ -43,18 +43,43 @@
     q('actions').append(el);
     return el;
   };
+  // The LINE SDK is only needed to sign in. A visitor who already has a valid
+  // session cookie (the common case) skips loading and initialising it.
+  const sdkUrl = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+  let liffReady = null;
+  const ensureLiff = liffId =>
+    (liffReady =
+      liffReady ||
+      (async () => {
+        if (!window.liff)
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = sdkUrl;
+            script.onload = resolve;
+            script.onerror = () => reject(Error('โหลด LINE ไม่สำเร็จ กรุณาลองใหม่'));
+            document.head.append(script);
+          });
+        await liff.init({ liffId });
+        readTarget();
+      })());
   try {
+    readTarget();
     let session = await api();
     if (!session.enabled || !session.configured) {
       message('ระบบ LINE Login ยังไม่ได้เปิดใช้งาน กรุณาติดต่อผู้จัด');
       return;
     }
-    await liff.init({ liffId: session.liffId });
-    readTarget();
-    session = await api();
-    if (!session.loggedIn && liff.isLoggedIn()) {
-      await api('/login', { idToken: liff.getIDToken() }, session.csrf);
-      session = await api();
+    if (session.loggedIn && session.link?.status === 'approved' && !session.mappingError && !pay) {
+      location.replace('/court' + (club === '88' ? '?club=88' : '') + '#booking');
+      return;
+    }
+    if (!session.loggedIn) {
+      message('กำลังเข้าสู่ระบบด้วย LINE…');
+      await ensureLiff(session.liffId);
+      if (liff.isLoggedIn()) {
+        await api('/login', { idToken: liff.getIDToken() }, session.csrf);
+        session = await api();
+      }
     }
     if (!session.loggedIn) {
       message('เข้าสู่ระบบเพื่อจอง ถอน หรือชำระบิลของคุณ');
@@ -70,6 +95,7 @@
     button('ออกจากระบบ', async () => {
       try {
         await api('/logout', {});
+        await ensureLiff(session.liffId);
         if (liff.isLoggedIn()) liff.logout();
         location.reload();
       } catch (e) {

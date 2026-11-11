@@ -435,6 +435,34 @@ test('LINE login verifies server-side audience, expiry and CSRF; forged sessions
   await f.request('/api/member/logout', {}, member);
   assert.equal((await (await f.request('/api/member', null, member)).json()).loggedIn, false);
 });
+test('active member sessions slide to a fresh week at most once a day; expired ones stay expired', async t => {
+  const f = fixture(t);
+  const member = await f.login();
+  const sessionCookies = r =>
+    r.headers.getSetCookie().filter(c => c.startsWith('__Host-sena-member='));
+  const expiry = () => f.db.prepare('SELECT expires_at FROM member_sessions').get().expires_at;
+  // Just signed in: nothing to renew.
+  let r = await f.request('/api/member', null, member);
+  assert.equal((await r.json()).loggedIn, true);
+  assert.deepEqual(sessionCookies(r), []);
+  // Two days later (five days left): renewed in the database and in the cookie.
+  f.db.prepare('UPDATE member_sessions SET expires_at=?').run(Date.now() + 5 * 86400000);
+  r = await f.request('/api/member', null, member);
+  assert.equal((await r.json()).loggedIn, true);
+  assert.equal(sessionCookies(r).length, 1);
+  assert.match(
+    sessionCookies(r)[0],
+    /^__Host-sena-member=[a-f0-9]{64}; .*HttpOnly.*Max-Age=604800$/,
+  );
+  assert.equal(sessionCookies(r)[0].split(';')[0], member);
+  assert(expiry() > Date.now() + 6.9 * 86400000);
+  // An expired session is never revived.
+  f.db.prepare('UPDATE member_sessions SET expires_at=?').run(Date.now() - 1000);
+  r = await f.request('/api/member', null, member);
+  assert.equal((await r.json()).loggedIn, false);
+  assert.deepEqual(sessionCookies(r), []);
+  assert(expiry() < Date.now());
+});
 test('existing-player linking is immediate, isolates clubs, and limits booking and cancellation to self', async t => {
   const f = fixture(t),
     admin = await f.admin(),

@@ -7,6 +7,13 @@ import { leaderboardRoute } from './leaderboard.js';
 import './public/engine.js';
 import seed from './seed.json' with { type: 'json' };
 import { logError } from './log.js';
+import { withSchemaCache } from './schema-cache.js';
+
+const cachedEnv = env => ({
+  ...env,
+  DB: withSchemaCache(env.DB),
+  SLIPS_DB: withSchemaCache(env.SLIPS_DB),
+});
 const enc = new TextEncoder();
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
@@ -164,12 +171,14 @@ function guestResult(result) {
 }
 export default {
   async scheduled(event, env, ctx) {
+    env = cachedEnv(env);
     if (event.cron === '0 18 * * *') {
       ctx.waitUntil(scheduledBookings(env).catch(error => logError('cron:bookings', error)));
       ctx.waitUntil(prunePaidSlips(env).catch(error => logError('cron:prune-slips', error)));
     }
   },
   async fetch(req, env) {
+    env = cachedEnv(env);
     const url = new URL(req.url),
       path = url.pathname;
     try {
