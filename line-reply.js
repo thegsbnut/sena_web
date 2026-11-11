@@ -435,67 +435,39 @@ export async function replyToGroupCommand(event, env) {
           text: 'ทดสอบแท็กไม่ได้: ตรวจยืนยันสมาชิกในกลุ่มไม่ครบทั้ง 3 คน',
         });
       else {
-        const people = checks.map(c => ({
-          id: c.userId,
-          name: c.displayName,
-          risk: mentionNameRisk(c.displayName),
-        }));
-        const safe = people.filter(p => !p.risk),
-          risky = people.filter(p => p.risk);
-        if (!risky.length || safe.length < 2)
-          messages.push({
+        // Worst case first: the most-miscounted name leads, so its overrun would
+        // hit the next mention unless the padding absorbs it.
+        const people = checks
+          .map(c => ({ id: c.userId, name: c.displayName, risk: mentionNameRisk(c.displayName) }))
+          .sort((x, y) => y.risk - x.risk);
+        const substitution = Object.fromEntries(
+            people.map((p, i) => [
+              'm' + i,
+              { type: 'mention', mentionee: { type: 'user', userId: p.id } },
+            ]),
+          ),
+          line = pad => people.map((p, i) => '{m' + i + '}' + pad(p)).join(' '),
+          tail = '\nครบไหม ข้อความนี้',
+          run = Math.random().toString(36).slice(2, 6);
+        messages.push(
+          {
             type: 'text',
             text:
-              'ทดสอบนี้ต้องมีคนชื่อธรรมดา 2 คน และคนชื่อมีอักขระพิเศษ 1 คน ตอนนี้: ' +
-              people.map(p => p.name + (p.risk ? ' (พิเศษ)' : ' (ธรรมดา)')).join(', '),
-          });
-        else {
-          const [s1, s2] = safe,
-            r = risky[0],
-            sub = list =>
-              Object.fromEntries(
-                list.map((p, i) => [
-                  'm' + i,
-                  { type: 'mention', mentionee: { type: 'user', userId: p.id } },
-                ]),
-              ),
-            tags = list => list.map((_, i) => '{m' + i + '}').join(' '),
-            zwsp = '\u200b'.repeat(16),
-            run = Math.random().toString(36).slice(2, 6);
-          messages.push(
-            {
-              type: 'text',
-              text:
-                'ทดสอบแท็ก รอบ ' +
-                run +
-                '\nชื่อมีอักขระพิเศษ: ' +
-                r.name +
-                ' (LINE นับเกิน ' +
-                r.risk +
-                ' ตัว)\nดูว่า [2]–[5] อันไหนสีฟ้า และข้อความ "ครบไหม" อยู่ครบหรือแหว่ง',
-            },
-            {
-              type: 'textV2',
-              text: '[2] ' + tags([s1, s2]) + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2]),
-            },
-            {
-              type: 'textV2',
-              text: '[3] ' + tags([s1, s2, r]) + zwsp + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2, r]),
-            },
-            {
-              type: 'textV2',
-              text: '[4] ' + tags([s1, s2, r]) + ' '.repeat(16) + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2, r]),
-            },
-            {
-              type: 'textV2',
-              text: '[5] ' + tags([r, s1, s2]) + '\nครบไหม ข้อความนี้',
-              substitution: sub([r, s1, s2]),
-            },
-          );
-        }
+              'ทดสอบแท็ก รอบ ' +
+              run +
+              '\nLINE นับชื่อเกิน: ' +
+              people.map(p => p.name + ' +' + p.risk).join(', ') +
+              '\nดูว่า [2]–[5] อันไหนสีฟ้าครบ 3 คน และ "ครบไหม ข้อความนี้" อยู่ครบไหม',
+          },
+          {
+            type: 'textV2',
+            text: '[2] ' + line(p => '\u200b'.repeat(p.risk)) + tail,
+            substitution,
+          },
+          { type: 'textV2', text: '[3] ' + line(() => '\u200b'.repeat(8)) + tail, substitution },
+          { type: 'textV2', text: '[4] ' + line(p => ' '.repeat(p.risk)) + tail, substitution },
+          { type: 'textV2', text: '[5] ' + line(() => '') + tail, substitution },
+        );
       }
     } else if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
