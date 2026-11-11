@@ -917,14 +917,14 @@ test('maximum bill reminders list every payer by name, tag in groups, and stay w
     summaries = messages.filter(m => m.type === 'text');
   assert.equal(messages.length, 5);
   assert.equal(summaries.length, 2);
-  // Grouped tags (<= 6 names each) fill the three remaining slots; the rest is
+  // Grouped tags (<= 3 names each) fill the three remaining slots; the rest is
   // offered through the quick-reply button.
-  assert(mentions.every(m => Object.keys(m.substitution).length <= 6));
+  assert(mentions.every(m => Object.keys(m.substitution).length <= 3));
   const tagged = mentions.flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId));
   assert.equal(new Set(tagged).size, tagged.length);
-  assert.equal(tagged.length, 18);
+  assert.equal(tagged.length, 9);
   assert(tagged.every(id => ids.includes(id)));
-  assert.equal(messages.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 30 คน');
+  assert.equal(messages.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 39 คน');
   const billText = summaries.map(m => m.text).join('\n');
   assert.equal((billText.match(/• /g) || []).length, 48);
 });

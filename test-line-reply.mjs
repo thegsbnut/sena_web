@@ -278,15 +278,15 @@ async function billFixture(t, count = 1) {
 }
 // LINE renders mentions as plain text when one message holds several, so each
 // payer is tagged in their own message after a plain-text summary.
-// Plain-named payers are tagged together (up to six per message) after a plain
+// Plain-named payers are tagged together (up to three per message) after a plain
 // summary; whatever does not fit the 5-message reply is offered via quick reply.
-for (const count of [1, 2, 6, 10, 21, 40])
+for (const count of [1, 3, 4, 10, 12, 13, 40])
   test('bill webhook tags ' + count + ' payers in grouped messages', async t => {
     const f = await billFixture(t, count);
     assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
     const messages = f.calls[0].messages,
       tagMessages = messages.filter(m => m.type === 'textV2'),
-      fit = Math.min(count, 4 * 6);
+      fit = Math.min(count, 4 * 3);
     assert.equal(f.calls[0].notificationDisabled, false);
     assert(messages.length <= 5);
     assert.equal(messages[0].type, 'text');
@@ -300,7 +300,7 @@ for (const count of [1, 2, 6, 10, 21, 40])
     assert.equal(new Set(tagged).size, tagged.length);
     for (const m of tagMessages) {
       const keys = Object.keys(m.substitution);
-      assert(keys.length >= 1 && keys.length <= 6);
+      assert(keys.length >= 1 && keys.length <= 3);
       for (const key of keys) assert(m.text.includes('{' + key + '}\u200b'.repeat(1)));
       assert(m.text.startsWith('ค้างจ่าย: {m0}'));
       assert(m.text.endsWith('\nชำระเงินผ่านลิงก์ด้านบน'));
@@ -421,8 +421,8 @@ test('very long bills list everyone, tag what fits and the quick reply tags the 
     ms
       .filter(m => m.type === 'textV2')
       .flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId));
-  assert.equal(tagged(first).length, 24);
-  assert.equal(first.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 77 คน');
+  assert.equal(tagged(first).length, 12);
+  assert.equal(first.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 89 คน');
   // Pressing the button is a postback: a new Reply with only tags, no summary, no Push.
   let data = first.at(-1).quickReply.items[0].action.data,
     all = [...tagged(first)],
@@ -438,7 +438,7 @@ test('very long bills list everyone, tag what fits and the quick reply tags the 
     assert(next.length <= 4 || next.length <= 5);
     all.push(...tagged(next));
     data = next.at(-1).quickReply?.items[0].action.data;
-    assert(++rounds < 10);
+    assert(++rounds < 30);
   }
   // Everyone is tagged exactly once across the replies.
   assert.deepEqual([...all].sort(), [...f.ids].sort());
@@ -457,25 +457,36 @@ test('a stale tag-the-rest button still gets a valid reply', async t => {
   assert.equal(f.calls[0].messages[0].quickReply, undefined);
 });
 
-test('names LINE miscounts go last in their message, after the plain names, with padding', async t => {
-  const f = await billFixture(t, 4);
+test('the layout seen working in the group: plain, light miscount, heavy miscount last', async t => {
+  const f = await billFixture(t, 3);
   f.lineNames[f.ids[0]] = '♠️❄️Pete❄️♠️'; // heavy miscount, listed first on the bill
   f.lineNames[f.ids[1]] = 'TaToM55♾️'; // light miscount
   await f.hook([f.event('badbot bill')]);
   const tags = f.calls[0].messages.filter(m => m.type === 'textV2');
   assert.equal(tags.length, 1);
   const order = Object.values(tags[0].substitution).map(v => v.mentionee.userId);
-  assert.deepEqual(order, [f.ids[2], f.ids[3], f.ids[1], f.ids[0]]);
-  assert.match(tags[0].text, /\{m3\}\u200b{16}\nชำระเงินผ่านลิงก์ด้านบน$/);
-  // Two heavy names cannot share a message: the first one closes it.
-  f.lineNames[f.ids[1]] = '😀😀Bo😀';
-  f.calls.length = 0;
-  await f.hook([f.event('badbot bill')]);
-  const split = f.calls[0].messages.filter(m => m.type === 'textV2');
-  assert.deepEqual(
-    split.map(m => Object.values(m.substitution).map(v => v.mentionee.userId)),
-    [[f.ids[2], f.ids[3], f.ids[1]], [f.ids[0]]],
+  assert.deepEqual(order, [f.ids[2], f.ids[1], f.ids[0]]); // Nut, Tatom, Pete
+  assert.equal(
+    tags[0].text,
+    'ค้างจ่าย: {m0}' +
+      '\u200b'.repeat(16) +
+      ' {m1}' +
+      '\u200b'.repeat(16) +
+      ' {m2}' +
+      '\u200b'.repeat(16) +
+      '\nชำระเงินผ่านลิงก์ด้านบน',
   );
+});
+
+test('names LINE miscounts always end their message; two heavy names never share one', async t => {
+  const f = await billFixture(t, 4);
+  f.lineNames[f.ids[0]] = '♠️❄️Pete❄️♠️'; // heavy, listed first on the bill
+  f.lineNames[f.ids[1]] = '😀😀Bo😀'; // also heavy
+  await f.hook([f.event('badbot bill')]);
+  const groups = f.calls[0].messages
+    .filter(m => m.type === 'textV2')
+    .map(m => Object.values(m.substitution).map(v => v.mentionee.userId));
+  assert.deepEqual(groups, [[f.ids[2], f.ids[3], f.ids[1]], [f.ids[0]]]);
 });
 
 test('tagtest4 isolates name order, padding and a single special-name mention', async t => {

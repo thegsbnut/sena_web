@@ -31,10 +31,10 @@ test('plain names group together, miscounted names go last and end their message
     }
 });
 
-test('a message holds at most six mentions and nobody is dropped or duplicated', () => {
+test('a message holds at most three mentions and nobody is dropped or duplicated', () => {
   const people = Array.from({ length: 25 }, (_, i) => person('u' + i, i % 5 === 4 ? 6 : 0));
   const chunks = planMentionMessages(people);
-  assert(chunks.every(c => c.length <= 6));
+  assert(chunks.every(c => c.length <= 3));
   assert.deepEqual(
     chunks
       .flat()

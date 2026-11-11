@@ -59,7 +59,9 @@ export function mentionNameRisk(name) {
 // name is at most 1 (the largest tolerated shift seen), and the name that pushes
 // it over always ends the message. People with the biggest miscounts therefore
 // land last, and each such name closes its message.
-export const MAX_MENTIONS_PER_MESSAGE = 6;
+// 3 is the most that has been seen rendering in the real group; raise it only after
+// checking more on a real bill.
+export const MAX_MENTIONS_PER_MESSAGE = 3;
 export function planMentionMessages(people, max = MAX_MENTIONS_PER_MESSAGE) {
   const sorted = [...people].sort((a, b) => a.risk - b.risk);
   const chunks = [];
