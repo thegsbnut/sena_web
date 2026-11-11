@@ -116,3 +116,17 @@ Branch งานแก้: `codex/multi-mention-audit`
 
 - [LINE textV2 และ mention objects](https://developers.line.biz/en/reference/messaging-api/nojs/#text-message-v2): รองรับหลาย mention สูงสุด 20 ต่อ message, ผู้ถูกแท็กต้องอยู่ในกลุ่มปลายทาง และ validate endpoint ตรวจความเป็นสมาชิกไม่ได้
 - [LINE ReplyMessageRequest](https://line.github.io/line-bot-sdk-nodejs/apidocs/@line/namespaces/messagingApi/type-aliases/ReplyMessageRequest.html): notificationDisabled=false และข้อจำกัดการแจ้งเตือนตามการตั้งค่าผู้ใช้
+
+## ผลจริงหลัง deploy และตัวควบคุมทดสอบขั้นต่ำ
+
+ผู้จัดยืนยันว่าบิลคนเดียวแท็กเป็นสีฟ้าและกดได้ แต่หลายคนแท็กไม่ได้ แม้ส่ง textV2, ตรวจ userId ในกลุ่มผ่าน และ Reply API ตอบ 200 ดังนั้นการใส่ mention ในบรรทัดบิลก็ยังไม่แก้อาการจริง ไม่มีหลักฐานพอจะสรุปว่าเกิดจาก key ที่มีตัวเลข, รายละเอียดบิล หรือปัญหาภายใน LINE
+
+เพิ่มเฉพาะคำสั่งวินิจฉัย `badbot tagprobe` (branch codex/minimal-multi-mention-probe; ผู้จัดอนุมัติ deploy คำสั่งวินิจฉัยแล้ว):
+
+- ไม่ใส่ @ รายชื่อ: ใช้ชุด userId ที่จะถูกแท็กใน badbot bill จริงและกลุ่มเดิม ลดเหลือ message เดียว `textV2`, text `{a} {b} {c}`, substitution a/b/c อ้าง userId เดิม ไม่ใส่ชื่อ, ภาษาไทย, emoji, หัวข้อ, จำนวนเงิน, newline หรือลิงก์
+- ใส่ @ และเลือกชื่อจาก LINE: ใช้ userId จาก native mention และตรวจสมาชิกทุกคน ถ้าตรวจไม่ผ่านแม้คนเดียวให้แจ้งว่ายังไม่ได้ส่ง ไม่ลดชุดทดสอบเงียบ ๆ
+- จำกัด 20 คนตามขีดจำกัด message ถ้ามากกว่านั้นแจ้งชัดเจน ไม่ส่งหนึ่ง message ต่อคน
+- ส่ง Reply API หนึ่งครั้ง เก็บ request ID, response และ payload ปิดบังรหัสในตารางวินิจฉัยเดิม หน้าผู้จัดระบุ command ว่าผลล่าสุดมาจาก tagprobe หรือ bill
+- ไม่เปลี่ยน payload บิลหรือ tagtest อีก ตัวควบคุมนี้เป็นเครื่องมือเก็บหลักฐาน ไม่ใช่การอ้างว่าแก้แท็กสำเร็จ
+
+ถ้า tagprobe ชุดเดียวกับบิลกดไม่ได้ จะมี minimal reproduction พร้อม request ID ให้ LINE ตรวจสอบต่อ ถ้ากดได้จึงค่อยเปรียบเทียบรายละเอียดข้อความและ placeholder ทีละตัวแปร ห้ามสรุปสาเหตุก่อนผลจริง และห้ามใช้ผล unit test แทนการยืนยันสีแท็กบนแอป LINE

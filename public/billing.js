@@ -376,7 +376,7 @@
     'พร้อมแท็กตอนตรวจ: '+data.mentionCount+' คน',
     data.webhook.checked?'Webhook: '+(data.webhook.endpointMatches?'URL ถูกต้อง':'URL ไม่ตรงกับเว็บนี้')+' · '+(data.webhook.active?'เปิดอยู่':'ปิดอยู่'):'ยังตรวจ Webhook ไม่ได้',
     ...data.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)+(p.httpStatus?' (HTTP '+p.httpStatus+')':''))];
-   if(data.latest)lines.push('คำสั่งบิลล่าสุด: '+new Date(data.latest.updatedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}),'ส่งถึง LINE: HTTP '+data.latest.replyStatus+' · ส่งข้อมูล mention '+data.latest.mentionCount+' รายการ · '+data.latest.messageTypes.join(', '),...data.latest.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)));
+   if(data.latest)lines.push('คำสั่งที่ตรวจล่าสุด: '+(data.latest.command||'badbot bill')+' · '+new Date(data.latest.updatedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}),'ส่งถึง LINE: HTTP '+data.latest.replyStatus+' · ส่งข้อมูล mention '+data.latest.mentionCount+' รายการ · '+data.latest.messageTypes.join(', '),...data.latest.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)));
    else lines.push('ยังไม่มีบันทึกคำสั่งจริง ให้พิมพ์ badbot bill ในกลุ่มแล้วกดตรวจอีกครั้ง');
    if(data.latest){
     lines.push('ผล API: '+({accepted:'LINE รับคำขอแล้ว แต่ยังไม่ยืนยันสีแท็กหรือการแจ้งเตือน',rejected:'LINE ปฏิเสธข้อความ — การแท็กไม่สำเร็จ',network_error:'ติดต่อ LINE ไม่สำเร็จ — ยังยืนยันการส่งไม่ได้'}[data.latest.outcome]||'บันทึกเก่ามีเฉพาะ HTTP status'));

@@ -1,4 +1,4 @@
-import {mentionMessage,groupMentionTarget,lineReplyEvidence,redactedMentionPayload} from './line-mentions.js';
+import {mentionMessage,minimalMentionMessage,groupMentionTarget,lineReplyEvidence,redactedMentionPayload} from './line-mentions.js';
 import {memberMode,liffUrl} from './member.js';
 import {billingLineText,billingLineMessages} from './billing.js';
 import {bookingRoute} from './booking.js';
@@ -12,6 +12,7 @@ const thaiTime=new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',
 export const normalizeLineText=text=>String(text??'').normalize('NFKC').replace(/[\u200b\u200e\u200f\ufeff]/g,'').trim();
 
 const shortcuts=new Map([
+ ['tagprobe',{kind:'tagProbe',description:'ทดสอบแท็กผู้จ่ายบิลด้วยข้อความแท็กล้วน'}],
  ['tagtest',{kind:'tagTest',description:'ทดสอบแท็กบัญชีผู้พิมพ์คำสั่งโดยตรง'}],
  ['book 88',{kind:'book',club:'88',description:'ลิงก์จอง 88'}],
  ['book sena',{kind:'book',club:'sena',description:'ลิงก์จอง Sena'}],
@@ -45,6 +46,7 @@ function command(event){
  const match=/^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
  if(!match)return null;
  const action=(match[1]||'').trim().toLowerCase().replace(/\s+/g,' ');
+ if(/^tagprobe\s+/.test(action))return {kind:'tagProbe',friends:true};
  if(/^tagtest\s+/.test(action))return {kind:'tagTest',friends:true};
  if(shortcuts.has(action))return shortcuts.get(action);
  // Pairing codes are consumed by the existing administrator-only pairing flow.
@@ -213,7 +215,23 @@ export async function replyToGroupCommand(event,env){
  if(!claim.meta.changes)return;
  try{
   const messages=[],mentionDiagnostics=[];
-  if(action.kind==='tagTest'){
+  if(action.kind==='tagProbe'){
+   let ids=[];
+   if(action.friends){
+    const selected=[...new Set((event.message.mention?.mentionees||[]).filter(m=>m.type==='user'&&!m.isSelf&&/^U[a-f0-9]{32}$/.test(m.userId||'')).map(m=>m.userId))];
+    const results=await Promise.all(selected.map(userId=>groupMentionTarget(env,group,userId)));
+    if(selected.length&&results.every(r=>r.userId))ids=results.map(r=>r.userId);
+    else messages.push({type:'text',text:'ยังไม่ส่งแท็กทดสอบ: ต้องเลือกชื่อจาก @ ของ LINE และตรวจสมาชิกทุกคนผ่าน เพื่อทดสอบรายชื่อครบชุด'});
+   }else if(memberMode(env)&&env.LINE_LIFF_ID){
+    const billMessages=await billingLineMessages(env,'all',new URL(urls.sena).origin,group,mentionDiagnostics);
+    ids=[...new Set(billMessages.flatMap(m=>Object.values(m.substitution||{}).filter(v=>v.type==='mention'&&v.mentionee.type==='user').map(v=>v.mentionee.userId)))];
+   }
+   if(!messages.length){
+    if(ids.length>20)messages.push({type:'text',text:'ยังไม่ส่งแท็กทดสอบ: มีผู้จ่ายเกิน 20 คน กรุณาใช้ badbot tagprobe แล้ว @ เลือกคนที่ต้องการไม่เกิน 20 คน'});
+    else if(ids.length)messages.push(minimalMentionMessage(ids));
+    else messages.push({type:'text',text:'ยังไม่ส่งแท็กทดสอบ: ไม่พบผู้จ่ายบิลที่ตรวจสมาชิกกลุ่มผ่าน ใช้ badbot tagprobe แล้ว @ เลือกคนที่ต้องการทดสอบได้'});
+   }
+  }else if(action.kind==='tagTest'){
    if(action.friends){
     const ids=[...new Set((event.message.mention?.mentionees||[]).filter(m=>m.type==='user'&&!m.isSelf&&/^U[a-f0-9]{32}$/.test(m.userId||'')).map(m=>m.userId))].slice(0,20);
     if(!ids.length)messages.push({type:'text',text:'พิมพ์ badbot tagtest แล้วพิมพ์ @ และแตะเลือกชื่อเพื่อนจากรายชื่อของ LINE ก่อนส่ง แค่พิมพ์ @ชื่อเป็นตัวหนังสือจะทดสอบไม่ได้'});
@@ -257,9 +275,9 @@ export async function replyToGroupCommand(event,env){
    });
    evidence=await lineReplyEvidence(response,messages);
   }catch{evidence={replyStatus:0,outcome:'network_error',error:{message:'LINE reply timed out or network failed'},payload:redactedMentionPayload(messages),payloadRedacted:true,renderingConfirmed:false};}
-  if(action.kind==='bill')try{
+  if(['bill','tagProbe'].includes(action.kind))try{
    await db.prepare('CREATE TABLE IF NOT EXISTS line_bill_diagnostics (group_id TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
-   const report={...evidence,mentionCount:messages.reduce((n,m)=>n+Object.values(m.substitution||{}).filter(v=>v.type==='mention').length,0),messageTypes:messages.map(m=>m.type),payers:mentionDiagnostics};
+   const report={...evidence,command:action.kind==='tagProbe'?'badbot tagprobe':'badbot bill',mentionCount:messages.reduce((n,m)=>n+Object.values(m.substitution||{}).filter(v=>v.type==='mention').length,0),messageTypes:messages.map(m=>m.type),payers:mentionDiagnostics};
    await db.prepare('INSERT INTO line_bill_diagnostics VALUES(?,?,?) ON CONFLICT(group_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at').bind(group,JSON.stringify(report),new Date().toISOString()).run();
   }catch{console.error('Unable to store bill mention diagnostic');}
   if(!response)throw Error('LINE reply unavailable');

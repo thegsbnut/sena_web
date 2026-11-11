@@ -232,6 +232,46 @@ test('oversized bills explicitly decline the whole reminder instead of dropping 
  assert.match(messages[0].text,/ยังไม่ได้แท็กใคร/);assert.equal(f.report().mentionCount,0);
 });
 
+for(const count of [1,2,10,20])test('tagprobe sends exactly one minimal message for the same '+count+' bill payer IDs',async t=>{
+ const f=await billFixture(t,count);
+ await f.hook([f.event('badbot bill')]);
+ const billIds=f.calls[0].messages.flatMap(m=>Object.values(m.substitution||{}).map(v=>v.mentionee.userId));
+ await f.hook([f.event('badbot tagprobe')]);
+ const request=f.calls[1];assert.equal(request.messages.length,1);assert.equal(request.notificationDisabled,false);
+ const message=request.messages[0];assert.equal(message.type,'textV2');
+ const keys=Array.from({length:count},(_,i)=>String.fromCharCode(97+i));
+ assert.equal(message.text,keys.map(k=>'{'+k+'}').join(' '));
+ assert.deepEqual(Object.keys(message.substitution),keys);
+ assert.deepEqual(Object.values(message.substitution).map(v=>v.mentionee.userId),billIds);
+ assert.doesNotMatch(message.text,/https|บิล|Nut|Tom|นัท|ทอม|\n/);
+ const report=f.report();assert.equal(report.command,'badbot tagprobe');assert.equal(report.mentionCount,count);
+ assert.equal(report.requestId,'request-audit-123');assert.equal(report.renderingConfirmed,false);
+});
+test('tagprobe also accepts native selected users without requiring bills or roster links',async t=>{
+ const f=fixture(t),ids=['U'+'a'.repeat(32),'U'+'b'.repeat(32)];
+ const event=f.event('badbot tagprobe @หนึ่ง 🏸 @สอง');event.message.mention={mentionees:ids.map(userId=>({type:'user',userId}))};
+ await f.hook([event]);assert.equal(f.calls[0].messages.length,1);
+ assert.equal(f.calls[0].messages[0].text,'{a} {b}');
+ assert.deepEqual(Object.values(f.calls[0].messages[0].substitution).map(v=>v.mentionee.userId),ids);
+ assert.equal(f.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='member_links'").get().n,0);
+});
+test('tagprobe does not silently reduce a selected pair when one group membership check fails',async t=>{
+ const f=fixture(t),a='U'+'a'.repeat(32),b='U'+'b'.repeat(32);
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(String(url).includes('/group/'))return url.endsWith(a)?Response.json({userId:a}):Response.json({}, {status:404});
+  assert(String(url).endsWith('/message/reply'));f.calls.push(JSON.parse(options.body));return Response.json({});
+ });
+ const event=f.event('badbot tagprobe @หนึ่ง @สอง');event.message.mention={mentionees:[{type:'user',userId:a},{type:'user',userId:b}]};
+ await f.hook([event]);assert.equal(f.calls[0].messages.length,1);assert.equal(f.calls[0].messages[0].type,'text');
+ assert.match(f.calls[0].messages[0].text,/ยังไม่ส่งแท็กทดสอบ/);
+});
+test('tagprobe reports no eligible bill targets and over-limit bill targets instead of splitting per user',async t=>{
+ const f=await billFixture(t,21);await f.hook([f.event('badbot tagprobe')]);
+ assert.equal(f.calls[0].messages.length,1);assert.equal(f.calls[0].messages[0].type,'text');assert.match(f.calls[0].messages[0].text,/เกิน 20 คน/);
+ f.db.prepare('DELETE FROM bills').run();await f.hook([f.event('badbot tagprobe')]);
+ assert.equal(f.calls[1].messages.length,1);assert.match(f.calls[1].messages[0].text,/ไม่พบผู้จ่ายบิล/);
+});
+
 test('enabled member mode sends both booking buttons through the configured LIFF app',async t=>{
  const f=fixture(t);f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
  await f.hook([f.event()]);
