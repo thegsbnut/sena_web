@@ -11,6 +11,7 @@ const thaiTime=new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',
 export const normalizeLineText=text=>String(text??'').normalize('NFKC').replace(/[\u200b\u200e\u200f\ufeff]/g,'').trim();
 
 const shortcuts=new Map([
+ ['tagtest',{kind:'tagTest',description:'ทดสอบแท็กบัญชีผู้พิมพ์คำสั่งโดยตรง'}],
  ['book 88',{kind:'book',club:'88',description:'ลิงก์จอง 88'}],
  ['book sena',{kind:'book',club:'sena',description:'ลิงก์จอง Sena'}],
  ['list',{kind:'roster',scope:'all',description:'รายชื่อทั้งสองสนาม'}],
@@ -210,7 +211,16 @@ export async function replyToGroupCommand(event,env){
  if(!claim.meta.changes)return;
  try{
   const messages=[],mentionDiagnostics=[];
-  if(action.kind==='roster'){
+  if(action.kind==='tagTest'){
+   const userId=event.source.userId;
+   if(!/^U[a-f0-9]{32}$/.test(userId||'')){
+    messages.push({type:'text',text:'LINE ไม่ส่งรหัสบัญชีของผู้พิมพ์มา จึงยังทดสอบแท็กไม่ได้'});
+   }else{
+    const substitution={you:{type:'mention',mentionee:{type:'user',userId}}};
+    messages.push({type:'textV2',text:'Mention test: {you}',substitution});
+    messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อในข้อความทั้งสองอัน และตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+   }
+  }else if(action.kind==='roster'){
    const selected=action.scope==='all'?clubs:[action.scope];
    const sections=await Promise.all(selected.map(club=>rosterSection(env,club,now)));
    const text='🏸 รอบตีที่กำลังจะถึง\n\n'+sections.join('\n\n━━━━━━━━━━\n\n')+

@@ -49,6 +49,27 @@ function session(date,{names=2,closed=false,holiday=null,capacity=8}={}){
 }
 const textOf=call=>call.messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
 
+test('tagtest mentions the verified webhook sender directly without any roster or profile lookup',async t=>{
+ const f=fixture(t),userId='U'+'b'.repeat(32);
+ const event=f.event('badbot tagtest');event.source.userId=userId;
+ assert.equal((await f.hook([event])).status,200);
+ const messages=f.calls[0].messages;
+ assert.equal(messages.length,2);
+ assert.equal(messages[0].text,'Mention test: {you}');
+ for(const message of messages){
+  assert.equal(message.type,'textV2');
+  assert.deepEqual(message.substitution.you,{type:'mention',mentionee:{type:'user',userId}});
+  assert(!message.text.includes(userId));
+ }
+ assert.equal(f.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='member_links'").get().n,0);
+});
+
+test('tagtest does not fabricate a user ID when LINE does not provide one',async t=>{
+ const f=fixture(t);assert.equal((await f.hook([f.event('badbot tagtest')])).status,200);
+ assert.equal(f.calls[0].messages[0].type,'text');
+ assert.match(textOf(f.calls[0]),/ไม่ส่งรหัสบัญชี/);
+});
+
 test('signed bill webhook sends a real LINE mention object all the way to the reply API',async t=>{
  const f=fixture(t),userId='U'+'a'.repeat(32);
  f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
