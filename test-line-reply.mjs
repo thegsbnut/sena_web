@@ -405,7 +405,7 @@ test('very long bills still list every payer by name and stay within five LINE m
     assert.equal(Object.keys(m.substitution).length, 1);
 });
 
-test('tagtest4 buffers every mention with two or three special names in either order', async t => {
+test('tagtest4 isolates name order, padding and a single special-name mention', async t => {
   const f = fixture(t),
     sender = 'U' + 'c'.repeat(32),
     a = 'U' + 'a'.repeat(32),
@@ -434,8 +434,8 @@ test('tagtest4 buffers every mention with two or three special names in either o
     assert.deepEqual(run.map(m => m.type), ['text', 'textV2', 'textV2', 'textV2', 'textV2']);
     assert.deepEqual(ids(run[1]), order);
     assert.deepEqual(ids(run[2]), order);
-    assert.deepEqual(ids(run[3]), [...order].reverse());
-    assert.deepEqual(ids(run[4]), order);
+    assert.deepEqual(ids(run[3]), [order[0], order[2], order[1]]);
+    assert.deepEqual(ids(run[4]), [order[2]]);
     assert.equal(run[1].text, '[2] {m0} {m1} {m2}\nครบไหม ข้อความนี้');
     for (const index of [2, 3]) {
       assert.equal(
@@ -447,22 +447,21 @@ test('tagtest4 buffers every mention with two or three special names in either o
     }
     assert.equal(
       run[4].text,
-      '[5] ' + [0, 1, 2].map(i => '{m' + i + '}' + ' '.repeat(16)).join(' ') +
-        '\nครบไหม ข้อความนี้',
+      '[5] ยอดทดสอบ 1 บ. · {m0}' + '\u200b'.repeat(16) + '\nครบไหม ข้อความนี้',
     );
   }
-  const order = [a, b, sender];
+  const order = [sender, b, a];
   const run = await send([a, b]);
   check(run, order);
   assert.match(run[0].text, /Pete.*ตัวที่เห็น 4/);
   assert.match(run[0].text, /TaToM55.*ตัวที่เห็น 1/);
-  check(await send([b, a]), [b, a, sender]);
+  check(await send([b, a]), order);
   names[sender] = 'Nut😀';
-  check(await send([a, b]), order);
+  check(await send([a, b]), [b, sender, a]);
   names[sender] = 'Nut';
   names[a] = 'Pete';
   names[b] = 'Tatom';
-  check(await send([a, b]), order);
+  check(await send([a, b]), [a, b, sender]);
   const incomplete = await send([a]);
   assert.equal(incomplete.length, 1);
   assert.match(incomplete[0].text, /แตะเลือกเพื่อนอีก 2 คน/);

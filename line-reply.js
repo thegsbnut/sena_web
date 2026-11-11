@@ -447,12 +447,14 @@ export async function replyToGroupCommand(event, env) {
               { type: 'mention', mentionee: { type: 'user', userId: p.id } },
             ]),
           );
-        // Test whether padding absorbs the suspected name expansion. Include it
-        // after every mention, including the last, and keep it outside the token.
+        // Compare the passing order with and without padding, then move the
+        // highest-risk name to the middle and isolate it in its own message.
         const tags = (list, padding = '') =>
           list.map((_, i) => '{m' + i + '}' + padding).join(' ');
         const zwsp = '\u200b'.repeat(16),
-          reversed = [...people].reverse(),
+          ordered = [...people].sort((a, b) => a.risk - b.risk),
+          middle = [ordered[0], ordered[2], ordered[1]],
+          single = [ordered[2]],
           run = Math.random().toString(36).slice(2, 6);
         messages.push(
           {
@@ -464,28 +466,28 @@ export async function replyToGroupCommand(event, env) {
               people
                 .map(p => p.name + ' (ส่วนต่าง UTF-16/ตัวที่เห็น ' + p.risk + ')')
                 .join('\n') +
-              '\n[2] ไม่ใส่กันชน\n[3] กันชนมองไม่เห็นหลังทุกชื่อ\n[4] เหมือน [3] แต่กลับลำดับ\n[5] ช่องว่างหลังทุกชื่อ' +
+              '\n[2] เรียงส่วนต่างน้อยไปมาก ไม่ใส่กันชน\n[3] ลำดับเดียวกับ [2] ใส่กันชน\n[4] ย้ายชื่อส่วนต่างมากสุดไว้กลาง ใส่กันชน\n[5] ชื่อส่วนต่างมากสุดคนเดียว ใส่กันชน' +
               '\nดูว่าแต่ละข้อความแท็กครบเป็นสีฟ้าไหม และคำว่า "ครบไหม" อยู่ครบหรือแหว่ง',
           },
           {
             type: 'textV2',
-            text: '[2] ' + tags(people) + '\nครบไหม ข้อความนี้',
-            substitution: sub(people),
+            text: '[2] ' + tags(ordered) + '\nครบไหม ข้อความนี้',
+            substitution: sub(ordered),
           },
           {
             type: 'textV2',
-            text: '[3] ' + tags(people, zwsp) + '\nครบไหม ข้อความนี้',
-            substitution: sub(people),
+            text: '[3] ' + tags(ordered, zwsp) + '\nครบไหม ข้อความนี้',
+            substitution: sub(ordered),
           },
           {
             type: 'textV2',
-            text: '[4] ' + tags(reversed, zwsp) + '\nครบไหม ข้อความนี้',
-            substitution: sub(reversed),
+            text: '[4] ' + tags(middle, zwsp) + '\nครบไหม ข้อความนี้',
+            substitution: sub(middle),
           },
           {
             type: 'textV2',
-            text: '[5] ' + tags(people, ' '.repeat(16)) + '\nครบไหม ข้อความนี้',
-            substitution: sub(people),
+            text: '[5] ยอดทดสอบ 1 บ. · ' + tags(single, zwsp) + '\nครบไหม ข้อความนี้',
+            substitution: sub(single),
           },
         );
       }
