@@ -527,6 +527,68 @@ test('a new member signs up with a unique name and is linked in both clubs at LV
   );
 });
 
+test('organizer edits of linked players reach the other club; self sign-ups are flagged for review', async t => {
+  const f = fixture(t),
+    member = await f.login(),
+    admin = await f.admin();
+  assert.equal(
+    (await f.request('/api/member/link', { newMember: { name: 'มด', gender: 'F' } }, member))
+      .status,
+    200,
+  );
+  const roster = table =>
+    JSON.parse(f.db.prepare(`SELECT payload FROM ${table} WHERE id=1`).get().payload).players;
+  const mod = table => roster(table).find(p => p.name === 'มด');
+  // Flagged in both clubs with the LINE profile name, visible to organizers only.
+  for (const table of ['club_state', 'club_state_88'])
+    assert.equal(mod(table).selfSignup.lineName, 'Odd LINE name', table);
+  const guest = await (await f.request('/api/state')).json();
+  assert(!JSON.stringify(guest).includes('selfSignup'));
+  assert(!JSON.stringify(guest).includes('Odd LINE name'));
+  // 88 has an unrelated 'Zed'; Sena has an unlinked 'Pete'.
+  const s88 = f.db.prepare('SELECT revision,payload FROM club_state_88 WHERE id=1').get();
+  const st88 = JSON.parse(s88.payload);
+  st88.players.push({ id: 'z88', name: 'Zed', thai: '', lv: 5, gender: 'M' });
+  f.db.prepare('UPDATE club_state_88 SET payload=? WHERE id=1').run(JSON.stringify(st88));
+  const save = async edit => {
+    const cur = await (await f.request('/api/state', null, admin)).json();
+    edit(cur.state.players);
+    return (
+      await f.request('/api/state', { state: cur.state, revision: cur.revision }, admin)
+    ).json();
+  };
+  // Organizer reviews มด in Sena: renames, sets LV, clears the flag -> mirrored to 88.
+  let result = await save(players => {
+    const p = players.find(x => x.name === 'มด');
+    Object.assign(p, { name: 'มดแดง', lv: 7.5 });
+    delete p.selfSignup;
+    players.find(x => x.name === 'Pete').lv = 9;
+  });
+  assert.equal(result.synced, 1);
+  assert.deepEqual(result.skipped, []);
+  const in88 = roster('club_state_88').find(p => p.name === 'มดแดง');
+  assert.equal(in88.lv, 7.5);
+  assert.equal(in88.selfSignup, undefined);
+  // Unlinked players are not copied (Pete exists only in Sena's roster anyway).
+  assert(!roster('club_state_88').some(p => p.name === 'Pete'));
+  // A rename that clashes over there keeps the old name there, still copies LV, and says so.
+  result = await save(players =>
+    Object.assign(
+      players.find(x => x.name === 'มดแดง'),
+      { name: 'Zed', lv: 8 },
+    ),
+  );
+  assert.equal(result.synced, 1);
+  assert.deepEqual(result.skipped, [{ name: 'Zed', club: '88', reason: 'name_taken' }]);
+  const after = roster('club_state_88').find(p => p.id === in88.id);
+  assert.deepEqual([after.name, after.lv], ['มดแดง', 8]);
+  // The member stays linked through all of it.
+  assert.equal(
+    (await (await f.request('/api/member', null, member)).json()).link.status,
+    'approved',
+  );
+});
+
 test('existing-player linking is immediate, isolates clubs, and limits booking and cancellation to self', async t => {
   const f = fixture(t),
     admin = await f.admin(),

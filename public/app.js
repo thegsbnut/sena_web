@@ -167,7 +167,7 @@ function renderRoster() {
   $('#rosterRows').innerHTML = state.players
     .map(
       p =>
-        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span></strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
+        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span>${p.selfSignup ? `<span class="newbadge" title="สมัครเองผ่าน LINE ยังไม่ได้ตรวจ LV">🆕 สมัครเอง</span><small class="newbadge-line">LINE: ${esc(p.selfSignup.lineName || '-')} · กดแก้ไขเพื่อตรวจ LV</small>` : ''}</strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
     )
     .join('');
 }
@@ -472,6 +472,8 @@ $('#editForm').onsubmit = e => {
     lv: +f.lv.value,
     gender: f.gender.value,
   });
+  // Saving the edit dialog counts as reviewing a self-signed-up member.
+  delete person(editId).selfSignup;
   invalidate();
   renderRoster();
   renderPlayers();

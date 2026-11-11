@@ -634,3 +634,22 @@ dialog::backdrop {
     margin-left: 0;
   }
 }
+
+/* Self-signed-up member awaiting the organizer's LV review. */
+.newbadge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #fff3c4;
+  color: #6b4e00;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.newbadge-line {
+  display: block;
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: #6b4e00;
+}

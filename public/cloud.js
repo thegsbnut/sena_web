@@ -142,10 +142,19 @@ $('#cloudSave').onclick = async () => {
     if (!r.ok) throw Error(d.error);
     cloudRevision = d.revision;
     cloudDirty = JSON.stringify(state) !== snapshot;
+    const notes = [];
+    if (d.synced) notes.push('อัปเดตอีกสนามให้ ' + d.synced + ' คน');
+    for (const s of d.skipped || [])
+      notes.push(
+        s.reason === 'name_taken'
+          ? 'ไม่ได้เปลี่ยนชื่อเป็น "' + s.name + '" ใน ' + s.club + ' เพราะมีชื่อนี้แล้ว'
+          : 'อัปเดตอีกสนามไม่สำเร็จ กรุณาตรวจรายชื่ออีกสนาม',
+      );
     cloudStatus(
-      cloudDirty
+      (cloudDirty
         ? 'บันทึกชุดก่อนแล้ว ยังมีการแก้ไขใหม่ค้างอยู่'
-        : 'บันทึกออนไลน์แล้ว ✓ รุ่น ' + cloudRevision,
+        : 'บันทึกออนไลน์แล้ว ✓ รุ่น ' + cloudRevision) +
+        (notes.length ? ' · ' + notes.join(' · ') : ''),
     );
   } catch (e) {
     cloudStatus(e.message);

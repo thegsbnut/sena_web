@@ -166,16 +166,17 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
     const result =
       input.revision === 0
         ? await env.DB.prepare(
-            `INSERT OR IGNORE INTO ${table} (id,revision,sequence,payload) VALUES (?,1,(SELECT COALESCE(MAX(sequence),0)+1 FROM ${table}),?)`,
+            `INSERT OR IGNORE INTO ${table} (id,revision,sequence,payload) VALUES (?,1,(SELECT COALESCE(MAX(sequence),0)+1 FROM ${table}),?) RETURNING revision`,
           )
             .bind(input.id, payload)
-            .run()
+            .first()
         : await env.DB.prepare(
-            `UPDATE ${table} SET payload=?,revision=revision+1 WHERE id=? AND revision=?`,
+            `UPDATE ${table} SET payload=?,revision=revision+1 WHERE id=? AND revision=? RETURNING revision`,
           )
             .bind(payload, input.id, input.revision)
-            .run();
-    if (result.meta.changes !== 1)
+            .first();
+    // RETURNING row = this write happened (D1's meta.changes also counts the backup trigger).
+    if (!result)
       return reply(
         { error: 'รายการนี้บันทึกแล้วหรือมีการแก้จากอีกเครื่อง กรุณาโหลดประวัติใหม่ก่อน' },
         409,

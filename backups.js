@@ -120,15 +120,15 @@ export async function backupsRoute(req, env, isAdmin, club, valid) {
     result =
       input.revision === 0
         ? await env.DB.prepare(
-            `INSERT OR IGNORE INTO ${t.state} (id,revision,payload,updated_at) VALUES (1,1,?,?)`,
+            `INSERT OR IGNORE INTO ${t.state} (id,revision,payload,updated_at) VALUES (1,1,?,?) RETURNING revision`,
           )
             .bind(row.payload, now)
-            .run()
+            .first()
         : await env.DB.prepare(
-            `UPDATE ${t.state} SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=?`,
+            `UPDATE ${t.state} SET payload=?,revision=revision+1,updated_at=? WHERE id=1 AND revision=? RETURNING revision`,
           )
             .bind(row.payload, now, input.revision)
-            .run();
+            .first();
   } else {
     let cup;
     try {
@@ -137,12 +137,13 @@ export async function backupsRoute(req, env, isAdmin, club, valid) {
       return reply({ error: 'ประวัติสำรองกู้คืนไม่ได้' }, 400);
     }
     result = await env.DB.prepare(
-      `UPDATE ${t.history} SET payload=?,revision=revision+1 WHERE id=? AND revision=?`,
+      `UPDATE ${t.history} SET payload=?,revision=revision+1 WHERE id=? AND revision=? RETURNING revision`,
     )
       .bind(JSON.stringify(cup), row.target, input.revision)
-      .run();
+      .first();
   }
-  if (result.meta.changes !== 1)
+  // RETURNING row = this write happened (D1's meta.changes also counts the backup trigger).
+  if (!result)
     return reply({ error: 'ข้อมูลเปลี่ยนจากอีกเครื่อง กรุณาโหลดใหม่แล้วเลือกกู้คืนอีกครั้ง' }, 409);
   return reply({ ok: true, kind: row.kind, revision: input.revision + 1 });
 }
