@@ -4,6 +4,7 @@ import {
   redactedMentionPayload,
   groupMentionTarget,
   validLineUserId,
+  mentionNameRisk,
 } from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
 import { logError } from './log.js';
@@ -67,7 +68,7 @@ function command(event) {
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
   // TEMPORARY diagnostic (remove once the mention rule is known): hidden from `help`.
-  if (/^tagtest3(\s|$)/.test(action)) return { kind: 'tagTest3' };
+  if (/^tagtest4(\s|$)/.test(action)) return { kind: 'tagTest4' };
   if (shortcuts.has(action)) return shortcuts.get(action);
   // Pairing codes are consumed by the existing administrator-only pairing flow.
   if (/^[a-f0-9]{32}$/i.test(action)) return null;
@@ -410,31 +411,56 @@ export async function replyToGroupCommand(event, env) {
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'tagTest3') {
-      // Which multi-mention layouts render as real mentions, and does it depend on
-      // whether the viewer is one of the people mentioned? a/b = the two friends
-      // picked with @, c = the sender. Each viewer reports what they see.
+    if (action.kind === 'tagTest4') {
+      // Confirms the name-length theory: names LINE miscounts must come last in a
+      // message, at most one per message, followed by invisible padding.
       const friends = (event.message.mention?.mentionees || [])
         .filter(m => m.type === 'user' && !m.isSelf && validLineUserId(m.userId))
         .map(m => m.userId);
       const ids = [
         ...new Set([...friends.slice(0, 2), event.source.userId].filter(validLineUserId)),
       ];
+      const checks =
+        ids.length === 3
+          ? await Promise.all(ids.map(id => groupMentionTarget(env, group, id)))
+          : [];
       if (ids.length < 3)
         messages.push({
           type: 'text',
-          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest3 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
+          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest4 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
+        });
+      else if (!checks.every(c => c.userId))
+        messages.push({
+          type: 'text',
+          text: 'ทดสอบแท็กไม่ได้: ตรวจยืนยันสมาชิกในกลุ่มไม่ครบทั้ง 3 คน',
         });
       else {
-        const checks = await Promise.all(ids.map(userId => groupMentionTarget(env, group, userId)));
-        if (!checks.every(c => c.userId))
+        const people = checks.map(c => ({
+          id: c.userId,
+          name: c.displayName,
+          risk: mentionNameRisk(c.displayName),
+        }));
+        const safe = people.filter(p => !p.risk),
+          risky = people.filter(p => p.risk);
+        if (!risky.length || safe.length < 2)
           messages.push({
             type: 'text',
-            text: 'ทดสอบแท็กไม่ได้: ตรวจยืนยันสมาชิกในกลุ่มไม่ครบทั้ง 3 คน',
+            text:
+              'ทดสอบนี้ต้องมีคนชื่อธรรมดา 2 คน และคนชื่อมีอักขระพิเศษ 1 คน ตอนนี้: ' +
+              people.map(p => p.name + (p.risk ? ' (พิเศษ)' : ' (ธรรมดา)')).join(', '),
           });
         else {
-          const [a, b, c] = ids,
-            who = id => ({ type: 'mention', mentionee: { type: 'user', userId: id } }),
+          const [s1, s2] = safe,
+            r = risky[0],
+            sub = list =>
+              Object.fromEntries(
+                list.map((p, i) => [
+                  'm' + i,
+                  { type: 'mention', mentionee: { type: 'user', userId: p.id } },
+                ]),
+              ),
+            tags = list => list.map((_, i) => '{m' + i + '}').join(' '),
+            zwsp = '\u200b'.repeat(16),
             run = Math.random().toString(36).slice(2, 6);
           messages.push(
             {
@@ -442,27 +468,31 @@ export async function replyToGroupCommand(event, env) {
               text:
                 'ทดสอบแท็ก รอบ ' +
                 run +
-                '\nทุกคนที่ถูกแท็ก ช่วยดูจากมือถือตัวเองว่า [2]–[5] อันไหนชื่อเป็นสีฟ้า (แตะได้) แล้วแคปจอส่งมา',
+                '\nชื่อมีอักขระพิเศษ: ' +
+                r.name +
+                ' (LINE นับเกิน ' +
+                r.risk +
+                ' ตัว)\nดูว่า [2]–[5] อันไหนสีฟ้า และข้อความ "ครบไหม" อยู่ครบหรือแหว่ง',
             },
             {
               type: 'textV2',
-              text: '[2] {a} {b}\nข้อความต่อท้ายชื่อ',
-              substitution: { a: who(a), b: who(b) },
+              text: '[2] ' + tags([s1, s2]) + '\nครบไหม ข้อความนี้',
+              substitution: sub([s1, s2]),
             },
             {
               type: 'textV2',
-              text: '[3] {a} {c}\nข้อความต่อท้ายชื่อ',
-              substitution: { a: who(a), c: who(c) },
+              text: '[3] ' + tags([s1, s2, r]) + zwsp + '\nครบไหม ข้อความนี้',
+              substitution: sub([s1, s2, r]),
             },
             {
               type: 'textV2',
-              text: '[4] {a} {b} ข้อความต่อท้ายบรรทัดเดียวกัน',
-              substitution: { a: who(a), b: who(b) },
+              text: '[4] ' + tags([s1, s2, r]) + ' '.repeat(16) + '\nครบไหม ข้อความนี้',
+              substitution: sub([s1, s2, r]),
             },
             {
               type: 'textV2',
-              text: '[5] รายการแบบบิล\n• {a} 333 บ.\n• {b} 333 บ.\nชำระผ่านลิงก์ด้านบน',
-              substitution: { a: who(a), b: who(b) },
+              text: '[5] ' + tags([r, s1, s2]) + '\nครบไหม ข้อความนี้',
+              substitution: sub([r, s1, s2]),
             },
           );
         }

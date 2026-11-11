@@ -831,7 +831,7 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         if (!membership.has(link.user_id))
           membership.set(link.user_id, groupMentionTarget(env, groupId, link.user_id));
         const result = await membership.get(link.user_id),
-          { userId, ...evidence } = result;
+          { userId, displayName, ...evidence } = result;
         diagnostics.push({ name: p.name, ...evidence });
         return { p, ...result };
       }),

@@ -405,18 +405,17 @@ test('very long bills still list every payer by name and stay within five LINE m
     assert.equal(Object.keys(m.substitution).length, 1);
 });
 
-test('tagtest3 diagnostic separates trailing text, layout and self-mention, using two friends plus the sender', async t => {
+test('tagtest4 puts plain names first and one miscounted name last with padding', async t => {
   const f = fixture(t),
     sender = 'U' + 'c'.repeat(32),
     a = 'U' + 'a'.repeat(32),
     b = 'U' + 'b'.repeat(32);
-  let missing = null;
+  const names = { [sender]: 'Nut', [a]: '♠️❄️Pete❄️♠️', [b]: 'TaToM55∞' };
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (String(url).includes('/group/')) {
       const userId = String(url).split('/').at(-1);
-      return userId === missing ? Response.json({}, { status: 404 }) : Response.json({ userId });
+      return Response.json({ userId, displayName: names[userId] });
     }
-    assert(String(url).endsWith('/message/reply'));
     f.calls.push(JSON.parse(options.body));
     return Response.json({ sentMessages: [] });
   });
@@ -427,32 +426,27 @@ test('tagtest3 diagnostic separates trailing text, layout and self-mention, usin
     await f.hook([event]);
     return f.calls.at(-1).messages;
   };
-  const run = await send('badbot tagtest3 @a @b', [a, b]);
+  const run = await send('badbot tagtest4 @pete @tatom', [a, b]);
   assert.deepEqual(
     run.map(m => m.type),
     ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
   );
+  assert.match(run[0].text, /LINE นับเกิน 4 ตัว/);
   const ids = m => Object.values(m.substitution).map(v => v.mentionee.userId);
-  assert.deepEqual(ids(run[1]), [a, b]); // friends only, text on the next line
-  assert.deepEqual(ids(run[2]), [a, sender]); // includes the sender (viewer) themself
-  assert.deepEqual(ids(run[3]), [a, b]); // text on the same line
-  assert.deepEqual(ids(run[4]), [a, b]); // bill-like list
-  assert.match(run[1].text, /\{b\}\n.+/);
-  assert.match(run[3].text, /\{b\} \S/);
-  assert.match(run[4].text, /• \{a\} 333 บ\.\n• \{b\} 333 บ\.\n/);
-  for (const m of run.slice(1)) {
-    for (const key of Object.keys(m.substitution)) assert(m.text.includes('{' + key + '}'));
-    assert.doesNotMatch(m.text, /\}$/); // every layout has text after the last mention
-  }
+  assert.deepEqual(ids(run[1]), [b, sender]); // plain names only
+  assert.deepEqual(ids(run[2]), [b, sender, a]); // miscounted name last
+  assert.match(run[2].text, /\{m2\}\u200b{16}\n/); // invisible padding after it
+  assert.match(run[3].text, /\{m2\} {16}\n/); // space padding variant
+  assert.deepEqual(ids(run[4]), [a, b, sender]); // control: miscounted name first
   assert.doesNotMatch(textOf(await sendHelp(f)), /tagtest/);
-  const few = await send('badbot tagtest3 @a', [a]);
+  // Without a miscounted name the experiment explains instead of sending mentions.
+  names[a] = 'Pete';
+  const plain = await send('badbot tagtest4 @pete @tatom', [a, b]);
   assert.deepEqual(
-    few.map(m => m.type),
+    plain.map(m => m.type),
     ['text'],
   );
-  missing = b;
-  const bad = await send('badbot tagtest3 @a @b', [a, b]);
-  assert.match(bad[0].text, /ตรวจยืนยันสมาชิกในกลุ่มไม่ครบ/);
+  assert.match(plain[0].text, /Pete \(ธรรมดา\)/);
 });
 async function sendHelp(f) {
   await f.hook([f.event('badbot help')]);
