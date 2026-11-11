@@ -24,10 +24,27 @@ export async function groupMentionTarget(env, groupId, userId) {
       };
     const profile = await response.json();
     if (profile.userId !== userId) return { httpStatus, reason: 'line_profile_identity_mismatch' };
-    return { userId, httpStatus, reason: 'mention_ready' };
+    return {
+      userId,
+      displayName: typeof profile.displayName === 'string' ? profile.displayName : '',
+      httpStatus,
+      reason: 'mention_ready',
+    };
   } catch {
     return { reason: 'line_profile_timeout_or_network' };
   }
+}
+
+// LINE miscounts the length of a mentioned name when what is drawn as one
+// character takes several UTF-16 units (emoji, variation selectors U+FE0F,
+// ZWJ sequences, and possibly Thai vowel/tone marks). Mentions after such a
+// name in the same message then land in the wrong place and stop rendering,
+// and the characters right after it are swallowed. Treat any name whose
+// grapheme count differs from its UTF-16 length as risky.
+const graphemes = new Intl.Segmenter('th', { granularity: 'grapheme' });
+export function mentionNameRisk(name) {
+  const text = String(name || '');
+  return text.length - [...graphemes.segment(text)].length;
 }
 
 // Keep the exact message shape for diagnosis, with synthetic IDs instead of
