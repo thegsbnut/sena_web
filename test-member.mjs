@@ -885,7 +885,7 @@ test('organizer mention diagnostics report the actual fallback and verify the we
   assert(!JSON.stringify(report).includes(uid));
 });
 
-test('maximum bill reminders list every payer by name, tag one per message, and stay within five LINE messages', async t => {
+test('maximum bill reminders list every payer by name, tag in groups, and stay within five LINE messages', async t => {
   const f = fixture(t);
   await f.request('/api/member');
   f.db.exec(
@@ -917,10 +917,14 @@ test('maximum bill reminders list every payer by name, tag one per message, and 
     summaries = messages.filter(m => m.type === 'text');
   assert.equal(messages.length, 5);
   assert.equal(summaries.length, 2);
-  assert(mentions.every(m => Object.keys(m.substitution).length === 1));
-  const tagged = mentions.map(m => m.substitution.member.mentionee.userId);
-  assert.equal(new Set(tagged).size, 3);
+  // Grouped tags (<= 3 names each) fill the three remaining slots; the rest is
+  // offered through the quick-reply button.
+  assert(mentions.every(m => Object.keys(m.substitution).length <= 3));
+  const tagged = mentions.flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId));
+  assert.equal(new Set(tagged).size, tagged.length);
+  assert.equal(tagged.length, 9);
   assert(tagged.every(id => ids.includes(id)));
+  assert.equal(messages.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 39 คน');
   const billText = summaries.map(m => m.text).join('\n');
   assert.equal((billText.match(/• /g) || []).length, 48);
 });

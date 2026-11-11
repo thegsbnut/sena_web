@@ -1,6 +1,11 @@
 import { clubOf, CLUB_IDS } from './clubs.js';
 import { logError } from './log.js';
-import { groupMentionTarget } from './line-mentions.js';
+import {
+  groupMentionTarget,
+  mentionNameRisk,
+  planMentionMessages,
+  mentionGroupMessage,
+} from './line-mentions.js';
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
 import qrcode from 'qrcode-generator';
 
@@ -770,7 +775,14 @@ export async function prunePaidSlips(env) {
 
 // No private payer tokens are placed in group messages. The LIFF destination
 // resolves the signed-in account to its own payer after authentication.
-export async function billingLineMessages(env, scope, origin, groupId, diagnostics = []) {
+export async function billingLineMessages(
+  env,
+  scope,
+  origin,
+  groupId,
+  diagnostics = [],
+  { tagsFrom = null } = {},
+) {
   if (!memberMode(env) || !env.LINE_LIFF_ID) return null;
   await prepare(env.DB);
   await prepareMembers(env.DB);
@@ -795,10 +807,9 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         text: '✅ ไม่มีบิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
       },
     ];
-  // LINE renders every mention in a message as plain text once the message
-  // contains more than one mention (confirmed in the real group with a bare
-  // "{a} {b}" probe). So the bill summary is plain text, and each payer is
-  // tagged in their own single-mention message, within the 5-message reply cap.
+  // The summary is plain text and lists everyone. Tags follow in grouped messages
+  // (see planMentionMessages for the layout rules); what does not fit in the
+  // 5-message reply is offered as a "tag the rest" quick-reply button.
   const messages = [],
     membership = new Map(),
     owed = new Map();
@@ -846,9 +857,13 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         money(outstanding(bill)) +
         ' บ.',
     );
-    for (const { p, userId, reason } of entries) {
+    for (const { p, userId, displayName, reason } of entries) {
       if (userId) {
-        owed.set(userId, (owed.get(userId) || 0) + p.amount);
+        const seen = owed.get(userId);
+        owed.set(userId, {
+          amount: (seen?.amount || 0) + p.amount,
+          risk: seen?.risk ?? mentionNameRisk(displayName),
+        });
         append('• ' + p.name + ' ' + money(p.amount) + ' บ.');
       } else
         append(
@@ -871,6 +886,8 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
   if (groups.some(g => g.results.length > limit))
     append('แสดง ' + limit + ' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด');
   flush();
+  // Continuation from the quick-reply button: only the next tags, no summary.
+  if (tagsFrom !== null) messages.length = 0;
   if (messages.length > 5) {
     diagnostics.push({ reason: 'reply_message_limit' });
     return [
@@ -880,17 +897,37 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
       },
     ];
   }
-  // Everyone is already listed by name above; tag as many as the reply allows,
-  // largest outstanding total first.
-  const slots = 5 - messages.length,
-    targets = [...owed].sort((x, y) => y[1] - x[1]);
-  for (const [userId, amount] of targets.slice(0, slots))
-    messages.push({
-      type: 'textV2',
-      text: '{member} ค้างรวม ' + money(amount) + ' บ.',
-      substitution: { member: { type: 'mention', mentionee: { type: 'user', userId } } },
-    });
-  if (targets.length > slots)
-    diagnostics.push({ reason: 'mention_slots_exhausted', untagged: targets.length - slots });
+  return addTagMessages(messages, owed, scope, diagnostics, tagsFrom);
+}
+
+const TAG_PREFIX = 'ค้างจ่าย: ',
+  TAG_SUFFIX = 'ชำระเงินผ่านลิงก์ด้านบน';
+// Tag chunks from `from` on, as many as the 5-message reply allows; if some are
+// left, a quick-reply button on the last message tags the next ones for free.
+function addTagMessages(messages, owed, scope, diagnostics, from) {
+  const people = [...owed].map(([userId, v]) => ({ userId, ...v })),
+    chunks = planMentionMessages(people),
+    start = from ?? 0,
+    slots = 5 - messages.length,
+    shown = chunks.slice(start, start + slots);
+  for (const chunk of shown) messages.push(mentionGroupMessage(chunk, TAG_PREFIX, TAG_SUFFIX));
+  // A stale button (bills paid or changed since) must still produce a valid reply.
+  if (!messages.length) messages.push({ type: 'text', text: 'ไม่มีรายชื่อที่ต้องแท็กเพิ่มแล้ว' });
+  const left = chunks.slice(start + slots).reduce((n, c) => n + c.length, 0);
+  if (left && messages.length)
+    messages.at(-1).quickReply = {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'postback',
+            label: 'แท็กต่ออีก ' + left + ' คน',
+            data: 'badbot:billtag:' + scope + ':' + (start + slots),
+            displayText: 'แท็กต่อ',
+          },
+        },
+      ],
+    };
+  if (left) diagnostics.push({ reason: 'mention_continued', remaining: left });
   return messages;
 }
