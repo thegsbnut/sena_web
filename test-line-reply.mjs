@@ -101,11 +101,13 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
  assert.equal((await f.hook([f.event('badbot bill')])).status,200);
  const message=f.calls[0].messages[0];
  assert.equal(message.type,'textV2');
- assert.deepEqual(message.substitution.u0,{type:'mention',mentionee:{type:'user',userId}});
- assert.match(message.text,/Nut 85 บ\. \{u0\}/);
+ assert.deepEqual(message.substitution.friend0,{type:'mention',mentionee:{type:'user',userId}});
+ assert.match(message.text,/ผู้รับผิดชอบบิลที่ยังค้าง: \{friend0\}/);
+ assert.match(f.calls[0].messages[1].text,/Nut 85 บ\./);
+ assert.equal(f.calls[0].messages[1].type,'text');
  assert.doesNotMatch(message.text,/@Nut/);
  const diagnostic=JSON.parse(f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload);
- assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['textV2']);
+ assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['textV2','text']);
  assert.doesNotMatch(JSON.stringify(diagnostic),new RegExp(userId));
 });
 
