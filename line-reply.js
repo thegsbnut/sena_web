@@ -44,6 +44,7 @@ function command(event){
  const match=/^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
  if(!match)return null;
  const action=(match[1]||'').trim().toLowerCase().replace(/\s+/g,' ');
+ if(/^tagtest\s+/.test(action))return {kind:'tagTest',friends:true};
  if(shortcuts.has(action))return shortcuts.get(action);
  // Pairing codes are consumed by the existing administrator-only pairing flow.
  if(/^[a-f0-9]{32}$/i.test(action))return null;
@@ -212,6 +213,16 @@ export async function replyToGroupCommand(event,env){
  try{
   const messages=[],mentionDiagnostics=[];
   if(action.kind==='tagTest'){
+   if(action.friends){
+    const ids=[...new Set((event.message.mention?.mentionees||[]).filter(m=>m.type==='user'&&!m.isSelf&&/^U[a-f0-9]{32}$/.test(m.userId||'')).map(m=>m.userId))].slice(0,20);
+    if(!ids.length)messages.push({type:'text',text:'พิมพ์ badbot tagtest แล้วพิมพ์ @ และแตะเลือกชื่อเพื่อนจากรายชื่อของ LINE ก่อนส่ง แค่พิมพ์ @ชื่อเป็นตัวหนังสือจะทดสอบไม่ได้'});
+    else{
+     const substitution=Object.fromEntries(ids.map((userId,i)=>['friend'+i,{type:'mention',mentionee:{type:'user',userId}}]));
+     const targets=ids.map((_,i)=>'{friend'+i+'}').join(' ');
+     messages.push({type:'textV2',text:'Mention test: '+targets,substitution});
+     messages.push({type:'textV2',text:'ทดสอบแท็กเพื่อนจากบัญชีที่ LINE ส่งมา: '+targets+'\nลองแตะชื่อและให้เพื่อนตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+    }
+   }else{
    const userId=event.source.userId;
    if(!/^U[a-f0-9]{32}$/.test(userId||'')){
     messages.push({type:'text',text:'LINE ไม่ส่งรหัสบัญชีของผู้พิมพ์มา จึงยังทดสอบแท็กไม่ได้'});
@@ -219,6 +230,7 @@ export async function replyToGroupCommand(event,env){
     const substitution={you:{type:'mention',mentionee:{type:'user',userId}}};
     messages.push({type:'textV2',text:'Mention test: {you}',substitution});
     messages.push({type:'textV2',text:'ทดสอบแท็กผู้พิมพ์คำสั่ง: {you}\nลองแตะชื่อในข้อความทั้งสองอัน และตรวจการแจ้งเตือนการกล่าวถึง',substitution});
+   }
    }
   }else if(action.kind==='roster'){
    const selected=action.scope==='all'?clubs:[action.scope];

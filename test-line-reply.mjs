@@ -70,6 +70,22 @@ test('tagtest does not fabricate a user ID when LINE does not provide one',async
  assert.match(textOf(f.calls[0]),/ไม่ส่งรหัสบัญชี/);
 });
 
+test('tagtest with a selected friend uses native mention data and ignores display names and duplicates',async t=>{
+ const f=fixture(t),userId='U'+'d'.repeat(32);
+ const event=f.event('badbot tagtest @Strange name');
+ event.message.mention={mentionees:[{type:'user',userId},{type:'user',userId},{type:'all'},{type:'user',userId:'not-a-user'}]};
+ assert.equal((await f.hook([event])).status,200);
+ const messages=f.calls[0].messages;
+ assert.equal(messages.length,2);
+ for(const message of messages){assert.equal(message.type,'textV2');assert.deepEqual(message.substitution,{friend0:{type:'mention',mentionee:{type:'user',userId}}});}
+ assert.equal(messages[0].text,'Mention test: {friend0}');
+});
+
+test('typing an ordinary at-name cannot make tagtest guess a friend account',async t=>{
+ const f=fixture(t);assert.equal((await f.hook([f.event('badbot tagtest @Nut')])).status,200);
+ assert.equal(f.calls[0].messages[0].type,'text');assert.match(textOf(f.calls[0]),/แตะเลือกชื่อเพื่อน/);
+});
+
 test('signed bill webhook sends a real LINE mention object all the way to the reply API',async t=>{
  const f=fixture(t),userId='U'+'a'.repeat(32);
  f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
