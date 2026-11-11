@@ -405,39 +405,75 @@ test('very long bills still list every payer by name and stay within five LINE m
     assert.equal(Object.keys(m.substitution).length, 1);
 });
 
-test('tagtest4 pads every mention so a miscounted name cannot overrun the next one', async t => {
+test('tagtest4 isolates name order, padding and a single special-name mention', async t => {
   const f = fixture(t),
     sender = 'U' + 'c'.repeat(32),
     a = 'U' + 'a'.repeat(32),
     b = 'U' + 'b'.repeat(32);
-  const names = { [sender]: 'Nut', [a]: '♠️❄️Pete❄️♠️', [b]: 'TaToM55♾️' };
+  // Infinity with a variation selector is one grapheme but two UTF-16 units.
+  const names = { [sender]: 'Nut', [a]: '♠️❄️Pete❄️♠️', [b]: 'TaToM55∞\uFE0F' };
+  let missingMember = false;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (String(url).includes('/group/')) {
       const userId = String(url).split('/').at(-1);
+      if (missingMember && userId === b) return Response.json({}, { status: 404 });
       return Response.json({ userId, displayName: names[userId] });
     }
     f.calls.push(JSON.parse(options.body));
-    return Response.json({ sentMessages: [] });
+    return Response.json({});
   });
-  const event = f.event('badbot tagtest4 @pete @tatom');
-  event.source.userId = sender;
-  event.message.mention = { mentionees: [a, b].map(userId => ({ type: 'user', userId })) };
-  await f.hook([event]);
-  const run = f.calls.at(-1).messages;
-  assert.deepEqual(
-    run.map(m => m.type),
-    ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
-  );
-  assert.match(run[0].text, /Pete.* \+4, TaToM55.* \+1, Nut \+0/);
-  for (const m of run.slice(1))
+  async function send(mentionees) {
+    const event = f.event('badbot tagtest4 @pete @tatom');
+    event.source.userId = sender;
+    event.message.mention = { mentionees: mentionees.map(id => ({ type: 'user', userId: id })) };
+    await f.hook([event]);
+    return f.calls.at(-1).messages;
+  }
+  const ids = m => Object.values(m.substitution).map(v => v.mentionee.userId);
+  function check(run, order) {
     assert.deepEqual(
-      Object.values(m.substitution).map(v => v.mentionee.userId),
-      [a, b, sender],
+      run.map(m => m.type),
+      ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
     );
-  assert.equal(run[1].text, '[2] {m0}\u200b\u200b\u200b\u200b {m1}\u200b {m2}\nครบไหม ข้อความนี้');
-  assert.match(run[2].text, /^\[3\] \{m0\}\u200b{8} \{m1\}\u200b{8} \{m2\}\u200b{8}\n/);
-  assert.equal(run[3].text, '[4] {m0}     {m1}  {m2}\nครบไหม ข้อความนี้');
-  assert.equal(run[4].text, '[5] {m0} {m1} {m2}\nครบไหม ข้อความนี้');
+    assert.deepEqual(ids(run[1]), order);
+    assert.deepEqual(ids(run[2]), order);
+    assert.deepEqual(ids(run[3]), [order[0], order[2], order[1]]);
+    assert.deepEqual(ids(run[4]), [order[2]]);
+    assert.equal(run[1].text, '[2] {m0} {m1} {m2}\nครบไหม ข้อความนี้');
+    for (const index of [2, 3]) {
+      assert.equal(
+        run[index].text,
+        '[' +
+          (index + 1) +
+          '] ' +
+          [0, 1, 2].map(i => '{m' + i + '}' + '\u200b'.repeat(16)).join(' ') +
+          '\nครบไหม ข้อความนี้',
+      );
+    }
+    assert.equal(
+      run[4].text,
+      '[5] ยอดทดสอบ 1 บ. · {m0}' + '\u200b'.repeat(16) + '\nครบไหม ข้อความนี้',
+    );
+  }
+  const order = [sender, b, a];
+  const run = await send([a, b]);
+  check(run, order);
+  assert.match(run[0].text, /Pete.*ตัวที่เห็น 4/);
+  assert.match(run[0].text, /TaToM55.*ตัวที่เห็น 1/);
+  check(await send([b, a]), order);
+  names[sender] = 'Nut😀';
+  check(await send([a, b]), [b, sender, a]);
+  names[sender] = 'Nut';
+  names[a] = 'Pete';
+  names[b] = 'Tatom';
+  check(await send([a, b]), [a, b, sender]);
+  const incomplete = await send([a]);
+  assert.equal(incomplete.length, 1);
+  assert.match(incomplete[0].text, /แตะเลือกเพื่อนอีก 2 คน/);
+  missingMember = true;
+  const unavailable = await send([a, b]);
+  assert.equal(unavailable.length, 1);
+  assert.match(unavailable[0].text, /ตรวจยืนยันสมาชิกในกลุ่มไม่ครบ/);
   assert.doesNotMatch(textOf(await sendHelp(f)), /tagtest/);
 });
 async function sendHelp(f) {
