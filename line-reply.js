@@ -449,8 +449,7 @@ export async function replyToGroupCommand(event, env) {
           );
         // Compare the passing order with and without padding, then move the
         // highest-risk name to the middle and isolate it in its own message.
-        const tags = (list, padding = '') =>
-          list.map((_, i) => '{m' + i + '}' + padding).join(' ');
+        const tags = (list, padding = '') => list.map((_, i) => '{m' + i + '}' + padding).join(' ');
         const zwsp = '\u200b'.repeat(16),
           ordered = [...people].sort((a, b) => a.risk - b.risk),
           middle = [ordered[0], ordered[2], ordered[1]],
@@ -463,9 +462,7 @@ export async function replyToGroupCommand(event, env) {
               'ทดสอบแท็ก รอบ ' +
               run +
               '\n' +
-              people
-                .map(p => p.name + ' (ส่วนต่าง UTF-16/ตัวที่เห็น ' + p.risk + ')')
-                .join('\n') +
+              people.map(p => p.name + ' (ส่วนต่าง UTF-16/ตัวที่เห็น ' + p.risk + ')').join('\n') +
               '\n[2] เรียงส่วนต่างน้อยไปมาก ไม่ใส่กันชน\n[3] ลำดับเดียวกับ [2] ใส่กันชน\n[4] ย้ายชื่อส่วนต่างมากสุดไว้กลาง ใส่กันชน\n[5] ชื่อส่วนต่างมากสุดคนเดียว ใส่กันชน' +
               '\nดูว่าแต่ละข้อความแท็กครบเป็นสีฟ้าไหม และคำว่า "ครบไหม" อยู่ครบหรือแหว่ง',
           },

@@ -431,7 +431,10 @@ test('tagtest4 isolates name order, padding and a single special-name mention', 
   }
   const ids = m => Object.values(m.substitution).map(v => v.mentionee.userId);
   function check(run, order) {
-    assert.deepEqual(run.map(m => m.type), ['text', 'textV2', 'textV2', 'textV2', 'textV2']);
+    assert.deepEqual(
+      run.map(m => m.type),
+      ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
+    );
     assert.deepEqual(ids(run[1]), order);
     assert.deepEqual(ids(run[2]), order);
     assert.deepEqual(ids(run[3]), [order[0], order[2], order[1]]);
@@ -440,7 +443,9 @@ test('tagtest4 isolates name order, padding and a single special-name mention', 
     for (const index of [2, 3]) {
       assert.equal(
         run[index].text,
-        '[' + (index + 1) + '] ' +
+        '[' +
+          (index + 1) +
+          '] ' +
           [0, 1, 2].map(i => '{m' + i + '}' + '\u200b'.repeat(16)).join(' ') +
           '\nครบไหม ข้อความนี้',
       );
