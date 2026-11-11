@@ -166,7 +166,7 @@
   renderAttendees();
  }
  function renderAttendees() {
-  const row = (p, i) => `<label class="attendee"><input type="checkbox" data-index="${i}" ${p.attended ? 'checked' : ''}><span>${escape(p.name)}${p.guest ? ` <small>แขกของ ${escape(p.payer)}</small>` : ''}${p.withdrawnAt ? `<small class="withdrawal-time">ถอน ${escape(withdrawalTime(p.withdrawnAt))} · ${p.lateCancellation ? 'หลังกำหนด' : 'ในเวลาปลอดภัย'}</small>` : ''}</span></label>`;
+  const row = (p, i) => `<label class="attendee"><input type="checkbox" data-index="${i}" ${p.attended ? 'checked' : ''}><span>${escape(p.name)}${p.guest ? ` <small>แขกของ ${escape(p.payer)}</small>` : ''}${p.friend ? ` <small>เพื่อนของ ${escape(p.payer)} · จ่ายรวมกับคนชวน</small>` : ''}${p.withdrawnAt ? `<small class="withdrawal-time">ถอน ${escape(withdrawalTime(p.withdrawnAt))} · ${p.lateCancellation ? 'หลังกำหนด' : 'ในเวลาปลอดภัย'}</small>` : ''}</span></label>`;
   root.querySelector('#attendance').innerHTML = (attendees.some(p => !p.withdrawnAt) ? attendees.map((p, i) => p.withdrawnAt ? '' : row(p, i)).join('') : '<p class="muted">ยังไม่มีรายชื่อผู้ตีจริงสำหรับวันนี้ เพิ่มชื่อด้านล่างได้</p>') +
    `<div class="withdrawn-attendees"><h3>รายชื่อคนถอน</h3><p class="muted">ไม่เลือกเก็บเงินไว้เป็นค่าเริ่มต้น ผู้จัดเลือกเพิ่มได้ตามที่ตกลงกัน · เวลาไทย</p>${attendees.some(p => p.withdrawnAt) ? attendees.map((p, i) => p.withdrawnAt ? row(p, i) : '').join('') : '<p class="muted">ไม่มีรายชื่อคนถอนสำหรับวันนี้</p>'}</div>`;
   preview();

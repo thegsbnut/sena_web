@@ -93,6 +93,31 @@ test('linked accounts get no mapping choices and other users cannot see any alre
  }
 });
 
+test('friend billing belongs to the inviter and both inviter and friend can cancel the sponsored seat',async t=>{
+ const f=fixture(t),admin=await f.admin(),host=await f.login(),friend=await f.login(other);
+ await f.request('/api/member/link',{playerId:'p0'},host);await f.request('/api/member/link',{playerId:'p1'},friend);
+ const setup=await(await f.request('/api/booking',{action:'settings',settingsVersion:0,settings:{...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8}},admin)).json();
+ const id=setup.sessions[0].id,booking={action:'book',playerId:'p0',friendId:'p1',guest:{name:'Outside',gender:'F'},sessionIds:[id],acceptHoliday:true};
+ assert.equal((await f.request('/api/booking',booking,host)).status,200);
+ assert.equal((await f.request('/api/booking',booking)).status,403);
+ const sessions=await(await f.request('/api/billing?action=sessions',null,admin)).json();
+ const source=sessions.sessions.find(s=>s.date===id);
+ assert.deepEqual(source.attendees.map(p=>p.name),['Nut','Pete','Outside']);
+ assert(source.attendees.every(p=>p.payer==='Nut'&&p.payerKey==='member:p0'));
+ const created=await(await f.request('/api/billing',{date:id,court:90000,shuttle:0,transfer:'0000000000',attendees:source.attendees},admin)).json();
+ const bill=await(await f.request('/api/billing?bill='+created.id,null,admin)).json();
+ assert.equal(bill.payers.length,1);assert.equal(bill.payers[0].name,'Nut');assert.equal(bill.payers[0].amount,90000);assert.equal(bill.payers[0].shares,3);
+ assert.equal((await(await f.request('/api/member/bills',null,host)).json()).bills.length,1);
+ assert.equal((await(await f.request('/api/member/bills',null,friend)).json()).bills.length,0);
+ const read=async cookie=>(await(await f.request('/api/booking',null,cookie)).json()).sessions.find(s=>s.id===id);
+ for(const cookie of [host,friend])assert.equal((await read(cookie)).registrations.find(r=>r.playerId==='p1').canCancel,true);
+ const r=(await read(friend)).registrations.find(r=>r.playerId==='p1');
+ assert.equal((await f.request('/api/booking',{action:'cancel',sessionId:id,registrationId:r.id,acceptLateCancellation:true},friend)).status,200);
+ assert.equal((await read(host)).registrations.some(r=>r.playerId==='p0'),true);
+ const withdrawn=(await(await f.request('/api/billing?action=sessions',null,admin)).json()).sessions.find(s=>s.date===id).withdrawals[0];
+ assert.equal(withdrawn.name,'Pete');assert.equal(withdrawn.payer,'Nut');assert.equal(withdrawn.attended,false);
+});
+
 test('LIFF endpoint serves HTML without redirecting away from its registered URL',async()=>{
  const response=await worker.fetch(new Request(origin+'/liff.html?club=88'),{ASSETS:{fetch(request){
   const url=new URL(request.url);assert.equal(url.pathname,'/liff');assert.equal(url.searchParams.get('club'),'88');

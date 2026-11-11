@@ -93,6 +93,7 @@ function boundedSection(lines){
 function displayNames(data,session){
  const names=new Map(data.roster.map(p=>[p.id,clean([p.award,p.name].filter(Boolean).join(' '))]));
  for(const r of session.registrations){
+  if(r.invitedBy)names.set(r.playerId,(names.get(r.playerId)||'ผู้เล่น')+' (จองโดย '+(names.get(r.invitedBy)||'สมาชิก')+' · จ่ายแทน)');
   if(r.guest)names.set(r.playerId,clean(r.guest.name)+' (แขกของ '+(names.get(r.guest.hostId)||'สมาชิก')+')');
  }
  return id=>names.get(id)||'ผู้เล่นที่นำออกจากก๊วน';

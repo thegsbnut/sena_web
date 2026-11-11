@@ -155,14 +155,14 @@ async function recentSessions(db, club) {
  return JSON.parse(doc.payload).sessions.filter(s => !s.skipped && (s.registrations.length || s.withdrawals?.length))
   .sort((a, b) => b.date.localeCompare(a.date)).map(s => {
    const attendees=s.registrations.map((r, i) => {
-    const host=r.guest?.hostId||r.playerId,payer=players.get(host);
-    return payer ? {name:r.guest?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(r.guest),attended:i<s.capacity} : null;
+    const host=r.guest?.hostId||r.invitedBy||r.playerId,payer=players.get(host);
+    return payer ? {name:r.guest?.name||players.get(r.playerId)||payer,payer,payerKey:'member:'+host,guest:Boolean(r.guest),friend:Boolean(r.invitedBy),attended:i<s.capacity} : null;
    }).filter(Boolean);
    const key=p=>p.payerKey+'\n'+p.name.normalize('NFC').toLowerCase();
    const active=new Set(attendees.map(key)),activeMembers=new Set(s.registrations.filter(r=>!r.guest).map(r=>r.playerId)),
     activeGuests=new Set(s.registrations.filter(r=>r.guest).map(r=>'member:'+r.guest.hostId+'\n'+r.guest.name.normalize('NFC').toLowerCase())),withdrawals=new Map();
    for(const r of s.withdrawals??[]){
-    const person={name:r.name,payer:players.get(r.payerKey.slice('member:'.length))||r.payer,payerKey:r.payerKey,guest:r.guest,attended:false,withdrawnAt:r.cancelledAt,lateCancellation:r.lateCancellation};
+    const person={name:r.name,payer:players.get(r.payerKey.slice('member:'.length))||r.payer,payerKey:r.payerKey,guest:r.guest,friend:Boolean(r.invitedBy),attended:false,withdrawnAt:r.cancelledAt,lateCancellation:r.lateCancellation};
     const identity=r.guest?key(person):r.playerId;
     if(!active.has(key(person))&&!(r.guest?activeGuests.has(key(person)):activeMembers.has(r.playerId)))withdrawals.set(identity,person);
    }

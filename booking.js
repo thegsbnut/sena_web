@@ -82,7 +82,7 @@ export function materialize(doc,players,now=new Date()) {
   s.holiday=holidayOn(s.date,cfg.holidays);
   s.skipped=!!s.holiday&&cfg.holidayPolicy==='skip';
   const hosts=new Set(s.registrations.filter(r=>!r.guest&&rosterIds.has(r.playerId)).map(r=>r.playerId));
-  s.registrations=s.registrations.filter(r=>r.guest?hosts.has(r.guest.hostId):hosts.has(r.playerId));
+  s.registrations=s.registrations.filter(r=>r.guest?hosts.has(r.guest.hostId):hosts.has(r.playerId)&&(!r.invitedBy||hosts.has(r.invitedBy)));
   s.registrations.sort((a,b)=>a.seq-b.seq);
  }
  doc.sessions.sort((a,b)=>a.date.localeCompare(b.date));
@@ -150,8 +150,8 @@ export function publicBooking(doc,revision,players,admin,now=new Date(),club='se
  return {revision,canEdit:admin,settingsVersion:doc.settingsVersion,...(admin?{cupWeek,cupVersion:doc.cupVersion??0}:{}),settings:admin?cfg:{enabled:cfg.enabled,weekdays:cfg.weekdays,start:cfg.start,end:cfg.end,capacity:cfg.capacity,weeks:cfg.weeks,holidayPolicy:cfg.holidayPolicy},holidayYears:HOLIDAY_YEARS,roster:players.map(({id,name,thai,lv})=>({id,name,thai,award:awards.get(cupPlayerKey(name,club))||awards.get(cupPlayerKey(thai||'',club))||'',...(admin?{lv}:{})})),serverNow:now.toISOString(),sessions:sessions.map(s=>({
   id:s.id,date:s.date,started:startsAt(s)<=+now,courtNumbers:s.courtNumbers??cfg.courtNumbers??'',isCup:!s.skipped&&(s.cupOverride??(weekOfMonth(s.date)===cupWeek)),...(admin?{cupOverride:s.cupOverride??null,courtNumbersOverride:s.courtNumbers??null}:{}),start:s.start,end:s.end,capacity:s.capacity,rounds:s.rounds,holiday:s.holiday,skipped:s.skipped,closed:s.closed,confirmedCount:Math.min(s.registrations.length,s.capacity),waitlistCount:Math.max(0,s.registrations.length-s.capacity),canJoinWaitlist:s.registrations.length<200,schedule:s.schedule,scheduleVersion:s.scheduleVersion,scheduleUpdatedAt:s.scheduleUpdatedAt,scheduleStatus:s.scheduleStatus,
   cancellationNoticeHours:cfg.cancellationNoticeHours??48,cancellationDeadline:new Date(startsAt(s)-(cfg.cancellationNoticeHours??48)*3600000).toISOString(),
-  withdrawals:(s.withdrawals??[]).map(({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer})=>({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer})),
-  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,...(r.guest?{guest:{name:r.guest.name,hostId:r.guest.hostId,...(admin?{lv:guestLevel}:{})}}:{}),status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:startsAt(s)>+now}))
+  withdrawals:(s.withdrawals??[]).map(({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer,invitedBy})=>({registrationId,playerId,name,payer,guest,cancelledAt,lateCancellation,cancellationNoticeHours,acknowledgedAt,status,cancelledByOrganizer,invitedBy})),
+  registrations:s.registrations.map((r,i)=>({id:r.id,playerId:r.playerId,source:r.source,...(r.invitedBy?{invitedBy:r.invitedBy}:{}),...(r.guest?{guest:{name:r.guest.name,hostId:r.guest.hostId,...(admin?{lv:guestLevel}:{})}}:{}),status:i<s.capacity?'confirmed':'waitlist',position:i<s.capacity?i+1:i-s.capacity+1,canCancel:startsAt(s)>+now}))
  }))};
 }
 export async function mutateBooking(env,club,operation,now=new Date()) {
@@ -256,42 +256,55 @@ export async function bookingRoute(req,env,admin,club,member=null) {
     if(sessions.some(s=>s.closed||s.skipped))fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่',409);
     if(sessions.some(s=>s.holiday)&&input.acceptHoliday!==true)fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง',409);
     const guest=bookingGuest(input.guest,player.id);
-    let added=0,guestsAdded=0;
+    const friend=input.friendId==null?null:players.find(p=>p.id===input.friendId);
+    if(input.friendId!=null&&(!friend||friend.id===player.id))fail('เลือกเพื่อนในระบบที่ไม่ใช่ตัวเอง 1 คน');
+    let added=0,guestsAdded=0,friendsAdded=0;
     const duplicateIds=[];
     for(const s of sessions){
      const hasHost=s.registrations.some(r=>r.playerId===player.id);
+     const hostBooking=s.registrations.find(r=>r.playerId===player.id);
+     if(hostBooking?.invitedBy&&(guest||friend))fail('รอบนี้มีเพื่อนจองและจ่ายแทนให้แล้ว ให้ผู้จัดช่วยก่อนเพิ่มคนอื่น',409);
+     const currentFriend=friend&&s.registrations.find(r=>r.playerId===friend.id);
+     if(currentFriend&&currentFriend.invitedBy!==player.id)fail('เพื่อนที่เลือกมีชื่อในรอบนี้แล้ว ไม่เปลี่ยนผู้จ่ายให้โดยอัตโนมัติ',409);
+     if(friend&&s.registrations.some(r=>r.invitedBy===player.id&&r.playerId!==friend.id))fail('จองให้เพื่อนในระบบได้ 1 คนต่อรอบ',409);
+     const nameKey=value=>value.normalize('NFC').trim().toLowerCase();
+     const sponsored=friend||players.find(p=>s.registrations.some(r=>r.playerId===p.id&&r.invitedBy===player.id));
+     if(guest&&(nameKey(guest.name)===nameKey(player.name)||sponsored&&nameKey(guest.name)===nameKey(sponsored.name)))fail('ชื่อแขกซ้ำกับสมาชิกในกลุ่ม กรุณาระบุชื่อให้ต่างกัน');
+     if(friend&&s.registrations.some(r=>r.guest?.hostId===player.id&&nameKey(r.guest.name)===nameKey(friend.name)))fail('ชื่อเพื่อนซ้ำกับแขกที่จองไว้ กรุณาให้ผู้จัดตรวจสอบก่อน');
+     const addFriend=friend&&!currentFriend;
      const addGuest=guest&&!s.registrations.some(r=>r.guest?.hostId===player.id&&r.guest.name.toLowerCase()===guest.name.toLowerCase());
-     const seats=Number(!hasHost)+Number(Boolean(addGuest));
+     const seats=Number(!hasHost)+Number(Boolean(addGuest))+Number(Boolean(addFriend));
      if(!seats){duplicateIds.push(s.id);continue;}
      if(s.registrations.length+seats>200)fail('คิวสำรองรอบนี้เต็มแล้ว',409);
      const register=(playerId,extra={})=>{
       s.registrations.push({id:crypto.randomUUID(),playerId,seq:++doc.seq,source:'manual',ownerHash:owner,createdAt:now.toISOString(),...extra});
      };
      if(!hasHost)register(player.id);
+     if(addFriend){register(friend.id,{invitedBy:player.id});friendsAdded++;}
      if(addGuest){register('guest:'+crypto.randomUUID(),{guest});guestsAdded++;}
      added++;
     }
     const duplicate=duplicateIds.length;
-    return {added,guestsAdded,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${guestsAdded?` • เพิ่มแขก ${guestsAdded} ที่นั่ง`:''}${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
+    return {added,guestsAdded,friendsAdded,duplicate,duplicateIds,message:added?`จองเรียบร้อย ${added} วัน${friendsAdded?` • จองให้เพื่อน ${friendsAdded} ที่นั่ง`:``}${guestsAdded?` • เพิ่มแขก ${guestsAdded} ที่นั่ง`:''}${duplicate?` • ลงชื่อไว้แล้ว ${duplicate} วัน`:''}`:'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ'};
    }
    if(input.action==='cancel'){
     const s=session(input.sessionId),r=s.registrations.find(r=>r.id===input.registrationId);
     if(!r)fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่',409);
-    if(memberMode(env)&&!admin&&(member?.link?.status!=='approved'||(r.guest?.hostId||r.playerId)!==member.link.player_id))fail('ถอนได้เฉพาะรายการของตัวเอง กรุณาให้ผู้จัดช่วย',403);
+    if(memberMode(env)&&!admin&&(member?.link?.status!=='approved'||(r.guest?.hostId||r.invitedBy||r.playerId)!==member.link.player_id&&r.playerId!==member.link.player_id))fail('ถอนได้เฉพาะรายการของตัวเอง กรุณาให้ผู้จัดช่วย',403);
     const hours=doc.settings.cancellationNoticeHours??48;
     const deadline=startsAt(s)-hours*3600000,late=+now>deadline;
     if(late&&input.acceptLateCancellation!==true)throw new BookingError(
      `เลยเวลาถอนปลอดภัย ${hours} ชั่วโมงก่อนเริ่มแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย กรุณากดรับทราบก่อนยืนยันถอนตัว`,409,
      {code:'LATE_CANCELLATION_ACK_REQUIRED',cancellationNoticeHours:hours,cancellationDeadline:new Date(deadline).toISOString()});
-    const removed=s.registrations.filter(x=>x.id===r.id||x.guest?.hostId===r.playerId);
+    const removed=s.registrations.filter(x=>x.id===r.id||x.guest?.hostId===r.playerId||x.invitedBy===r.playerId);
     s.withdrawals??=[];
     for(const x of removed){
-     const host=x.guest?.hostId||x.playerId,payer=players.find(p=>p.id===host)?.name||'ผู้เล่นที่นำออกจากก๊วน';
-     s.withdrawals.push({registrationId:x.id,playerId:x.playerId,name:x.guest?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(x.guest),
+     const host=x.guest?.hostId||x.invitedBy||x.playerId,payer=players.find(p=>p.id===host)?.name||'ผู้เล่นที่นำออกจากก๊วน';
+     s.withdrawals.push({registrationId:x.id,playerId:x.playerId,name:x.guest?.name||players.find(p=>p.id===x.playerId)?.name||payer,payer,payerKey:'member:'+host,guest:Boolean(x.guest),...(x.invitedBy?{invitedBy:x.invitedBy}:{}),
       cancelledAt:now.toISOString(),lateCancellation:late,cancellationNoticeHours:hours,acknowledgedAt:late?now.toISOString():null,
       status:s.registrations.indexOf(x)<s.capacity?'confirmed':'waitlist',cancelledByOrganizer:admin,...(member?{actorUserId:member.userId}:{})});
     }
-    s.registrations=s.registrations.filter(x=>x.id!==r.id&&x.guest?.hostId!==r.playerId);
+    s.registrations=s.registrations.filter(x=>x.id!==r.id&&x.guest?.hostId!==r.playerId&&x.invitedBy!==r.playerId);
     return {message:'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ'};
    }
   }:null,now);
@@ -299,7 +312,7 @@ export async function bookingRoute(req,env,admin,club,member=null) {
   const view=publicBooking(outcome.doc,outcome.revision,outcome.players,admin,now,club,awards);
   if(memberMode(env)){
    view.requireLogin=true;view.member={loggedIn:Boolean(member),status:member?.link?.status||null,playerId:member?.link?.status==='approved'?member.link.player_id:null};
-   for(const session of view.sessions)for(const r of session.registrations)r.canCancel=r.canCancel&&(admin||member?.link?.status==='approved'&&(r.guest?.hostId||r.playerId)===member.link.player_id);
+   for(const session of view.sessions)for(const r of session.registrations)r.canCancel=r.canCancel&&(admin||member?.link?.status==='approved'&&((r.guest?.hostId||r.invitedBy||r.playerId)===member.link.player_id||r.playerId===member.link.player_id));
   }
   return reply({...view,venueMapUrl:venueMapFor(outcome.doc,club),result:outcome.result});
  }catch(e){if(e instanceof BookingError)return reply({error:e.message,...e.details},e.status);throw e;}

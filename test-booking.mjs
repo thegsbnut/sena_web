@@ -17,6 +17,46 @@ function fixture(){
  const open=async regularIds=>{const cookie=await login(),settings={...defaultSettings(),enabled:true,weekdays:[0,1,2,3,4,5,6],weeks:1,capacity:8,rounds:4,regularIds:regularIds||[]};const r=await call({action:'settings',settingsVersion:0,settings},{cookie});assert.equal(r.status,200);return{cookie,settings,data:await r.json()};};
  return {db,env,call,login,open};
 }
+test('booking one roster friend retains their identity and skill, permits an outside guest, and is idempotent',async t=>{
+ const f=fixture();t.after(()=>f.db.close());
+ const {data}=await f.open(['p2','p3','p4','p5','p6']);const id=data.sessions[0].id;
+ const seen=[];const original=globalThis.Sena.generate;
+ t.mock.method(globalThis.Sena,'generate',(...args)=>{seen.push(args[0]);return original(...args);});
+ const payload={action:'book',playerId:'p0',friendId:'p1',guest:{name:'Outside',gender:'M'},sessionIds:[id],acceptHoliday:true};
+ const response=await f.call(payload);assert.equal(response.status,200);
+ const session=(await response.json()).sessions.find(s=>s.id===id);
+ assert.equal(session.registrations.length,8);
+ assert.equal(session.registrations.find(r=>r.playerId==='p1').invitedBy,'p0');
+ assert.equal(session.registrations.filter(r=>r.guest).length,1);
+ const drawn=seen.find(ps=>ps.some(p=>p.id==='p1')).find(p=>p.id==='p1');
+ assert.equal(drawn.lv,players[1].lv);assert.equal(drawn.gender,players[1].gender);
+ const again=await(await f.call(payload)).json();assert.equal(again.result.added,0);
+ assert.equal(again.sessions.find(s=>s.id===id).registrations.length,8);
+ assert.equal((await f.call({...payload,friendId:'p7'})).status,409);
+ assert.equal((await f.call({...payload,friendId:'p0'})).status,400);
+ assert.equal((await f.call({...payload,friendId:'missing'})).status,400);
+ assert.equal((await f.call({...payload,guest:{name:'Player 1',gender:'M'}})).status,400);
+});
+test('friend booking does not take over existing seats or payments and multi-date conflicts roll back',async t=>{
+ const f=fixture();t.after(()=>f.db.close());const {data}=await f.open(),ids=data.sessions.slice(0,2).map(s=>s.id);
+ await f.call({action:'book',playerId:'p1',sessionIds:[ids[1]],acceptHoliday:true});
+ assert.equal((await f.call({action:'book',playerId:'p0',friendId:'p1',sessionIds:ids,acceptHoliday:true})).status,409);
+ let d=await(await f.call()).json();assert.equal(d.sessions.find(s=>s.id===ids[0]).registrations.length,0);
+ assert.equal(d.sessions.find(s=>s.id===ids[1]).registrations[0].invitedBy,undefined);
+ await f.call({action:'book',playerId:'p0',friendId:'p2',sessionIds:[ids[0]],acceptHoliday:true});
+ assert.equal((await f.call({action:'book',playerId:'p2',friendId:'p3',sessionIds:[ids[0]],acceptHoliday:true})).status,409);
+});
+test('withdrawing a host cascades to their friend and outside guest, retaining correct names and payer in history',async t=>{
+ const f=fixture();t.after(()=>f.db.close());const {data}=await f.open(),id=data.sessions[0].id;
+ await f.call({action:'book',playerId:'p0',friendId:'p1',guest:{name:'Outside',gender:'F'},sessionIds:[id],acceptHoliday:true});
+ const session=(await(await f.call()).json()).sessions.find(s=>s.id===id),host=session.registrations.find(r=>r.playerId==='p0');
+ const response=await f.call({action:'cancel',sessionId:id,registrationId:host.id,acceptLateCancellation:true});assert.equal(response.status,200);
+ const after=(await response.json()).sessions.find(s=>s.id===id);
+ assert.equal(after.registrations.length,0);
+ assert.deepEqual(after.withdrawals.map(r=>r.name),['Player 0','Player 1','Outside']);
+ assert(after.withdrawals.every(r=>r.payer==='Player 0'));
+});
+
 test('withdrawals require late acknowledgement and preserve server-timed guest history without private fields',async t=>{
  t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-10T03:00:00Z')});
  const f=fixture();t.after(()=>f.db.close());

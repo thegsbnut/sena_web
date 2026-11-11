@@ -15,7 +15,7 @@
  const guest=id=>data?.sessions.find(s=>s.id===focusId)?.registrations.find(r=>r.playerId===id)?.guest;
  const player=id=>data?.roster.find(p=>p.id===id)??guest(id);
  const rawName=id=>player(id)?.name||'ผู้เล่นที่นำออกจากก๊วน';
- const name=id=>{const extra=guest(id);if(extra)return extra.name+' (แขกของ '+rawName(extra.hostId)+')';const award=player(id)?.award;return award?award+' '+rawName(id):rawName(id);};
+ const name=id=>{const invited=data?.sessions.find(s=>s.id===focusId)?.registrations.find(r=>r.playerId===id)?.invitedBy;if(invited)return rawName(id)+' (จองโดย '+rawName(invited)+' · จ่ายแทน)';const extra=guest(id);if(extra)return extra.name+' (แขกของ '+rawName(extra.hostId)+')';const award=player(id)?.award;return award?award+' '+rawName(id):rawName(id);};
  const level=id=>player(id)?.lv;
  const formatLevel=new Intl.NumberFormat('th-TH',{maximumFractionDigits:2});
  function levelBadge(id){
@@ -72,7 +72,7 @@
   pendingCancellation={sessionId:session.id,registrationId:registration.id};
   const late=Date.now()+serverClockOffset>Date.parse(session.cancellationDeadline);
   dialog.dataset.late=late?'1':'0';
-  q('#bookingCancelName').textContent='ถอนชื่อ '+name(registration.playerId)+' วันที่ '+displayDate(session.date)+(session.registrations.some(r=>r.guest?.hostId===registration.playerId)?' พร้อมแขกที่ลงชื่อมาด้วย':'');
+  q('#bookingCancelName').textContent='ถอนชื่อ '+name(registration.playerId)+' วันที่ '+displayDate(session.date)+(session.registrations.some(r=>r.guest?.hostId===registration.playerId||r.invitedBy===registration.playerId)?' พร้อมเพื่อนและแขกที่ลงชื่อมาด้วย':'');
   q('#bookingCancelDeadline').textContent='ถอนปลอดภัยก่อน '+displayTimestamp(session.cancellationDeadline)+' ('+session.cancellationNoticeHours+' ชั่วโมงก่อนเริ่ม)';
   q('#bookingCancelWarning').hidden=!late;
   q('#bookingCancelConfirm').textContent=late?'รับทราบและยืนยันถอนตัว':'ยืนยันถอนตัว';
@@ -81,12 +81,12 @@
  }
  function withdrawalSection(session){
   const rows=session.withdrawals??[];
-  return `<section class="booking-withdrawals"><h4>รายชื่อคนถอน <span>${rows.length} รายการ</span></h4>${[...rows].reverse().map(r=>`<div class="booking-person"><div><strong>${html(r.name)}</strong>${r.guest?` <small>แขกของ ${html(r.payer)}</small>`:''}<small>ถอน ${html(displayTimestamp(r.cancelledAt))} · ${r.status==='waitlist'?'เดิมเป็นสำรอง':'เดิมเป็นตัวจริง'}</small><small>${r.lateCancellation?'⚠ ถอนหลังกำหนด · รับทราบเรื่องค่าใช้จ่ายแล้ว':'ถอนในเวลาปลอดภัย'}${r.cancelledByOrganizer?' · ผู้จัดถอนให้':''}${session.registrations.some(x=>x.playerId===r.playerId||x.guest&&r.guest&&x.guest.name===r.name&&rawName(x.guest.hostId)===r.payer)?' · กลับมาลงชื่อแล้ว':''}</small></div></div>`).join('')||'<p class="hint">ยังไม่มีประวัติการถอนตัว</p>'}<p class="hint">เวลาไทย · ประวัติเริ่มเก็บหลังเปิดใช้ระบบนี้</p></section>`;
+  return `<section class="booking-withdrawals"><h4>รายชื่อคนถอน <span>${rows.length} รายการ</span></h4>${[...rows].reverse().map(r=>`<div class="booking-person"><div><strong>${html(r.name)}</strong>${r.guest?` <small>แขกของ ${html(r.payer)}</small>`:r.invitedBy?` <small>เพื่อนของ ${html(r.payer)} · คนชวนจ่ายแทน</small>`:''}<small>ถอน ${html(displayTimestamp(r.cancelledAt))} · ${r.status==='waitlist'?'เดิมเป็นสำรอง':'เดิมเป็นตัวจริง'}</small><small>${r.lateCancellation?'⚠ ถอนหลังกำหนด · รับทราบเรื่องค่าใช้จ่ายแล้ว':'ถอนในเวลาปลอดภัย'}${r.cancelledByOrganizer?' · ผู้จัดถอนให้':''}${session.registrations.some(x=>x.playerId===r.playerId||x.guest&&r.guest&&x.guest.name===r.name&&rawName(x.guest.hostId)===r.payer)?' · กลับมาลงชื่อแล้ว':''}</small></div></div>`).join('')||'<p class="hint">ยังไม่มีประวัติการถอนตัว</p>'}<p class="hint">เวลาไทย · ประวัติเริ่มเก็บหลังเปิดใช้ระบบนี้</p></section>`;
  }
  root.innerHTML=`<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><a id="bookingMemberLogin" class="pill" href="${html(venueUrl('/liff.html'))}" hidden>เข้าสู่ระบบ LINE / ผูกชื่อเพื่อจอง</a><span id="bookingBills" class="actions" hidden><a class="pill" href="${html(venueUrl('/billing.html?manage=1'))}">บิลค้าง ↗</a></span><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingCancelDialog" class="booking-feedback" aria-labelledby="bookingCancelTitle" aria-describedby="bookingCancelName bookingCancelDeadline bookingCancelWarning"><h2 id="bookingCancelTitle">ยืนยันถอนตัว</h2><p id="bookingCancelName"></p><p id="bookingCancelDeadline" class="hint"></p><p id="bookingCancelWarning" class="booking-cancel-warning" hidden>⚠ เลยเวลาถอนปลอดภัยแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย โดยผู้จัดจะพิจารณาอีกครั้ง</p><p id="bookingCancelStatus" role="status"></p><div class="actions"><button type="button" class="primary" id="bookingCancelConfirm">ยืนยันถอนตัว</button><button type="button" class="secondary" id="bookingCancelBack">กลับ</button></div></dialog>
- <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อสมาชิกผู้จองหลัก</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingGuestOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasGuest"> เพิ่มแขก (Guest)</label><div id="bookingGuestFields" class="booking-fields" hidden><label>ชื่อแขก<input id="bookingGuestName" type="text" maxlength="80" placeholder="ชื่อแขก"></label><label>เพศสำหรับจัดคู่<select id="bookingGuestGender"><option value="">เลือกเพศ</option><option value="M">ชาย</option><option value="F">หญิง</option></select></label></div></div><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
+ <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><label for="bookingPlayer">ชื่อสมาชิกผู้จองหลัก</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingFriendOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasFriend"> จองให้เพื่อนในระบบ 1 คน</label><div id="bookingFriendFields" hidden><label>เลือกเพื่อน<select id="bookingFriend"><option value="">เลือกชื่อเพื่อน…</option></select></label><p class="hint">คนชวนจ่ายแทนเพื่อน รวมในบิลของคนชวน ใช้ LV และเพศของเพื่อนตามรายชื่อเดิม เพื่อนต้องยังไม่มีชื่อในวันที่เลือก</p></div></div><div id="bookingGuestOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasGuest"> เพิ่มแขก (Guest)</label><div id="bookingGuestFields" class="booking-fields" hidden><label>ชื่อแขก<input id="bookingGuestName" type="text" maxlength="80" placeholder="ชื่อแขก"></label><label>เพศสำหรับจัดคู่<select id="bookingGuestGender"><option value="">เลือกเพศ</option><option value="M">ชาย</option><option value="F">หญิง</option></select></label></div></div><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
  <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่าการจองและสนาม <span>สำหรับผู้จัด</span></summary>
  <details class="booking-cup-settings"><summary>🏆 วันแข่งขัน ${html(cupName)}</summary>
  <form id="bookingCupSettings"><label for="bookingCupWeek">สัปดาห์แข่งขันประจำเดือน</label>
@@ -185,11 +185,17 @@
   const eligible=options.some(p=>p.id===playerId);
   picker.value=eligible?playerId:'';
   picker.disabled=!options.length||data.requireLogin&&!data.canEdit;
+  q('#bookingFriendOption').hidden=!picker.value;
+  const friendPicker=q('#bookingFriend'),previousFriend=friendPicker.value;
+  friendPicker.innerHTML='<option value="">เลือกชื่อเพื่อน…</option>'+data.roster.filter(p=>p.id!==picker.value).map(p=>`<option value="${html(p.id)}">${html(p.name)}</option>`).join('');
+  friendPicker.value=previousFriend===picker.value?'':previousFriend;
+  const withFriend=Boolean(picker.value&&q('#bookingHasFriend').checked);
+  q('#bookingFriendFields').hidden=!withFriend;
   q('#bookingGuestOption').hidden=!picker.value;
   const withGuest=Boolean(picker.value&&q('#bookingHasGuest').checked);
   q('#bookingGuestFields').hidden=!withGuest;
   q('#bookingPlayerHint').textContent=!options.length?'ให้ผู้จัดเพิ่มรายชื่อสมาชิกก่อน'
-   :picker.value&&(booked.get(picker.value)||0)===chosen.length?'สมาชิกจองครบแล้ว ยังเพิ่มแขกในรอบนี้ได้'
+   :picker.value&&(booked.get(picker.value)||0)===chosen.length?'สมาชิกจองครบแล้ว ยังเพิ่มเพื่อนหรือแขกในรอบนี้ได้'
    :'แขกนับเป็นหนึ่งที่นั่ง และจะลงชื่อในทุกวันที่เลือก';
   q('#bookingAction').hidden=!chosen.length;
   q('#bookingSelection').textContent=`เลือก ${chosen.length} วัน`;
@@ -199,7 +205,7 @@
    return `<li>${displayDate(s.date)} · ${html(s.start)}–${html(s.end)} น.${s.isCup?' · 🏆 '+html(cupName):''}${note}</li>`;
   }).join('');
   q('#bookingHolidayConfirm').hidden=!chosen.some(s=>s.holiday);
-  q('#bookingConfirm').disabled=!chosen.length||!picker.value||!token||!data.settings.enabled||(!withGuest&&(booked.get(picker.value)||0)===chosen.length);
+  q('#bookingConfirm').disabled=!chosen.length||!picker.value||!token||!data.settings.enabled||(!withGuest&&!withFriend&&(booked.get(picker.value)||0)===chosen.length)||(withFriend&&!friendPicker.value);
   if(!token)status('เบราว์เซอร์ไม่ให้เก็บรหัสจัดการการจอง กรุณาเปิดเว็บใน Safari / Chrome โดยตรง',true);
  }
  function renderDetail(){
@@ -269,7 +275,7 @@
  }
  root.addEventListener('change',e=>{
   if(e.target.matches('[data-book-date]')){e.target.checked?selected.add(e.target.dataset.bookDate):selected.delete(e.target.dataset.bookDate);focusId=e.target.dataset.bookDate;renderSelection();renderDetail();}
-  if(e.target.id==='bookingHasGuest')renderSelection();
+  if(['bookingHasGuest','bookingHasFriend','bookingFriend'].includes(e.target.id))renderSelection();
   if(e.target.id==='bookingPlayer'){playerId=e.target.value;try{localStorage.setItem(clubStorage('booking-player'),playerId);}catch{}render();}
   if(e.target.closest('#bookingSettings'))dirty=true;
   if(e.target.closest('#bookingCupSettings')){
@@ -329,6 +335,7 @@
   }
   if(button.id==='bookingContinue'&&selected.size){
    q('#bookingAcceptHoliday').checked=false;
+   q('#bookingHasFriend').checked=false;q('#bookingFriend').value='';
    q('#bookingHasGuest').checked=false;
    q('#bookingGuestName').value='';
    q('#bookingGuestGender').value='';
@@ -366,7 +373,9 @@
    if(!q('#bookingHolidayConfirm').hidden&&!acceptHoliday){feedback('ยังไม่ได้ยืนยันจอง','กรุณารับทราบวันหยุดก่อนยืนยันจอง');return;}
    const guest=q('#bookingHasGuest').checked?{name:q('#bookingGuestName').value.trim(),gender:q('#bookingGuestGender').value}:null;
    if(guest&&(!guest.name||!guest.gender)){feedback('ยังไม่ได้ยืนยันจอง','กรอกชื่อและเลือกเพศของแขกให้ครบ');return;}
-   mutate({action:'book',playerId:q('#bookingPlayer').value,sessionIds:[...selected],acceptHoliday,...(guest?{guest}:{})});
+   const friendId=q('#bookingHasFriend').checked?q('#bookingFriend').value:null;
+   if(q('#bookingHasFriend').checked&&!friendId){feedback('ยังไม่ได้ยืนยันจอง','เลือกชื่อเพื่อนในระบบก่อน');return;}
+   mutate({action:'book',...(friendId?{friendId}:{}),playerId:q('#bookingPlayer').value,sessionIds:[...selected],acceptHoliday,...(guest?{guest}:{})});
   }
   if(button.id==='bookingReroll'){
    const s=data.sessions.find(s=>s.id===focusId);
