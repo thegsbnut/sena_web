@@ -159,15 +159,33 @@ function renderPlayers() {
     )
     .join('');
 }
+// LINE accounts linked to roster players (organizer only), for the admin toggle.
+let memberAccounts = new Map(),
+  memberAccountsAt = 0,
+  memberAccountsLoading = false;
+async function loadMemberAccounts() {
+  if (memberAccountsLoading) return;
+  memberAccountsLoading = true;
+  try {
+    const r = await venueFetch('/api/member/admins', { cache: 'no-store' });
+    if (r.ok) memberAccounts = new Map((await r.json()).players.map(p => [p.playerId, p]));
+    memberAccountsAt = Date.now();
+  } catch {
+  } finally {
+    memberAccountsLoading = false;
+  }
+  if (canManage) renderRoster();
+}
 function renderRoster() {
   if (!canManage) {
     $('#rosterRows').innerHTML = '';
     return;
   }
+  if (Date.now() - memberAccountsAt > 15000) loadMemberAccounts();
   $('#rosterRows').innerHTML = state.players
     .map(
       p =>
-        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span>${p.selfSignup ? `<span class="newbadge" title="สมัครเองผ่าน LINE ยังไม่ได้ตรวจ LV">🆕 สมัครเอง</span><small class="newbadge-line">LINE: ${esc(p.selfSignup.lineName || '-')} · กดแก้ไขเพื่อตรวจ LV</small>` : ''}</strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
+        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span>${memberAccounts.get(p.id)?.admin ? '<span class="adminbadge" title="ผู้ดูแลระบบผ่าน LINE">🛡 ผู้ดูแล</span>' : ''}${p.selfSignup ? `<span class="newbadge" title="สมัครเองผ่าน LINE ยังไม่ได้ตรวจ LV">🆕 สมัครเอง</span><small class="newbadge-line">LINE: ${esc(p.selfSignup.lineName || '-')} · กดแก้ไขเพื่อตรวจ LV</small>` : ''}</strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
     )
     .join('');
 }
@@ -444,6 +462,13 @@ $('#rosterRows').onclick = e => {
     let p = person(editId),
       f = $('#editForm');
     for (let k of ['name', 'thai', 'lv', 'gender']) f.elements[k].value = p[k];
+    const account = memberAccounts.get(editId),
+      toggle = $('#editAdmin');
+    toggle.checked = Boolean(account?.admin);
+    toggle.disabled = !account;
+    $('#editAdminHint').textContent = account
+      ? 'บัญชี LINE: ' + (account.lineName || '-') + ' · มีผลทันทีที่ติ๊ก'
+      : 'ต้องให้ผู้เล่นคนนี้ผูกบัญชี LINE ก่อนจึงจะตั้งเป็นผู้ดูแลได้';
     $('#editDialog').showModal();
   }
   if (e.target.dataset.delete) {
@@ -459,6 +484,43 @@ $('#rosterRows').onclick = e => {
   }
 };
 $('#cancelEdit').onclick = () => $('#editDialog').close();
+$('#editAdmin').onchange = async e => {
+  const toggle = e.target,
+    account = memberAccounts.get(editId),
+    name = person(editId)?.name || '';
+  if (!account) return;
+  const grant = toggle.checked;
+  if (
+    !confirm(
+      grant
+        ? 'ให้ ' +
+            name +
+            ' เป็นผู้ดูแลระบบ? เมื่อเข้าผ่าน LINE จะแก้รายชื่อ บิล และการตั้งค่าได้ทุกอย่าง มีผลทันที'
+        : 'เอาสิทธิ์ผู้ดูแลระบบของ ' + name + ' ออก? มีผลทันที',
+    )
+  ) {
+    toggle.checked = !grant;
+    return;
+  }
+  toggle.disabled = true;
+  try {
+    const r = await venueFetch('/api/member/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: account.userId, admin: grant }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw Error(d.error || 'บันทึกสิทธิ์ไม่สำเร็จ');
+    account.admin = grant;
+    $('#editAdminHint').textContent = grant ? 'ตั้งเป็นผู้ดูแลแล้ว ✓' : 'เอาสิทธิ์ผู้ดูแลออกแล้ว ✓';
+    renderRoster();
+  } catch (error) {
+    toggle.checked = !grant;
+    alert(error.message);
+  } finally {
+    toggle.disabled = false;
+  }
+};
 $('#editForm').onsubmit = e => {
   e.preventDefault();
   let f = e.target,

@@ -37,8 +37,14 @@
       const changed = role !== null && role !== d.canEdit;
       role = d.canEdit;
       bar.dataset.role = role ? 'admin' : 'guest';
-      label.textContent = role ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งานทั่วไป';
-      logout.hidden = !role;
+      // LINE admins stay organizers while their LINE session lasts; the
+      // ADMIN_KEY logout button does not apply to them.
+      label.textContent = role
+        ? d.via === 'line'
+          ? 'ผู้ดูแลระบบ (LINE)'
+          : 'ผู้ดูแลระบบ'
+        : 'ผู้ใช้งานทั่วไป';
+      logout.hidden = !role || d.via === 'line';
       login.hidden = role;
       retry.hidden = true;
       error.hidden = true;

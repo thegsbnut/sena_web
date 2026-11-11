@@ -589,6 +589,70 @@ test('organizer edits of linked players reach the other club; self sign-ups are 
   );
 });
 
+test('an organizer can mark a linked LINE account as admin; it then has full organizer rights until unmarked', async t => {
+  const f = fixture(t),
+    key = await f.admin(),
+    member = await f.login(),
+    stranger = await f.login(other);
+  assert.equal((await f.request('/api/member/link', { playerId: 'p0' }, member)).status, 200);
+  const session = async cookie => (await f.request('/api/session', null, cookie)).json();
+  const grant = (userId, admin, cookie = key) =>
+    f.request('/api/member/admin', { userId, admin }, cookie);
+  const saveRoster = async cookie => {
+    const cur = await (await f.request('/api/state', null, key)).json();
+    cur.state.players[1].lv = cur.state.players[1].lv + 0.5;
+    return f.request('/api/state', { state: cur.state, revision: cur.revision }, cookie);
+  };
+  // Plain members are not organizers and cannot grant anything.
+  assert.deepEqual(await session(member), { canEdit: false, via: null });
+  assert.equal((await grant(uid, true, member)).status, 401);
+  assert.equal((await saveRoster(member)).status, 401);
+  // Only linked accounts can be marked.
+  assert.equal((await grant(other, true)).status, 409);
+  assert.equal((await grant('not-a-line-id', true)).status, 400);
+  // The organizer marks the member; the account list shows it.
+  assert.equal((await grant(uid, true)).status, 200);
+  const list = await (await f.request('/api/member/admins', null, key)).json();
+  assert.deepEqual(
+    list.players.map(p => [p.playerId, p.userId, p.admin]),
+    [['p0', uid, true]],
+  );
+  assert.equal((await f.request('/api/member/admins', null, stranger)).status, 401);
+  // Now the member is an organizer in both clubs, with no ADMIN_KEY login.
+  assert.deepEqual(await session(member), { canEdit: true, via: 'line' });
+  assert.equal((await (await f.request('/api/state?club=88', null, member)).json()).canEdit, true);
+  assert.equal((await saveRoster(member)).status, 200);
+  assert.equal(
+    typeof (await (await f.request('/api/state', null, member)).json()).state.players[0].lv,
+    'number',
+  );
+  // Equal rights include marking others (once they are linked).
+  assert.equal((await f.request('/api/member/link', { playerId: 'p1' }, stranger)).status, 200);
+  assert.equal((await grant(other, true, member)).status, 200);
+  assert.equal((await session(stranger)).via, 'line');
+  // Unmarking takes effect on the very next request.
+  assert.equal((await grant(uid, false)).status, 200);
+  assert.deepEqual(await session(member), { canEdit: false, via: null });
+  assert.equal((await saveRoster(member)).status, 401);
+  // Unlinking an account also removes its admin mark.
+  const before = await (await f.request('/api/member/requests', null, key)).json();
+  const link = before.requests.find(r => r.user_id === other);
+  assert.equal(
+    (
+      await f.request(
+        '/api/member/unlink',
+        { userId: other, previousPlayerId: link.player_id, previousStatus: link.status },
+        key,
+      )
+    ).status,
+    200,
+  );
+  assert.deepEqual(await session(stranger), { canEdit: false, via: null });
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM member_admins').get().n, 0);
+  // The ADMIN_KEY login keeps working regardless.
+  assert.deepEqual(await session(key), { canEdit: true, via: 'key' });
+});
+
 test('existing-player linking is immediate, isolates clubs, and limits booking and cancellation to self', async t => {
   const f = fixture(t),
     admin = await f.admin(),

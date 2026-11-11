@@ -653,3 +653,26 @@ dialog::backdrop {
   font-size: 0.75rem;
   color: #6b4e00;
 }
+
+/* Organizer: LINE account with admin rights; admin toggle in the edit dialog. */
+.adminbadge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.admin-toggle input {
+  width: auto;
+  margin: 0;
+}
