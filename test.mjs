@@ -393,7 +393,7 @@ test('session status exposes role only, checks signed cookies and shares login a
     );
   const guest = await session();
   assert.equal(guest.headers.get('Cache-Control'), 'no-store');
-  assert.deepEqual(await guest.json(), { canEdit: false });
+  assert.deepEqual(await guest.json(), { canEdit: false, via: null });
   const login = await worker.fetch(
     new Request('https://example.com/api/login', {
       method: 'POST',
@@ -403,11 +403,12 @@ test('session status exposes role only, checks signed cookies and shares login a
     env,
   );
   const cookie = login.headers.get('Set-Cookie').split(';')[0];
-  assert.deepEqual(await (await session(cookie)).json(), { canEdit: true });
-  assert.deepEqual(await (await session(cookie, '88')).json(), { canEdit: true });
-  assert.deepEqual(await (await session(cookie + 'x')).json(), { canEdit: false });
+  assert.deepEqual(await (await session(cookie)).json(), { canEdit: true, via: 'key' });
+  assert.deepEqual(await (await session(cookie, '88')).json(), { canEdit: true, via: 'key' });
+  assert.deepEqual(await (await session(cookie + 'x')).json(), { canEdit: false, via: null });
   assert.deepEqual(await (await session('__Host-sena=1.' + '0'.repeat(64))).json(), {
     canEdit: false,
+    via: null,
   });
   const out = await worker.fetch(
     new Request('https://example.com/api/logout', {
@@ -419,5 +420,6 @@ test('session status exposes role only, checks signed cookies and shares login a
   assert.match(out.headers.get('Set-Cookie'), /Max-Age=0/);
   assert.deepEqual(await (await session(out.headers.get('Set-Cookie').split(';')[0])).json(), {
     canEdit: false,
+    via: null,
   });
 });

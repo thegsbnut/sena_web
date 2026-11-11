@@ -61,6 +61,28 @@ export async function prepareMembers(db) {
       "CREATE UNIQUE INDEX IF NOT EXISTS member_player_unique ON member_links(club,player_id) WHERE status='approved'",
     )
     .run();
+  // LINE accounts the organizer marked as admins: same rights as the ADMIN_KEY login.
+  await db
+    .prepare(
+      'CREATE TABLE IF NOT EXISTS member_admins (user_id TEXT PRIMARY KEY,granted_at TEXT NOT NULL)',
+    )
+    .run();
+}
+
+// True when the request carries a live LINE member session whose account is
+// marked admin and is still linked to a player. Checked on every request, so
+// removing the mark (or unlinking the account) takes effect immediately.
+export async function memberIsAdmin(req, env) {
+  if (!env.DB || !loginEnabled(env)) return false;
+  const token = cookie(req, '__Host-sena-member');
+  if (!/^[a-f0-9]{64}$/.test(token)) return false;
+  await prepareMembers(env.DB);
+  const row = await env.DB.prepare(
+    "SELECT 1 AS ok FROM member_sessions s JOIN member_admins a ON a.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND EXISTS(SELECT 1 FROM member_links l WHERE l.user_id=s.user_id AND l.status='approved')",
+  )
+    .bind(await hash(token), Date.now())
+    .first();
+  return Boolean(row);
 }
 export async function memberFor(req, env, club) {
   if (!env.DB || !loginEnabled(env)) return null;
@@ -206,6 +228,22 @@ async function route(req, env, admin, club) {
       }
     return json({ players });
   }
+  if (req.method === 'GET' && action === 'admins') {
+    if (!admin) return json({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
+    const rows = await env.DB.prepare(
+      "SELECT l.player_id,l.user_id,p.line_name,(a.user_id IS NOT NULL) AS admin FROM member_links l LEFT JOIN member_profiles p ON p.user_id=l.user_id LEFT JOIN member_admins a ON a.user_id=l.user_id WHERE l.club=? AND l.status='approved'",
+    )
+      .bind(club)
+      .all();
+    return json({
+      players: rows.results.map(r => ({
+        playerId: r.player_id,
+        userId: r.user_id,
+        lineName: r.line_name || '',
+        admin: Boolean(r.admin),
+      })),
+    });
+  }
   if (req.method === 'GET' && action === 'requests') {
     if (!admin) return json({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
     const rows = await env.DB.prepare(
@@ -327,6 +365,25 @@ async function route(req, env, admin, club) {
   }
   if (!input || typeof input !== 'object' || Array.isArray(input))
     return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
+  if (action === 'admin') {
+    if (!admin) return json({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
+    if (typeof input.userId !== 'string' || !/^U[a-f0-9]{32}$/.test(input.userId))
+      return json({ error: 'เลือกบัญชี LINE ที่ผูกไว้' }, 400);
+    if (typeof input.admin !== 'boolean') return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
+    if (input.admin) {
+      const linked = await env.DB.prepare(
+        "SELECT 1 FROM member_links WHERE user_id=? AND status='approved'",
+      )
+        .bind(input.userId)
+        .first();
+      if (!linked) return json({ error: 'ต้องผูกบัญชี LINE กับชื่อผู้เล่นก่อน' }, 409);
+      await env.DB.prepare('INSERT OR IGNORE INTO member_admins VALUES(?,?)')
+        .bind(input.userId, new Date().toISOString())
+        .run();
+    } else
+      await env.DB.prepare('DELETE FROM member_admins WHERE user_id=?').bind(input.userId).run();
+    return json({ ok: true, admin: input.admin });
+  }
   if (action === 'link') {
     if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
     if (input.newMember !== undefined) {
@@ -382,6 +439,7 @@ async function route(req, env, admin, club) {
       remove: true,
       expected: { playerId: input.previousPlayerId, status: input.previousStatus },
     });
+    await env.DB.prepare('DELETE FROM member_admins WHERE user_id=?').bind(input.userId).run();
     return json({ ok: true });
   }
   return json({ error: 'Not found' }, 404);

@@ -1,6 +1,6 @@
 import { syncLinkedPlayers } from './roster-sync.js';
 import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
-import { memberRoute, memberFor, memberMode } from './member.js';
+import { memberRoute, memberFor, memberMode, memberIsAdmin } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
 import { lineAdmin, lineWebhook } from './line.js';
 import { bookingRoute, scheduledBookings } from './booking.js';
@@ -54,7 +54,18 @@ async function sessionSignature(exp, env, initialize = false) {
   if (!row?.secret) throw Error('Missing session signing key');
   return sign(JSON.stringify([exp, env.ADMIN_KEY]), row.secret);
 }
-export async function authorized(req, env) {
+// Organizer rights: the ADMIN_KEY session cookie, or a LINE member the organizer
+// marked as admin. Cached per request because several routes ask more than once.
+const authCache = new WeakMap();
+export function authorized(req, env) {
+  if (!authCache.has(req))
+    authCache.set(
+      req,
+      (async () => (await keySession(req, env)) || (await memberIsAdmin(req, env)))(),
+    );
+  return authCache.get(req);
+}
+async function keySession(req, env) {
   if (!ready(env) || !env.DB) return false;
   const token = (req.headers.get('Cookie') || '')
     .split(';')
@@ -209,10 +220,12 @@ export default {
       if (path === '/api/line/webhook') return await lineWebhook(req, env);
       if (path.startsWith('/api/') && req.method !== 'GET' && !originOK(req))
         return json({ error: 'Origin ไม่ถูกต้อง' }, 403);
-      if (path === '/api/session')
-        return req.method === 'GET'
-          ? json({ canEdit: await authorized(req, env) })
-          : json({ error: 'Method not allowed' }, 405);
+      if (path === '/api/session') {
+        if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+        const key = await keySession(req, env),
+          line = !key && (await memberIsAdmin(req, env));
+        return json({ canEdit: key || line, via: key ? 'key' : line ? 'line' : null });
+      }
       if (path === '/api/line') return await lineAdmin(req, env, await authorized(req, env), club);
       if (path === '/api/billing')
         return await billingRoute(req, env, await authorized(req, env), club);
