@@ -36,4 +36,4 @@
 - รหัสผิดจำกัด 10 ครั้ง/IP/ช่วง 15 นาที; เปลี่ยน ADMIN_KEY ยกเลิก session เดิม
 - ใช้แผน Free และติดตามโควตาจาก Cloudflare; ไม่มีการเปิดบริการเสียเงินจากโค้ดนี้
 
-ทดสอบ: `npm test` • ไม่มี dependency ฝั่ง runtime • DB สร้าง schema.sql เพียงครั้งแรก
+ทดสอบ: `npm install` แล้ว `npm test` • dependency ฝั่ง runtime: `qrcode-generator` (QR PromptPay) • จัดรูปแบบโค้ด: `npm run format` • ตารางส่วนใหญ่ถูกสร้างอัตโนมัติจากโค้ด
