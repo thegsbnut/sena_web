@@ -6,6 +6,11 @@
 // once again, so a table that is genuinely missing is still created.
 const SCHEMA = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\b/i;
 const ensured = new WeakMap();
+const ONCE = Symbol('schema-once');
+
+// Run `fn` (seed rows and the like) once per binding per isolate. Falls back to
+// running it every time when the database is not wrapped (tests, plain bindings).
+export const once = (db, key, fn) => (typeof db?.[ONCE] === 'function' ? db[ONCE](key, fn) : fn());
 
 export function withSchemaCache(db) {
   if (!db || typeof db.prepare !== 'function') return db;
@@ -13,6 +18,12 @@ export function withSchemaCache(db) {
   if (!done) ensured.set(db, (done = new Set()));
   return new Proxy(db, {
     get(target, prop) {
+      if (prop === ONCE)
+        return async (key, fn) => {
+          if (done.has(key)) return;
+          await fn();
+          done.add(key);
+        };
       if (prop !== 'prepare') {
         const value = Reflect.get(target, prop, target);
         return typeof value === 'function' ? value.bind(target) : value;

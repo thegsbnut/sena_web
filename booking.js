@@ -1,4 +1,5 @@
 import { memberMode } from './member.js';
+import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
@@ -125,24 +126,27 @@ async function prepare(DB) {
   await DB.prepare(
     'CREATE TABLE IF NOT EXISTS booking_clubs (club TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)',
   ).run();
-  await DB.prepare(
-    'INSERT OR IGNORE INTO booking_clubs (club,revision,payload,updated_at) VALUES (?,0,?,?)',
-  )
-    .bind(
-      'sena',
-      JSON.stringify({ settings: defaultSettings(), settingsVersion: 0, sessions: [], seq: 0 }),
-      new Date().toISOString(),
-    )
-    .run();
-  await DB.prepare(
-    'INSERT OR IGNORE INTO booking_clubs (club,revision,payload,updated_at) VALUES (?,0,?,?)',
-  )
-    .bind(
-      '88',
-      JSON.stringify({ settings: defaultSettings(), settingsVersion: 0, sessions: [], seq: 0 }),
-      new Date().toISOString(),
-    )
-    .run();
+  // The two starter rows only need to exist once; do not repeat them on every request.
+  await once(DB, 'booking_clubs:seed', () =>
+    Promise.all(
+      ['sena', '88'].map(club =>
+        DB.prepare(
+          'INSERT OR IGNORE INTO booking_clubs (club,revision,payload,updated_at) VALUES (?,0,?,?)',
+        )
+          .bind(
+            club,
+            JSON.stringify({
+              settings: defaultSettings(),
+              settingsVersion: 0,
+              sessions: [],
+              seq: 0,
+            }),
+            new Date().toISOString(),
+          )
+          .run(),
+      ),
+    ),
+  );
 }
 async function clubStateFor(DB, club) {
   const table = club === '88' ? 'club_state_88' : 'club_state';
@@ -458,12 +462,13 @@ export async function mutateBooking(env, club, operation, now = new Date()) {
   if (!env.DB) fail('ยังไม่ได้ผูกฐานข้อมูล DB', 503);
   await prepare(env.DB);
   for (let attempt = 0; attempt < 8; attempt++) {
-    const row = await env.DB.prepare('SELECT revision,payload FROM booking_clubs WHERE club=?')
-      .bind(club)
-      .first();
+    // The booking document and the roster are independent: read them together.
+    const [row, { players, cup }] = await Promise.all([
+      env.DB.prepare('SELECT revision,payload FROM booking_clubs WHERE club=?').bind(club).first(),
+      clubStateFor(env.DB, club),
+    ]);
     const doc = JSON.parse(row.payload),
-      before = row.payload,
-      { players, cup } = await clubStateFor(env.DB, club);
+      before = row.payload;
     materialize(doc, players, now);
     const result = operation ? await operation(doc, players) : null;
     materialize(doc, players, now);
@@ -515,291 +520,298 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       )
         fail('ไม่พบคำสั่ง');
     }
-    const cupHistory = env.DB ? await latestCup(env.DB, club) : null;
-    const outcome = await mutateBooking(
-      env,
-      club,
-      input
-        ? (doc, players) => {
-            if (input.action === 'venueMap') {
-              const next = validateVenueMap(input.url),
-                current = venueMapFor(doc, club);
-              if (next === current) return { message: 'บันทึกลิงก์แผนที่แล้ว' };
-              if (input.previousUrl !== current)
-                fail('ลิงก์แผนที่ถูกแก้จากอีกเครื่อง กรุณาอัปเดตคิวแล้วลองใหม่', 409);
-              doc.venueMapUrl = next;
-              return { message: 'บันทึกลิงก์แผนที่แล้ว' };
-            }
-            if (input.action === 'settings') {
-              if (input.settingsVersion !== doc.settingsVersion)
-                fail('ผู้จัดอีกเครื่องแก้การตั้งค่าแล้ว กรุณาโหลดใหม่', 409);
-              const cfg = validateSettings(
-                {
-                  ...input.settings,
-                  cancellationNoticeHours:
-                    input.settings?.cancellationNoticeHours ??
-                    doc.settings.cancellationNoticeHours ??
-                    48,
-                  courtNumbers: input.settings?.courtNumbers ?? doc.settings.courtNumbers ?? '',
-                },
-                players,
-              );
-              doc.settings = cfg;
-              doc.settingsVersion++;
-              for (const s of doc.sessions) {
-                if (startsAt(s) <= +now) continue;
-                s.start = cfg.start;
-                s.end = cfg.end;
-                s.capacity = cfg.capacity;
-                s.rounds = cfg.rounds;
-                s.registrations = s.registrations.filter(
-                  r => r.source !== 'regular' || cfg.regularIds.includes(r.playerId),
-                );
-                s.regularSeen = s.regularSeen.filter(id => cfg.regularIds.includes(id));
+    // Cup history is independent of the booking document: fetch both at once.
+    const [cupHistory, outcome] = await Promise.all([
+      env.DB ? latestCup(env.DB, club) : null,
+      mutateBooking(
+        env,
+        club,
+        input
+          ? (doc, players) => {
+              if (input.action === 'venueMap') {
+                const next = validateVenueMap(input.url),
+                  current = venueMapFor(doc, club);
+                if (next === current) return { message: 'บันทึกลิงก์แผนที่แล้ว' };
+                if (input.previousUrl !== current)
+                  fail('ลิงก์แผนที่ถูกแก้จากอีกเครื่อง กรุณาอัปเดตคิวแล้วลองใหม่', 409);
+                doc.venueMapUrl = next;
+                return { message: 'บันทึกลิงก์แผนที่แล้ว' };
               }
-              return { message: 'บันทึกการตั้งค่าและลงชื่อขาประจำแล้ว' };
-            }
-            const session = id => {
-              const s = doc.sessions.find(s => s.id === id);
-              if (!s || startsAt(s) <= +now)
-                fail('รอบนี้เริ่มแล้ว หรือไม่มีในตาราง กรุณาโหลดใหม่', 409);
-              return s;
-            };
-            if (input.action === 'courtNumbers') {
-              const s = session(input.sessionId);
-              const next = normalizeCourtNumbers(input.courtNumbers);
-              if ((s.courtNumbers ?? null) !== input.previousCourtNumbers)
-                fail('เลขคอร์ตถูกแก้จากอีกเครื่อง กรุณาโหลดใหม่', 409);
-              if (next) s.courtNumbers = next;
-              else delete s.courtNumbers;
-              return { message: 'บันทึกเลขคอร์ตแล้ว' };
-            }
-            if (input.action === 'cupCalendar') {
-              const { week, changes, cupVersion } = input;
-              if (cupVersion !== (doc.cupVersion ?? 0))
-                fail('ผู้จัดอีกเครื่องแก้ปฏิทิน Cup แล้ว กรุณาโหลดค่าล่าสุด', 409);
-              if (
-                !integer(week, 0, 5) ||
-                !Array.isArray(changes) ||
-                changes.length > doc.sessions.length ||
-                !changes.every(
-                  c => c && validDate(c.date) && (c.isCup === null || typeof c.isCup === 'boolean'),
-                ) ||
-                new Set(changes.map(c => c.date)).size !== changes.length
-              )
-                fail('ตรวจสัปดาห์และวันแข่ง Cup อีกครั้ง');
-              for (const { date, isCup } of changes) {
-                const s = session(date);
-                if (s.skipped) fail('รอบนี้งดจองวันหยุด กรุณาโหลดค่าล่าสุด', 409);
-                if (isCup === null) delete s.cupOverride;
-                else s.cupOverride = isCup;
-              }
-              doc.cupWeek = week;
-              doc.cupVersion = (doc.cupVersion ?? 0) + 1;
-              return { message: 'บันทึกวันแข่งขันแล้ว' };
-            }
-            if (input.action === 'reroll') {
-              const s = session(input.sessionId);
-              refreshSchedules(doc, players, now);
-              if (
-                !doc.settings.enabled ||
-                s.closed ||
-                s.skipped ||
-                !s.schedule ||
-                s.scheduleVersion !== input.scheduleVersion
-              ) {
-                fail('ตารางรอบนี้เปลี่ยนแล้วหรือยังไม่พร้อม กรุณาอัปเดตคิว', 409);
-              }
-              const chosen = bookingPlayers(s, players);
-              try {
-                s.schedule = generateBookingSchedule(chosen, s.rounds, s.schedule);
-              } catch {
-                fail('ยังไม่พบตารางแบบอื่นที่เข้าเงื่อนไข จึงเก็บตารางเดิมไว้', 409);
-              }
-              s.scheduleRerolled = true;
-              s.scheduleVersion++;
-              s.scheduleUpdatedAt = now.toISOString();
-              return { message: 'จัดคู่ใหม่และบันทึกตารางแล้ว' };
-            }
-            if (input.action === 'close') {
-              const s = session(input.sessionId);
-              if (typeof input.closed !== 'boolean') fail('ข้อมูลไม่ถูกต้อง');
-              s.closed = input.closed;
-              return { message: s.closed ? 'ปิดรับจองรอบนี้แล้ว' : 'เปิดรับจองรอบนี้แล้ว' };
-            }
-            if (input.action === 'book') {
-              if (
-                memberMode(env) &&
-                !admin &&
-                (member?.link?.status !== 'approved' || input.playerId !== member.link.player_id)
-              )
-                fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อของคุณก่อนจอง', 403);
-              if (!doc.settings.enabled) fail('ผู้จัดยังไม่เปิดรับจอง', 409);
-              if (!owner) fail('กรุณาเปิดใช้พื้นที่จัดเก็บในเบราว์เซอร์เพื่อจัดการการจอง');
-              const player = players.find(p => p.id === input.playerId);
-              if (!player) fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
-              if (
-                !Array.isArray(input.sessionIds) ||
-                input.sessionIds.length < 1 ||
-                input.sessionIds.length > 56 ||
-                new Set(input.sessionIds).size !== input.sessionIds.length
-              )
-                fail('เลือกวันที่ต้องการจองอย่างน้อย 1 วัน');
-              const sessions = input.sessionIds.map(session);
-              if (sessions.some(s => s.closed || s.skipped))
-                fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่', 409);
-              if (sessions.some(s => s.holiday) && input.acceptHoliday !== true)
-                fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง', 409);
-              const guest = bookingGuest(input.guest, player.id);
-              const friend =
-                input.friendId == null ? null : players.find(p => p.id === input.friendId);
-              if (input.friendId != null && (!friend || friend.id === player.id))
-                fail('เลือกเพื่อนในระบบที่ไม่ใช่ตัวเอง 1 คน');
-              let added = 0,
-                guestsAdded = 0,
-                friendsAdded = 0;
-              const duplicateIds = [];
-              for (const s of sessions) {
-                const hasHost = s.registrations.some(r => r.playerId === player.id);
-                const hostBooking = s.registrations.find(r => r.playerId === player.id);
-                if (hostBooking?.invitedBy && (guest || friend))
-                  fail('รอบนี้มีเพื่อนจองและจ่ายแทนให้แล้ว ให้ผู้จัดช่วยก่อนเพิ่มคนอื่น', 409);
-                const currentFriend = friend && s.registrations.find(r => r.playerId === friend.id);
-                if (currentFriend && currentFriend.invitedBy !== player.id)
-                  fail('เพื่อนที่เลือกมีชื่อในรอบนี้แล้ว ไม่เปลี่ยนผู้จ่ายให้โดยอัตโนมัติ', 409);
-                if (
-                  friend &&
-                  s.registrations.some(r => r.invitedBy === player.id && r.playerId !== friend.id)
-                )
-                  fail('จองให้เพื่อนในระบบได้ 1 คนต่อรอบ', 409);
-                const nameKey = value => value.normalize('NFC').trim().toLowerCase();
-                const sponsored =
-                  friend ||
-                  players.find(p =>
-                    s.registrations.some(r => r.playerId === p.id && r.invitedBy === player.id),
-                  );
-                if (
-                  guest &&
-                  (nameKey(guest.name) === nameKey(player.name) ||
-                    (sponsored && nameKey(guest.name) === nameKey(sponsored.name)))
-                )
-                  fail('ชื่อแขกซ้ำกับสมาชิกในกลุ่ม กรุณาระบุชื่อให้ต่างกัน');
-                if (
-                  friend &&
-                  s.registrations.some(
-                    r =>
-                      r.guest?.hostId === player.id &&
-                      nameKey(r.guest.name) === nameKey(friend.name),
-                  )
-                )
-                  fail('ชื่อเพื่อนซ้ำกับแขกที่จองไว้ กรุณาให้ผู้จัดตรวจสอบก่อน');
-                const addFriend = friend && !currentFriend;
-                const addGuest =
-                  guest &&
-                  !s.registrations.some(
-                    r =>
-                      r.guest?.hostId === player.id &&
-                      r.guest.name.toLowerCase() === guest.name.toLowerCase(),
-                  );
-                const seats =
-                  Number(!hasHost) + Number(Boolean(addGuest)) + Number(Boolean(addFriend));
-                if (!seats) {
-                  duplicateIds.push(s.id);
-                  continue;
-                }
-                if (s.registrations.length + seats > 200) fail('คิวสำรองรอบนี้เต็มแล้ว', 409);
-                const register = (playerId, extra = {}) => {
-                  s.registrations.push({
-                    id: crypto.randomUUID(),
-                    playerId,
-                    seq: ++doc.seq,
-                    source: 'manual',
-                    ownerHash: owner,
-                    createdAt: now.toISOString(),
-                    ...extra,
-                  });
-                };
-                if (!hasHost) register(player.id);
-                if (addFriend) {
-                  register(friend.id, { invitedBy: player.id });
-                  friendsAdded++;
-                }
-                if (addGuest) {
-                  register('guest:' + crypto.randomUUID(), { guest });
-                  guestsAdded++;
-                }
-                added++;
-              }
-              const duplicate = duplicateIds.length;
-              return {
-                added,
-                guestsAdded,
-                friendsAdded,
-                duplicate,
-                duplicateIds,
-                message: added
-                  ? `จองเรียบร้อย ${added} วัน${friendsAdded ? ` • จองให้เพื่อน ${friendsAdded} ที่นั่ง` : ``}${guestsAdded ? ` • เพิ่มแขก ${guestsAdded} ที่นั่ง` : ''}${duplicate ? ` • ลงชื่อไว้แล้ว ${duplicate} วัน` : ''}`
-                  : 'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ',
-              };
-            }
-            if (input.action === 'cancel') {
-              const s = session(input.sessionId),
-                r = s.registrations.find(r => r.id === input.registrationId);
-              if (!r) fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่', 409);
-              if (
-                memberMode(env) &&
-                !admin &&
-                (member?.link?.status !== 'approved' ||
-                  ((r.guest?.hostId || r.invitedBy || r.playerId) !== member.link.player_id &&
-                    r.playerId !== member.link.player_id))
-              )
-                fail('ถอนได้เฉพาะรายการของตัวเอง กรุณาให้ผู้จัดช่วย', 403);
-              const hours = doc.settings.cancellationNoticeHours ?? 48;
-              const deadline = startsAt(s) - hours * 3600000,
-                late = +now > deadline;
-              if (late && input.acceptLateCancellation !== true)
-                throw new BookingError(
-                  `เลยเวลาถอนปลอดภัย ${hours} ชั่วโมงก่อนเริ่มแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย กรุณากดรับทราบก่อนยืนยันถอนตัว`,
-                  409,
+              if (input.action === 'settings') {
+                if (input.settingsVersion !== doc.settingsVersion)
+                  fail('ผู้จัดอีกเครื่องแก้การตั้งค่าแล้ว กรุณาโหลดใหม่', 409);
+                const cfg = validateSettings(
                   {
-                    code: 'LATE_CANCELLATION_ACK_REQUIRED',
-                    cancellationNoticeHours: hours,
-                    cancellationDeadline: new Date(deadline).toISOString(),
+                    ...input.settings,
+                    cancellationNoticeHours:
+                      input.settings?.cancellationNoticeHours ??
+                      doc.settings.cancellationNoticeHours ??
+                      48,
+                    courtNumbers: input.settings?.courtNumbers ?? doc.settings.courtNumbers ?? '',
                   },
+                  players,
                 );
-              const removed = s.registrations.filter(
-                x => x.id === r.id || x.guest?.hostId === r.playerId || x.invitedBy === r.playerId,
-              );
-              s.withdrawals ??= [];
-              for (const x of removed) {
-                const host = x.guest?.hostId || x.invitedBy || x.playerId,
-                  payer = players.find(p => p.id === host)?.name || 'ผู้เล่นที่นำออกจากก๊วน';
-                s.withdrawals.push({
-                  registrationId: x.id,
-                  playerId: x.playerId,
-                  name: x.guest?.name || players.find(p => p.id === x.playerId)?.name || payer,
-                  payer,
-                  payerKey: 'member:' + host,
-                  guest: Boolean(x.guest),
-                  ...(x.invitedBy ? { invitedBy: x.invitedBy } : {}),
-                  cancelledAt: now.toISOString(),
-                  lateCancellation: late,
-                  cancellationNoticeHours: hours,
-                  acknowledgedAt: late ? now.toISOString() : null,
-                  status: s.registrations.indexOf(x) < s.capacity ? 'confirmed' : 'waitlist',
-                  cancelledByOrganizer: admin,
-                  ...(member ? { actorUserId: member.userId } : {}),
-                });
+                doc.settings = cfg;
+                doc.settingsVersion++;
+                for (const s of doc.sessions) {
+                  if (startsAt(s) <= +now) continue;
+                  s.start = cfg.start;
+                  s.end = cfg.end;
+                  s.capacity = cfg.capacity;
+                  s.rounds = cfg.rounds;
+                  s.registrations = s.registrations.filter(
+                    r => r.source !== 'regular' || cfg.regularIds.includes(r.playerId),
+                  );
+                  s.regularSeen = s.regularSeen.filter(id => cfg.regularIds.includes(id));
+                }
+                return { message: 'บันทึกการตั้งค่าและลงชื่อขาประจำแล้ว' };
               }
-              s.registrations = s.registrations.filter(
-                x => x.id !== r.id && x.guest?.hostId !== r.playerId && x.invitedBy !== r.playerId,
-              );
-              return { message: 'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ' };
+              const session = id => {
+                const s = doc.sessions.find(s => s.id === id);
+                if (!s || startsAt(s) <= +now)
+                  fail('รอบนี้เริ่มแล้ว หรือไม่มีในตาราง กรุณาโหลดใหม่', 409);
+                return s;
+              };
+              if (input.action === 'courtNumbers') {
+                const s = session(input.sessionId);
+                const next = normalizeCourtNumbers(input.courtNumbers);
+                if ((s.courtNumbers ?? null) !== input.previousCourtNumbers)
+                  fail('เลขคอร์ตถูกแก้จากอีกเครื่อง กรุณาโหลดใหม่', 409);
+                if (next) s.courtNumbers = next;
+                else delete s.courtNumbers;
+                return { message: 'บันทึกเลขคอร์ตแล้ว' };
+              }
+              if (input.action === 'cupCalendar') {
+                const { week, changes, cupVersion } = input;
+                if (cupVersion !== (doc.cupVersion ?? 0))
+                  fail('ผู้จัดอีกเครื่องแก้ปฏิทิน Cup แล้ว กรุณาโหลดค่าล่าสุด', 409);
+                if (
+                  !integer(week, 0, 5) ||
+                  !Array.isArray(changes) ||
+                  changes.length > doc.sessions.length ||
+                  !changes.every(
+                    c =>
+                      c && validDate(c.date) && (c.isCup === null || typeof c.isCup === 'boolean'),
+                  ) ||
+                  new Set(changes.map(c => c.date)).size !== changes.length
+                )
+                  fail('ตรวจสัปดาห์และวันแข่ง Cup อีกครั้ง');
+                for (const { date, isCup } of changes) {
+                  const s = session(date);
+                  if (s.skipped) fail('รอบนี้งดจองวันหยุด กรุณาโหลดค่าล่าสุด', 409);
+                  if (isCup === null) delete s.cupOverride;
+                  else s.cupOverride = isCup;
+                }
+                doc.cupWeek = week;
+                doc.cupVersion = (doc.cupVersion ?? 0) + 1;
+                return { message: 'บันทึกวันแข่งขันแล้ว' };
+              }
+              if (input.action === 'reroll') {
+                const s = session(input.sessionId);
+                refreshSchedules(doc, players, now);
+                if (
+                  !doc.settings.enabled ||
+                  s.closed ||
+                  s.skipped ||
+                  !s.schedule ||
+                  s.scheduleVersion !== input.scheduleVersion
+                ) {
+                  fail('ตารางรอบนี้เปลี่ยนแล้วหรือยังไม่พร้อม กรุณาอัปเดตคิว', 409);
+                }
+                const chosen = bookingPlayers(s, players);
+                try {
+                  s.schedule = generateBookingSchedule(chosen, s.rounds, s.schedule);
+                } catch {
+                  fail('ยังไม่พบตารางแบบอื่นที่เข้าเงื่อนไข จึงเก็บตารางเดิมไว้', 409);
+                }
+                s.scheduleRerolled = true;
+                s.scheduleVersion++;
+                s.scheduleUpdatedAt = now.toISOString();
+                return { message: 'จัดคู่ใหม่และบันทึกตารางแล้ว' };
+              }
+              if (input.action === 'close') {
+                const s = session(input.sessionId);
+                if (typeof input.closed !== 'boolean') fail('ข้อมูลไม่ถูกต้อง');
+                s.closed = input.closed;
+                return { message: s.closed ? 'ปิดรับจองรอบนี้แล้ว' : 'เปิดรับจองรอบนี้แล้ว' };
+              }
+              if (input.action === 'book') {
+                if (
+                  memberMode(env) &&
+                  !admin &&
+                  (member?.link?.status !== 'approved' || input.playerId !== member.link.player_id)
+                )
+                  fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อของคุณก่อนจอง', 403);
+                if (!doc.settings.enabled) fail('ผู้จัดยังไม่เปิดรับจอง', 409);
+                if (!owner) fail('กรุณาเปิดใช้พื้นที่จัดเก็บในเบราว์เซอร์เพื่อจัดการการจอง');
+                const player = players.find(p => p.id === input.playerId);
+                if (!player) fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
+                if (
+                  !Array.isArray(input.sessionIds) ||
+                  input.sessionIds.length < 1 ||
+                  input.sessionIds.length > 56 ||
+                  new Set(input.sessionIds).size !== input.sessionIds.length
+                )
+                  fail('เลือกวันที่ต้องการจองอย่างน้อย 1 วัน');
+                const sessions = input.sessionIds.map(session);
+                if (sessions.some(s => s.closed || s.skipped))
+                  fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่', 409);
+                if (sessions.some(s => s.holiday) && input.acceptHoliday !== true)
+                  fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง', 409);
+                const guest = bookingGuest(input.guest, player.id);
+                const friend =
+                  input.friendId == null ? null : players.find(p => p.id === input.friendId);
+                if (input.friendId != null && (!friend || friend.id === player.id))
+                  fail('เลือกเพื่อนในระบบที่ไม่ใช่ตัวเอง 1 คน');
+                let added = 0,
+                  guestsAdded = 0,
+                  friendsAdded = 0;
+                const duplicateIds = [];
+                for (const s of sessions) {
+                  const hasHost = s.registrations.some(r => r.playerId === player.id);
+                  const hostBooking = s.registrations.find(r => r.playerId === player.id);
+                  if (hostBooking?.invitedBy && (guest || friend))
+                    fail('รอบนี้มีเพื่อนจองและจ่ายแทนให้แล้ว ให้ผู้จัดช่วยก่อนเพิ่มคนอื่น', 409);
+                  const currentFriend =
+                    friend && s.registrations.find(r => r.playerId === friend.id);
+                  if (currentFriend && currentFriend.invitedBy !== player.id)
+                    fail('เพื่อนที่เลือกมีชื่อในรอบนี้แล้ว ไม่เปลี่ยนผู้จ่ายให้โดยอัตโนมัติ', 409);
+                  if (
+                    friend &&
+                    s.registrations.some(r => r.invitedBy === player.id && r.playerId !== friend.id)
+                  )
+                    fail('จองให้เพื่อนในระบบได้ 1 คนต่อรอบ', 409);
+                  const nameKey = value => value.normalize('NFC').trim().toLowerCase();
+                  const sponsored =
+                    friend ||
+                    players.find(p =>
+                      s.registrations.some(r => r.playerId === p.id && r.invitedBy === player.id),
+                    );
+                  if (
+                    guest &&
+                    (nameKey(guest.name) === nameKey(player.name) ||
+                      (sponsored && nameKey(guest.name) === nameKey(sponsored.name)))
+                  )
+                    fail('ชื่อแขกซ้ำกับสมาชิกในกลุ่ม กรุณาระบุชื่อให้ต่างกัน');
+                  if (
+                    friend &&
+                    s.registrations.some(
+                      r =>
+                        r.guest?.hostId === player.id &&
+                        nameKey(r.guest.name) === nameKey(friend.name),
+                    )
+                  )
+                    fail('ชื่อเพื่อนซ้ำกับแขกที่จองไว้ กรุณาให้ผู้จัดตรวจสอบก่อน');
+                  const addFriend = friend && !currentFriend;
+                  const addGuest =
+                    guest &&
+                    !s.registrations.some(
+                      r =>
+                        r.guest?.hostId === player.id &&
+                        r.guest.name.toLowerCase() === guest.name.toLowerCase(),
+                    );
+                  const seats =
+                    Number(!hasHost) + Number(Boolean(addGuest)) + Number(Boolean(addFriend));
+                  if (!seats) {
+                    duplicateIds.push(s.id);
+                    continue;
+                  }
+                  if (s.registrations.length + seats > 200) fail('คิวสำรองรอบนี้เต็มแล้ว', 409);
+                  const register = (playerId, extra = {}) => {
+                    s.registrations.push({
+                      id: crypto.randomUUID(),
+                      playerId,
+                      seq: ++doc.seq,
+                      source: 'manual',
+                      ownerHash: owner,
+                      createdAt: now.toISOString(),
+                      ...extra,
+                    });
+                  };
+                  if (!hasHost) register(player.id);
+                  if (addFriend) {
+                    register(friend.id, { invitedBy: player.id });
+                    friendsAdded++;
+                  }
+                  if (addGuest) {
+                    register('guest:' + crypto.randomUUID(), { guest });
+                    guestsAdded++;
+                  }
+                  added++;
+                }
+                const duplicate = duplicateIds.length;
+                return {
+                  added,
+                  guestsAdded,
+                  friendsAdded,
+                  duplicate,
+                  duplicateIds,
+                  message: added
+                    ? `จองเรียบร้อย ${added} วัน${friendsAdded ? ` • จองให้เพื่อน ${friendsAdded} ที่นั่ง` : ``}${guestsAdded ? ` • เพิ่มแขก ${guestsAdded} ที่นั่ง` : ''}${duplicate ? ` • ลงชื่อไว้แล้ว ${duplicate} วัน` : ''}`
+                    : 'มีชื่อในวันที่เลือกแล้ว ไม่ได้เพิ่มซ้ำ',
+                };
+              }
+              if (input.action === 'cancel') {
+                const s = session(input.sessionId),
+                  r = s.registrations.find(r => r.id === input.registrationId);
+                if (!r) fail('รายการนี้ถูกถอนแล้ว กรุณาโหลดใหม่', 409);
+                if (
+                  memberMode(env) &&
+                  !admin &&
+                  (member?.link?.status !== 'approved' ||
+                    ((r.guest?.hostId || r.invitedBy || r.playerId) !== member.link.player_id &&
+                      r.playerId !== member.link.player_id))
+                )
+                  fail('ถอนได้เฉพาะรายการของตัวเอง กรุณาให้ผู้จัดช่วย', 403);
+                const hours = doc.settings.cancellationNoticeHours ?? 48;
+                const deadline = startsAt(s) - hours * 3600000,
+                  late = +now > deadline;
+                if (late && input.acceptLateCancellation !== true)
+                  throw new BookingError(
+                    `เลยเวลาถอนปลอดภัย ${hours} ชั่วโมงก่อนเริ่มแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย กรุณากดรับทราบก่อนยืนยันถอนตัว`,
+                    409,
+                    {
+                      code: 'LATE_CANCELLATION_ACK_REQUIRED',
+                      cancellationNoticeHours: hours,
+                      cancellationDeadline: new Date(deadline).toISOString(),
+                    },
+                  );
+                const removed = s.registrations.filter(
+                  x =>
+                    x.id === r.id || x.guest?.hostId === r.playerId || x.invitedBy === r.playerId,
+                );
+                s.withdrawals ??= [];
+                for (const x of removed) {
+                  const host = x.guest?.hostId || x.invitedBy || x.playerId,
+                    payer = players.find(p => p.id === host)?.name || 'ผู้เล่นที่นำออกจากก๊วน';
+                  s.withdrawals.push({
+                    registrationId: x.id,
+                    playerId: x.playerId,
+                    name: x.guest?.name || players.find(p => p.id === x.playerId)?.name || payer,
+                    payer,
+                    payerKey: 'member:' + host,
+                    guest: Boolean(x.guest),
+                    ...(x.invitedBy ? { invitedBy: x.invitedBy } : {}),
+                    cancelledAt: now.toISOString(),
+                    lateCancellation: late,
+                    cancellationNoticeHours: hours,
+                    acknowledgedAt: late ? now.toISOString() : null,
+                    status: s.registrations.indexOf(x) < s.capacity ? 'confirmed' : 'waitlist',
+                    cancelledByOrganizer: admin,
+                    ...(member ? { actorUserId: member.userId } : {}),
+                  });
+                }
+                s.registrations = s.registrations.filter(
+                  x =>
+                    x.id !== r.id && x.guest?.hostId !== r.playerId && x.invitedBy !== r.playerId,
+                );
+                return { message: 'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ' };
+              }
             }
-          }
-        : null,
-      now,
-    );
+          : null,
+        now,
+      ),
+    ]);
     const awards = new Map(
       [...globalThis.Sena.cupAwards(cupHistory ?? outcome.cup)].map(([name, award]) => [
         cupPlayerKey(name, club),

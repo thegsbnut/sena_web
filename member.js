@@ -70,17 +70,13 @@ export async function memberFor(req, env, club) {
     .bind(tokenHash, Date.now())
     .first();
   if (!session) return null;
-  let link = await env.DB.prepare(
-    'SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?',
-  )
-    .bind(session.user_id, club)
-    .first();
   const otherClub = club === 'sena' ? '88' : 'sena';
-  const other = await env.DB.prepare(
-    'SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?',
-  )
-    .bind(session.user_id, otherClub)
-    .first();
+  const linkFor = c =>
+    env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?')
+      .bind(session.user_id, c)
+      .first();
+  // Both clubs' links are independent reads: fetch them together.
+  let [link, other] = await Promise.all([linkFor(club), linkFor(otherClub)]);
   const anchor =
     link?.status === 'approved' || (link?.status === 'pending' && link.kind === 'existing')
       ? { club, link }
