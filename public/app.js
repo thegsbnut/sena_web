@@ -203,7 +203,7 @@ function lineText() {
     state.result.schedule
       .map(m => {
         let ps = m.ids.map(person);
-        return `${m.round}. ${decoratedName(ps[0].name)} + ${decoratedName(ps[1].name)} vs ${decoratedName(ps[2].name)} + ${decoratedName(ps[3].name)}\n${m.locked ? '👑 คู่พิเศษ เปิดศึกให้สุด!' : (m.diff ?? 0) <= 1 ? '🔥 คู่สูสี ลุยให้สุด!' : '⚡ วัดฝีมือ สู้ทุกลูก!'}`;
+        return `${m.round}. ${decoratedName(ps[0].name)} + ${decoratedName(ps[1].name)} vs ${decoratedName(ps[2].name)} + ${decoratedName(ps[3].name)}\n${m.locked ? '👑 คู่พิเศษ เปิดศึกให้สุด!' : '🔥 ลุยให้สุด!'}`;
       })
       .join('\n\n') +
     '\n\nจำนวนเกม: ' +
@@ -221,7 +221,7 @@ function renderResults() {
   }
   const cs = Object.values(r.counts);
   $('#results').innerHTML =
-    `<div class="resulthead"><h2>ตารางพร้อมแล้ว 🏸</h2><button id="copyLine" data-copy-line class="secondary">คัดลอกส่ง LINE ↗</button></div><div class="panel"><b>${r.schedule.length} รอบ · คนละ ${Math.min(...cs)}–${Math.max(...cs)} เกม</b><p class="hint">ทุกคนพักรอบถัดไป • ไม่มี ญญ พบ ชญ${canManage ? ' • Lv ที่แสดงคือผลรวมทีม' : ''}<br>จัดแบบค้นหาหลายชุด เน้นเฉลี่ยเกมก่อนสมดุลฝีมือและลดคู่ซ้ำ ไม่รับประกันคำตอบที่ดีที่สุดทุกกรณี</p><div class="stats">${Object.entries(
+    `<div class="resulthead"><h2>ตารางพร้อมแล้ว 🏸</h2><button id="copyLine" data-copy-line class="secondary">คัดลอกส่ง LINE ↗</button></div><div class="panel"><b>${r.schedule.length} รอบ · คนละ ${Math.min(...cs)}–${Math.max(...cs)} เกม</b><p class="hint">ทุกคนพักรอบถัดไป • ไม่มี ญญ พบ ชญ${canManage ? ' • Lv ที่แสดงคือผลรวมทีม' : ''}<br>จัดแบบค้นหาหลายชุด ${canManage ? 'เน้นเฉลี่ยเกมก่อนสมดุลฝีมือและลดคู่ซ้ำ' : 'เน้นเฉลี่ยจำนวนเกมและลดคู่ซ้ำ'} ไม่รับประกันคำตอบที่ดีที่สุดทุกกรณี</p><div class="stats">${Object.entries(
       r.counts,
     )
       .map(
@@ -239,7 +239,7 @@ function renderResults() {
           .join(', ')}</div></article>`;
       })
       .join('') +
-    `<details class="panel"><summary>ข้อความย่อสำหรับ LINE (ไม่แสดง Lv / เพศ)</summary><div class="actions"><button type="button" class="primary" data-copy-line>Copy ข้อความลง LINE</button><small id="copyStatus" role="status"></small></div><textarea aria-label="ข้อความสำหรับโพสต์ในกลุ่ม LINE" id="lineOutput" rows="14" readonly>${esc(lineText())}</textarea></details>`;
+    `<details class="panel"><summary>ข้อความย่อสำหรับ LINE</summary><div class="actions"><button type="button" class="primary" data-copy-line>Copy ข้อความลง LINE</button><small id="copyStatus" role="status"></small></div><textarea aria-label="ข้อความสำหรับโพสต์ในกลุ่ม LINE" id="lineOutput" rows="14" readonly>${esc(lineText())}</textarea></details>`;
 }
 function cupRestMessage() {
   const matches = state.cup?.matches || [];
@@ -317,7 +317,7 @@ $('#selectNames').onclick = () => {
     else unknown.push(n);
   }
   if (unknown.length) {
-    alert('ยังไม่มีชื่อ: ' + unknown.join(', ') + ' กรุณาเพิ่มชื่อ Lv และเพศในแท็บรายชื่อก่อน');
+    alert('ยังไม่มีชื่อ: ' + unknown.join(', ') + ' กรุณาให้ผู้จัดเพิ่มชื่อในแท็บรายชื่อก่อน');
     return;
   }
   state.selected = [...new Set(found)];

@@ -134,7 +134,7 @@ export async function mapBoth(
         ...(source.selfSignup ? { selfSignup: source.selfSignup } : {}),
       };
       if (!Number.isFinite(target.lv) || !['M', 'F'].includes(target.gender))
-        fail('รายชื่อเดิมยังไม่มี LV หรือเพศ ให้ผู้จัดตรวจสอบก่อน');
+        fail('ข้อมูลชื่อนี้ยังไม่ครบ ให้ผู้จัดตรวจสอบก่อน');
       if (!existing) {
         if (r.state.players.length >= 200) fail('รายชื่ออีกสนามเต็ม ให้ผู้จัดตรวจสอบก่อน');
         r.state.players.push(target);
