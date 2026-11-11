@@ -67,7 +67,7 @@ function command(event) {
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
   // TEMPORARY diagnostic (remove once the mention rule is known): hidden from `help`.
-  if (/^tagtest2(\s|$)/.test(action)) return { kind: 'tagTest2' };
+  if (/^tagtest3(\s|$)/.test(action)) return { kind: 'tagTest3' };
   if (shortcuts.has(action)) return shortcuts.get(action);
   // Pairing codes are consumed by the existing administrator-only pairing flow.
   if (/^[a-f0-9]{32}$/i.test(action)) return null;
@@ -410,21 +410,20 @@ export async function replyToGroupCommand(event, env) {
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'tagTest2') {
-      // Which multi-mention layouts does the LINE app render as real mentions?
-      // Three accounts (the friends picked with @, plus the sender) are mentioned in
-      // four layouts that differ only in position, trailing text and repetition.
+    if (action.kind === 'tagTest3') {
+      // Which multi-mention layouts render as real mentions, and does it depend on
+      // whether the viewer is one of the people mentioned? a/b = the two friends
+      // picked with @, c = the sender. Each viewer reports what they see.
       const friends = (event.message.mention?.mentionees || [])
         .filter(m => m.type === 'user' && !m.isSelf && validLineUserId(m.userId))
         .map(m => m.userId);
-      const ids = [...new Set([...friends, event.source.userId].filter(validLineUserId))].slice(
-        0,
-        3,
-      );
+      const ids = [
+        ...new Set([...friends.slice(0, 2), event.source.userId].filter(validLineUserId)),
+      ];
       if (ids.length < 3)
         messages.push({
           type: 'text',
-          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest2 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
+          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest3 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
         });
       else {
         const checks = await Promise.all(ids.map(userId => groupMentionTarget(env, group, userId)));
@@ -443,23 +442,27 @@ export async function replyToGroupCommand(event, env) {
               text:
                 'ทดสอบแท็ก รอบ ' +
                 run +
-                '\nดูว่าข้อความ [2]–[5] อันไหนชื่อเป็นสีฟ้า (แตะได้) แล้วบอกเลขที่เป็นสีฟ้า พร้อมบอกว่าดูจาก iPhone หรือ Android',
+                '\nทุกคนที่ถูกแท็ก ช่วยดูจากมือถือตัวเองว่า [2]–[5] อันไหนชื่อเป็นสีฟ้า (แตะได้) แล้วแคปจอส่งมา',
             },
             {
               type: 'textV2',
-              text: '[2] {a} {b}\nมีข้อความต่อท้ายชื่อ',
+              text: '[2] {a} {b}\nข้อความต่อท้ายชื่อ',
               substitution: { a: who(a), b: who(b) },
             },
-            { type: 'textV2', text: '[3] {a} {b}', substitution: { a: who(a), b: who(b) } },
             {
               type: 'textV2',
-              text: '[4] {a} {b} {c}\nมีข้อความต่อท้ายชื่อ',
-              substitution: { a: who(a), b: who(b), c: who(c) },
+              text: '[3] {a} {c}\nข้อความต่อท้ายชื่อ',
+              substitution: { a: who(a), c: who(c) },
             },
             {
               type: 'textV2',
-              text: '[5] {c} {b} {a} 👆 ต่อท้ายบรรทัดเดียวกัน',
-              substitution: { a: who(a), b: who(b), c: who(c) },
+              text: '[4] {a} {b} ข้อความต่อท้ายบรรทัดเดียวกัน',
+              substitution: { a: who(a), b: who(b) },
+            },
+            {
+              type: 'textV2',
+              text: '[5] รายการแบบบิล\n• {a} 333 บ.\n• {b} 333 บ.\nชำระผ่านลิงก์ด้านบน',
+              substitution: { a: who(a), b: who(b) },
             },
           );
         }
