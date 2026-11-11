@@ -539,6 +539,32 @@ export async function billingRoute(req, env, admin, club) {
   }
   if (req.method !== 'POST') return fail('Method not allowed', 405);
   const payload = JSON.parse(bill.payload);
+  // A payer says they will pay in cash. Nothing is marked paid: the row waits
+  // ("review", method cash, no slip) until the organizer confirms receipt.
+  if (action === 'cash-request' || action === 'cash-cancel') {
+    if (bill.cancelled) return fail('บิลนี้ถูกยกเลิกแล้ว', 409);
+    const target = payload.payers.find(p => p.id === payer?.id);
+    if (!target) return fail('กรุณาเปิดบิลจากลิงก์ชำระเงินของคุณ', 403);
+    if (memberMode(env) && !admin && !owns(target))
+      return fail('แจ้งจ่ายเงินสดได้เฉพาะบิลของตัวเอง กรุณาเข้าสู่ระบบ LINE', 403);
+    if (action === 'cash-request') {
+      if (!['unpaid', 'rejected'].includes(target.status) || target.slipKey)
+        return fail('รายการนี้เปลี่ยนสถานะแล้ว กรุณาโหลดใหม่ หรือติดต่อผู้จัด', 409);
+      Object.assign(target, {
+        status: 'review',
+        method: 'cash',
+        note: '',
+        submittedAt: Date.now(),
+      });
+    } else {
+      if (target.status !== 'review' || target.method !== 'cash' || target.slipKey)
+        return fail('รายการนี้เปลี่ยนสถานะแล้ว กรุณาโหลดใหม่', 409);
+      Object.assign(target, { status: 'unpaid', method: null, submittedAt: null });
+    }
+    return (await updateBill(db, bill, payload))
+      ? json({ ok: true })
+      : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  }
   if (action === 'upload') {
     if (bill.cancelled) return fail('บิลนี้ถูกยกเลิกแล้ว', 409);
     const target = payload.payers.find(p => p.id === (payer?.id || url.searchParams.get('payer')));
@@ -602,8 +628,11 @@ export async function billingRoute(req, env, admin, club) {
     const target = payload.payers.find(p => p.id === input?.payer);
     if (!target || input.revision !== bill.revision || typeof input.received !== 'boolean')
       return fail('ข้อมูลบิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
-    if (input.received && ['unpaid', 'rejected'].includes(target.status)) {
+    const declaredCash = target.status === 'review' && target.method === 'cash' && !target.slipKey;
+    if (input.received && (['unpaid', 'rejected'].includes(target.status) || declaredCash)) {
       Object.assign(target, { status: 'paid', method: 'cash', paidAt: Date.now() });
+    } else if (!input.received && declaredCash) {
+      Object.assign(target, { status: 'unpaid', method: null, submittedAt: null });
     } else if (
       !input.received &&
       !bill.slips_removed &&
@@ -699,7 +728,7 @@ export async function billingLineText(env, scope, origin) {
         ' บ.',
       ...entries,
       ...(unpaid.length > 8 ? ['… ยังไม่จ่ายอีก ' + (unpaid.length - 8) + ' คน'] : []),
-      ...(reviewing.length ? ['รอตรวจสลิป ' + reviewing.length + ' คน'] : []),
+      ...(reviewing.length ? ['รอตรวจสลิป/เงินสด ' + reviewing.length + ' คน'] : []),
       'ชำระเงินผ่านลิงก์ด้านล่าง 👇',
       billLink(origin, bill),
     ].join('\n');
@@ -835,7 +864,7 @@ export async function billingLineMessages(env, scope, origin, groupId, diagnosti
         );
     }
     const reviewing = pending.length - unpaid.length;
-    if (reviewing) append('รอตรวจสลิป ' + reviewing + ' คน');
+    if (reviewing) append('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
     append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + liffUrl(env, bill.club, 'pay', bill.id));
   }
   if (groups.some(g => g.results.length > limit))

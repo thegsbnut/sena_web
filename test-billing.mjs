@@ -238,6 +238,71 @@ test('only organizers can record and undo cash, without requiring a slip', async
   assert.match(await billingLineText(f.env, 'all', origin), /Nut/);
 });
 
+test('a payer can declare cash; it waits for the organizer and is never paid on its own', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const path = '/api/billing?bill=' + id;
+  const admin = await (await f.request(path, { cookie })).json();
+  const [nut, bua] = admin.payers;
+  const act = (action, token, auth = '') =>
+    f.request(path + '&action=' + action, { method: 'POST', token, cookie: auth, payload: {} });
+  // Needs a payer link: anonymous callers and unknown tokens are refused.
+  assert.equal((await act('cash-request', undefined)).status, 403);
+  assert.equal((await act('cash-request', 'f'.repeat(64))).status, 403);
+  // Nut declares cash: status waits for review, nothing is paid, still outstanding.
+  assert.equal((await act('cash-request', nut.token)).status, 200);
+  let view = await (await f.request(path, { cookie })).json();
+  let row = view.payers.find(p => p.id === nut.id);
+  assert.deepEqual([row.status, row.method, row.hasSlip], ['review', 'cash', false]);
+  assert.equal(view.outstanding, admin.outstanding);
+  assert.equal((await f.request(path + '&token=' + nut.token, { token: nut.token })).status, 200);
+  // Declaring twice, or paying by slip on top of a pending declaration, is refused.
+  assert.equal((await act('cash-request', nut.token)).status, 409);
+  assert.equal((await act('upload', nut.token)).status, 409);
+  // Nut can take it back; Bua's link never touches Nut's row.
+  assert.equal((await act('cash-cancel', nut.token)).status, 200);
+  view = await (await f.request(path, { cookie })).json();
+  assert.equal(view.payers.find(p => p.id === nut.id).status, 'unpaid');
+  assert.equal((await act('cash-cancel', nut.token)).status, 409);
+  assert.equal((await act('cash-request', bua.token)).status, 200);
+  view = await (await f.request(path, { cookie })).json();
+  assert.deepEqual(
+    view.payers.map(p => [p.name, p.status]),
+    [
+      ['Nut', 'unpaid'],
+      ['Bua', 'review'],
+    ],
+  );
+  // The organizer confirms receipt (existing control) -> paid by cash; or resets it.
+  const confirm = (payer, received, revision) =>
+    f.request(path + '&action=cash', {
+      method: 'POST',
+      cookie,
+      payload: { payer, received, revision },
+    });
+  let revision = view.revision;
+  assert.equal((await confirm(bua.id, true, revision)).status, 200);
+  view = await (await f.request(path, { cookie })).json();
+  row = view.payers.find(p => p.id === bua.id);
+  assert.deepEqual([row.status, row.method], ['paid', 'cash']);
+  assert.equal((await confirm(bua.id, false, view.revision)).status, 200);
+  assert.equal((await act('cash-request', bua.token)).status, 200);
+  view = await (await f.request(path, { cookie })).json();
+  assert.equal((await confirm(bua.id, false, view.revision)).status, 200);
+  view = await (await f.request(path, { cookie })).json();
+  assert.equal(view.payers.find(p => p.id === bua.id).status, 'unpaid');
+  // A cancelled bill accepts no declarations.
+  await f.request(path + '&action=cancel', {
+    method: 'POST',
+    cookie,
+    payload: { revision: view.revision },
+  });
+  assert.equal((await act('cash-request', nut.token)).status, 409);
+});
+
 test('public uploads auto-pay the selected row, slips stay private, and only closed bills are pruned', async t => {
   const f = fixture(t),
     cookie = await f.login();
