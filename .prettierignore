@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+package-lock.json
+seed.json
+leaderboard-data.js
+*.html
+*.md

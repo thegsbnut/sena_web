@@ -1,1 +1,102 @@
-.sena-authbar{position:sticky;top:0;z-index:100;background:#08281e;color:#f8f6df;border-bottom:1px solid #597346;box-shadow:0 3px 12px #00170f38}.sena-auth-inner{max-width:1160px;margin:0 auto;min-height:48px;padding:8px 24px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.sena-auth-state{display:flex;align-items:center;gap:9px;font-size:13px}.sena-auth-state i{width:8px;height:8px;background:#9da994;border-radius:50%;flex-shrink:0}.sena-authbar[data-role=admin] .sena-auth-state{color:#e5ff55}.sena-authbar[data-role=admin] .sena-auth-state i{background:#dcfa30;box-shadow:0 0 0 4px #dcfa301c}.sena-authbar[data-role=guest] .sena-auth-state i{background:#a9d39f}.sena-authbar[data-role=unknown] .sena-auth-state{color:#ffe098}.sena-auth-actions{display:flex;align-items:center;gap:8px}.sena-auth-actions a,.sena-auth-actions button{font:600 12px/1.5 system-ui,-apple-system,Tahoma,sans-serif;padding:7px 12px;min-height:34px;color:#f6f3db;background:#1d4230;border:1px solid #8b9a6a;border-radius:7px;text-decoration:none;cursor:pointer}.sena-auth-actions a:focus-visible,.sena-auth-actions button:focus-visible{outline:3px solid #dcfa30;outline-offset:3px}.sena-auth-actions button:disabled{opacity:.6;cursor:wait}#senaAuthError{font-size:12px;color:#ffdda4;width:100%;margin:0}.sena-authbar [hidden]{display:none!important}#club-tools{scroll-margin-top:65px}@media(max-width:600px){.sena-auth-inner{padding:8px 14px;gap:8px}.sena-auth-state{font-size:12px}.sena-auth-actions a,.sena-auth-actions button{font-size:11px;padding:7px 10px}}
+.sena-authbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #08281e;
+  color: #f8f6df;
+  border-bottom: 1px solid #597346;
+  box-shadow: 0 3px 12px #00170f38;
+}
+.sena-auth-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+  min-height: 48px;
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sena-auth-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+}
+.sena-auth-state i {
+  width: 8px;
+  height: 8px;
+  background: #9da994;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sena-authbar[data-role='admin'] .sena-auth-state {
+  color: #e5ff55;
+}
+.sena-authbar[data-role='admin'] .sena-auth-state i {
+  background: #dcfa30;
+  box-shadow: 0 0 0 4px #dcfa301c;
+}
+.sena-authbar[data-role='guest'] .sena-auth-state i {
+  background: #a9d39f;
+}
+.sena-authbar[data-role='unknown'] .sena-auth-state {
+  color: #ffe098;
+}
+.sena-auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sena-auth-actions a,
+.sena-auth-actions button {
+  font:
+    600 12px/1.5 system-ui,
+    -apple-system,
+    Tahoma,
+    sans-serif;
+  padding: 7px 12px;
+  min-height: 34px;
+  color: #f6f3db;
+  background: #1d4230;
+  border: 1px solid #8b9a6a;
+  border-radius: 7px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.sena-auth-actions a:focus-visible,
+.sena-auth-actions button:focus-visible {
+  outline: 3px solid #dcfa30;
+  outline-offset: 3px;
+}
+.sena-auth-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+#senaAuthError {
+  font-size: 12px;
+  color: #ffdda4;
+  width: 100%;
+  margin: 0;
+}
+.sena-authbar [hidden] {
+  display: none !important;
+}
+#club-tools {
+  scroll-margin-top: 65px;
+}
+@media (max-width: 600px) {
+  .sena-auth-inner {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+  .sena-auth-state {
+    font-size: 12px;
+  }
+  .sena-auth-actions a,
+  .sena-auth-actions button {
+    font-size: 11px;
+    padding: 7px 10px;
+  }
+}

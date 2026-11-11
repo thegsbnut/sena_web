@@ -1,79 +1,397 @@
-const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let state={"players": [], "selected": [], "rounds": 10, "locks": [], "result": null, "cup": null};
+const $ = s => document.querySelector(s),
+  esc = s =>
+    String(s).replace(
+      /[&<>"']/g,
+      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+    );
+let state = { players: [], selected: [], rounds: 10, locks: [], result: null, cup: null };
 let canManage = false;
-function save(){try{localStorage.setItem(clubStorage('sena-v1'),JSON.stringify(state));}catch{alert('เบราว์เซอร์บันทึกข้อมูลไม่ได้ กรุณาส่งออกสำรองข้อมูล');}}
-function invalidate(){state.result=null;save();renderResults();}
-function person(id){return state.players.find(p=>p.id===id);}
+function save() {
+  try {
+    localStorage.setItem(clubStorage('sena-v1'), JSON.stringify(state));
+  } catch {
+    alert('เบราว์เซอร์บันทึกข้อมูลไม่ได้ กรุณาส่งออกสำรองข้อมูล');
+  }
+}
+function invalidate() {
+  state.result = null;
+  save();
+  renderResults();
+}
+function person(id) {
+  return state.players.find(p => p.id === id);
+}
 function decoratedName(name) {
- const awards = Sena.cupAwards(state.cup);
- const player = state.players.find(p=>[p.name,p.thai].some(alias=>alias.trim().toLowerCase()===name.trim().toLowerCase()));
- const badge = awards.get(name.trim().toLowerCase()) || (player && (awards.get(player.name.trim().toLowerCase()) || awards.get(player.thai.trim().toLowerCase())));
- return badge ? badge+' '+name : name;
+  const awards = Sena.cupAwards(state.cup);
+  const player = state.players.find(p =>
+    [p.name, p.thai].some(alias => alias.trim().toLowerCase() === name.trim().toLowerCase()),
+  );
+  const badge =
+    awards.get(name.trim().toLowerCase()) ||
+    (player &&
+      (awards.get(player.name.trim().toLowerCase()) ||
+        awards.get(player.thai.trim().toLowerCase())));
+  return badge ? badge + ' ' + name : name;
 }
 function refreshAwards() {
- renderPlayers(); renderRoster(); renderLocks(); renderResults(); renderCupPicker();
+  renderPlayers();
+  renderRoster();
+  renderLocks();
+  renderResults();
+  renderCupPicker();
 }
 function cupScheduleText() {
- const cup = state.cup;
- if (!cup) return '';
- const teams = cup.teams.map((team,index) => 'ทีม '+(index+1)+' · '+team.join(' / '));
- const games = cup.matches.map((match,index) => {
-   const rest = index>0 && Sena.cupRestConflicts(cup.matches.slice(index-1,index+1)) ? '\n⚠ เว้นเวลาพักก่อนเกมนี้' : '';
-   return 'เกม '+(index+1)+' · '+cup.teams[match.a].join(' / ')+' vs '+cup.teams[match.b].join(' / ')+rest;
- });
- return '🏸 '+cupName.toUpperCase()+' — ตารางก่อนแข่ง\nพบกันหมด · '+cup.teams.length+' ทีม · '+cup.matches.length+' เกม\n\n'+teams.join('\n')+'\n\n📋 ลำดับลงสนาม\n'+games.join('\n\n')+'\n\n'+cupRestMessage();
+  const cup = state.cup;
+  if (!cup) return '';
+  const teams = cup.teams.map((team, index) => 'ทีม ' + (index + 1) + ' · ' + team.join(' / '));
+  const games = cup.matches.map((match, index) => {
+    const rest =
+      index > 0 && Sena.cupRestConflicts(cup.matches.slice(index - 1, index + 1))
+        ? '\n⚠ เว้นเวลาพักก่อนเกมนี้'
+        : '';
+    return (
+      'เกม ' +
+      (index + 1) +
+      ' · ' +
+      cup.teams[match.a].join(' / ') +
+      ' vs ' +
+      cup.teams[match.b].join(' / ') +
+      rest
+    );
+  });
+  return (
+    '🏸 ' +
+    cupName.toUpperCase() +
+    ' — ตารางก่อนแข่ง\nพบกันหมด · ' +
+    cup.teams.length +
+    ' ทีม · ' +
+    cup.matches.length +
+    ' เกม\n\n' +
+    teams.join('\n') +
+    '\n\n📋 ลำดับลงสนาม\n' +
+    games.join('\n\n') +
+    '\n\n' +
+    cupRestMessage()
+  );
 }
-async function copyCupText(button,output,status) {
- try {
-   await navigator.clipboard.writeText(output.value);
-   status.textContent = 'คัดลอกแล้ว ✓ พร้อมวางใน LINE';
- } catch {
-   output.closest('details').open = true;
-   output.focus(); output.select(); output.setSelectionRange(0,output.value.length);
-   let copied = false;
-   try { copied = document.execCommand('copy'); } catch {}
-   status.textContent = copied ? 'คัดลอกแล้ว ✓ พร้อมวางใน LINE' : 'แตะค้างแล้วเลือกคัดลอกข้อความที่เลือกไว้';
- }
+async function copyCupText(button, output, status) {
+  try {
+    await navigator.clipboard.writeText(output.value);
+    status.textContent = 'คัดลอกแล้ว ✓ พร้อมวางใน LINE';
+  } catch {
+    output.closest('details').open = true;
+    output.focus();
+    output.select();
+    output.setSelectionRange(0, output.value.length);
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch {}
+    status.textContent = copied
+      ? 'คัดลอกแล้ว ✓ พร้อมวางใน LINE'
+      : 'แตะค้างแล้วเลือกคัดลอกข้อความที่เลือกไว้';
+  }
 }
 function cupLineText() {
- const cup=state.cup;
- if(!cup) return '';
- const rows=Sena.standings(cup.teams,cup.matches);
- const complete=Sena.cupAwards(cup).size>0;
- let rank=0;
- const equal=(a,b)=>a && a.w===b.w && a.pf-a.pa===b.pf-b.pa && a.pf===b.pf;
- return '🏆 '+cupName.toUpperCase()+' — '+(complete?'ผลการแข่งขัน':'อันดับชั่วคราว')+'\n\n'+rows.map((row,index)=>{
-   if(!equal(rows[index-1],row))rank=index+1;
-   return rank+'. '+cup.teams[row.i].map(decoratedName).join(' / ')+' — ชนะ '+row.w+' | แต้ม '+row.pf+'–'+row.pa;
- }).join('\n')+'\n\n'+cupRestMessage()+'\n\n'+cup.matches.map((m,i)=>'เกม '+(i+1)+(i>0&&Sena.cupRestConflicts(cup.matches.slice(i-1,i+1))?' ⚠ พักก่อนลงต่อ':'')+' — '+cup.teams[m.a].map(decoratedName).join(' / ')+' '+(m.sa===''?'–':m.sa)+' : '+(m.sb===''?'–':m.sb)+' '+cup.teams[m.b].map(decoratedName).join(' / ')).join('\n');
+  const cup = state.cup;
+  if (!cup) return '';
+  const rows = Sena.standings(cup.teams, cup.matches);
+  const complete = Sena.cupAwards(cup).size > 0;
+  let rank = 0;
+  const equal = (a, b) => a && a.w === b.w && a.pf - a.pa === b.pf - b.pa && a.pf === b.pf;
+  return (
+    '🏆 ' +
+    cupName.toUpperCase() +
+    ' — ' +
+    (complete ? 'ผลการแข่งขัน' : 'อันดับชั่วคราว') +
+    '\n\n' +
+    rows
+      .map((row, index) => {
+        if (!equal(rows[index - 1], row)) rank = index + 1;
+        return (
+          rank +
+          '. ' +
+          cup.teams[row.i].map(decoratedName).join(' / ') +
+          ' — ชนะ ' +
+          row.w +
+          ' | แต้ม ' +
+          row.pf +
+          '–' +
+          row.pa
+        );
+      })
+      .join('\n') +
+    '\n\n' +
+    cupRestMessage() +
+    '\n\n' +
+    cup.matches
+      .map(
+        (m, i) =>
+          'เกม ' +
+          (i + 1) +
+          (i > 0 && Sena.cupRestConflicts(cup.matches.slice(i - 1, i + 1))
+            ? ' ⚠ พักก่อนลงต่อ'
+            : '') +
+          ' — ' +
+          cup.teams[m.a].map(decoratedName).join(' / ') +
+          ' ' +
+          (m.sa === '' ? '–' : m.sa) +
+          ' : ' +
+          (m.sb === '' ? '–' : m.sb) +
+          ' ' +
+          cup.teams[m.b].map(decoratedName).join(' / '),
+      )
+      .join('\n')
+  );
 }
-function note(s,error=false){$('#message').className=error?'error':'success';$('#message').textContent=s;}
-function renderPlayers(){let q=$('#search').value.toLowerCase();$('#selectedCount').textContent=state.selected.length+' คน';$('#players').innerHTML=state.players.filter(p=>(p.name+p.thai).toLowerCase().includes(q)).map(p=>`<label class="player"><input type="checkbox" data-id="${esc(p.id)}" ${state.selected.includes(p.id)?'checked':''}><span class="avatar">${esc(p.name.slice(0,2).toUpperCase())}</span><span class="info">${esc(decoratedName(p.name))}<small>${esc(p.thai)} · ${p.gender==='F'?'หญิง':'ชาย'}</small></span>${canManage?`<span class="level">${p.lv}</span>`:""}</label>`).join('');}
-function renderRoster(){if(!canManage){$('#rosterRows').innerHTML='';return;}$('#rosterRows').innerHTML=state.players.map(p=>`<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span></strong><span>Lv ${p.lv} · ${p.gender==='F'?'หญิง':'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`).join('');}
-function renderLocks(){$('#locks').innerHTML=state.locks.map((l,i)=>`<div class="lock"><label>รอบ <input type="number" min="1" max="30" value="${l.round}" data-lock="${i}" data-field="round" aria-label="รอบคู่พิเศษ"></label>${[0,1,2,3].map(j=>`${j===2?'<span>vs</span>':''}<select data-lock="${i}" data-field="${j}" aria-label="ผู้เล่นคู่พิเศษคนที่ ${j+1}"><option value="">เลือกผู้เล่น</option>${state.players.filter(p=>state.selected.includes(p.id)).map(p=>`<option value="${esc(p.id)}" ${l.ids[j]===p.id?'selected':''}>${esc(decoratedName(p.name))}</option>`).join('')}</select>`).join('')}<button class="textbtn" data-remove-lock="${i}">ลบ</button></div>`).join('');}
-function lineText(){if(!state.result)return '';return '🏸 '+venueLabel.toUpperCase()+' COURT — พร้อมลง!\n'+state.rounds+' รอบ | 1 คอร์ต | ตีแล้วพักรอบถัดไป\n\n'+state.result.schedule.map(m=>{let ps=m.ids.map(person);return `${m.round}. ${decoratedName(ps[0].name)} + ${decoratedName(ps[1].name)} vs ${decoratedName(ps[2].name)} + ${decoratedName(ps[3].name)}\n${m.locked?'👑 คู่พิเศษ เปิดศึกให้สุด!':(m.diff??0)<=1?'🔥 คู่สูสี ลุยให้สุด!':'⚡ วัดฝีมือ สู้ทุกลูก!'}`;}).join('\n\n')+'\n\nจำนวนเกม: '+Object.entries(state.result.counts).map(([id,n])=>decoratedName(person(id).name)+' '+n).join(' | ');}
-function renderResults(){let r=state.result;if(!r){$('#results').innerHTML='<div class="empty"><div>✳</div><h2>เกมดี ๆ เริ่มที่คู่ลงตัว</h2><p>เลือกผู้เล่นอย่างน้อย 8 คน แล้วกดจัดก๊วน</p></div>';return;}const cs=Object.values(r.counts);$('#results').innerHTML=`<div class="resulthead"><h2>ตารางพร้อมแล้ว 🏸</h2><button id="copyLine" data-copy-line class="secondary">คัดลอกส่ง LINE ↗</button></div><div class="panel"><b>${r.schedule.length} รอบ · คนละ ${Math.min(...cs)}–${Math.max(...cs)} เกม</b><p class="hint">ทุกคนพักรอบถัดไป • ไม่มี ญญ พบ ชญ${canManage?" • Lv ที่แสดงคือผลรวมทีม":""}<br>จัดแบบค้นหาหลายชุด เน้นเฉลี่ยเกมก่อนสมดุลฝีมือและลดคู่ซ้ำ ไม่รับประกันคำตอบที่ดีที่สุดทุกกรณี</p><div class="stats">${Object.entries(r.counts).map(([id,n])=>`<span class="stat">${esc(decoratedName(person(id).name))}<b>${n}</b></span>`).join('')}</div></div>`+r.schedule.map(m=>{const ps=m.ids.map(person),team=a=>a.map(p=>esc(decoratedName(p.name))).join(' + '),sum=a=>a.reduce((s,p)=>s+p.lv,0);return `<article class="match ${m.locked?'locked':''}"><div class="matchtop"><b>ROUND ${String(m.round).padStart(2,'0')}</b><span>${m.locked?'👑 คู่พิเศษ':'พักสลับ • คอร์ต 1'}</span></div><div class="versus"><div>${team(ps.slice(0,2))}${canManage?`<small>Lv รวม ${sum(ps.slice(0,2))}</small>`:""}</div><span class="vs">VS</span><div>${team(ps.slice(2))}${canManage?`<small>Lv รวม ${sum(ps.slice(2))}</small>`:""}</div></div><div class="reason">${m.locked?'ล็อกตามคำขอ':'เลือกจากคนที่พักรอบก่อน เพื่อกระจายจำนวนเกม'}${canManage?` · Lv ต่าง ${m.diff}`:""}<br>พัก: ${state.players.filter(p=>state.selected.includes(p.id)&&!m.ids.includes(p.id)).map(p=>esc(decoratedName(p.name))).join(', ')}</div></article>`;}).join('')+`<details class="panel"><summary>ข้อความย่อสำหรับ LINE (ไม่แสดง Lv / เพศ)</summary><div class="actions"><button type="button" class="primary" data-copy-line>Copy ข้อความลง LINE</button><small id="copyStatus" role="status"></small></div><textarea aria-label="ข้อความสำหรับโพสต์ในกลุ่ม LINE" id="lineOutput" rows="14" readonly>${esc(lineText())}</textarea></details>`;}
+function note(s, error = false) {
+  $('#message').className = error ? 'error' : 'success';
+  $('#message').textContent = s;
+}
+function renderPlayers() {
+  let q = $('#search').value.toLowerCase();
+  $('#selectedCount').textContent = state.selected.length + ' คน';
+  $('#players').innerHTML = state.players
+    .filter(p => (p.name + p.thai).toLowerCase().includes(q))
+    .map(
+      p =>
+        `<label class="player"><input type="checkbox" data-id="${esc(p.id)}" ${state.selected.includes(p.id) ? 'checked' : ''}><span class="avatar">${esc(p.name.slice(0, 2).toUpperCase())}</span><span class="info">${esc(decoratedName(p.name))}<small>${esc(p.thai)} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</small></span>${canManage ? `<span class="level">${p.lv}</span>` : ''}</label>`,
+    )
+    .join('');
+}
+function renderRoster() {
+  if (!canManage) {
+    $('#rosterRows').innerHTML = '';
+    return;
+  }
+  $('#rosterRows').innerHTML = state.players
+    .map(
+      p =>
+        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span></strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
+    )
+    .join('');
+}
+function renderLocks() {
+  $('#locks').innerHTML = state.locks
+    .map(
+      (l, i) =>
+        `<div class="lock"><label>รอบ <input type="number" min="1" max="30" value="${l.round}" data-lock="${i}" data-field="round" aria-label="รอบคู่พิเศษ"></label>${[
+          0, 1, 2, 3,
+        ]
+          .map(
+            j =>
+              `${j === 2 ? '<span>vs</span>' : ''}<select data-lock="${i}" data-field="${j}" aria-label="ผู้เล่นคู่พิเศษคนที่ ${j + 1}"><option value="">เลือกผู้เล่น</option>${state.players
+                .filter(p => state.selected.includes(p.id))
+                .map(
+                  p =>
+                    `<option value="${esc(p.id)}" ${l.ids[j] === p.id ? 'selected' : ''}>${esc(decoratedName(p.name))}</option>`,
+                )
+                .join('')}</select>`,
+          )
+          .join('')}<button class="textbtn" data-remove-lock="${i}">ลบ</button></div>`,
+    )
+    .join('');
+}
+function lineText() {
+  if (!state.result) return '';
+  return (
+    '🏸 ' +
+    venueLabel.toUpperCase() +
+    ' COURT — พร้อมลง!\n' +
+    state.rounds +
+    ' รอบ | 1 คอร์ต | ตีแล้วพักรอบถัดไป\n\n' +
+    state.result.schedule
+      .map(m => {
+        let ps = m.ids.map(person);
+        return `${m.round}. ${decoratedName(ps[0].name)} + ${decoratedName(ps[1].name)} vs ${decoratedName(ps[2].name)} + ${decoratedName(ps[3].name)}\n${m.locked ? '👑 คู่พิเศษ เปิดศึกให้สุด!' : (m.diff ?? 0) <= 1 ? '🔥 คู่สูสี ลุยให้สุด!' : '⚡ วัดฝีมือ สู้ทุกลูก!'}`;
+      })
+      .join('\n\n') +
+    '\n\nจำนวนเกม: ' +
+    Object.entries(state.result.counts)
+      .map(([id, n]) => decoratedName(person(id).name) + ' ' + n)
+      .join(' | ')
+  );
+}
+function renderResults() {
+  let r = state.result;
+  if (!r) {
+    $('#results').innerHTML =
+      '<div class="empty"><div>✳</div><h2>เกมดี ๆ เริ่มที่คู่ลงตัว</h2><p>เลือกผู้เล่นอย่างน้อย 8 คน แล้วกดจัดก๊วน</p></div>';
+    return;
+  }
+  const cs = Object.values(r.counts);
+  $('#results').innerHTML =
+    `<div class="resulthead"><h2>ตารางพร้อมแล้ว 🏸</h2><button id="copyLine" data-copy-line class="secondary">คัดลอกส่ง LINE ↗</button></div><div class="panel"><b>${r.schedule.length} รอบ · คนละ ${Math.min(...cs)}–${Math.max(...cs)} เกม</b><p class="hint">ทุกคนพักรอบถัดไป • ไม่มี ญญ พบ ชญ${canManage ? ' • Lv ที่แสดงคือผลรวมทีม' : ''}<br>จัดแบบค้นหาหลายชุด เน้นเฉลี่ยเกมก่อนสมดุลฝีมือและลดคู่ซ้ำ ไม่รับประกันคำตอบที่ดีที่สุดทุกกรณี</p><div class="stats">${Object.entries(
+      r.counts,
+    )
+      .map(
+        ([id, n]) => `<span class="stat">${esc(decoratedName(person(id).name))}<b>${n}</b></span>`,
+      )
+      .join('')}</div></div>` +
+    r.schedule
+      .map(m => {
+        const ps = m.ids.map(person),
+          team = a => a.map(p => esc(decoratedName(p.name))).join(' + '),
+          sum = a => a.reduce((s, p) => s + p.lv, 0);
+        return `<article class="match ${m.locked ? 'locked' : ''}"><div class="matchtop"><b>ROUND ${String(m.round).padStart(2, '0')}</b><span>${m.locked ? '👑 คู่พิเศษ' : 'พักสลับ • คอร์ต 1'}</span></div><div class="versus"><div>${team(ps.slice(0, 2))}${canManage ? `<small>Lv รวม ${sum(ps.slice(0, 2))}</small>` : ''}</div><span class="vs">VS</span><div>${team(ps.slice(2))}${canManage ? `<small>Lv รวม ${sum(ps.slice(2))}</small>` : ''}</div></div><div class="reason">${m.locked ? 'ล็อกตามคำขอ' : 'เลือกจากคนที่พักรอบก่อน เพื่อกระจายจำนวนเกม'}${canManage ? ` · Lv ต่าง ${m.diff}` : ''}<br>พัก: ${state.players
+          .filter(p => state.selected.includes(p.id) && !m.ids.includes(p.id))
+          .map(p => esc(decoratedName(p.name)))
+          .join(', ')}</div></article>`;
+      })
+      .join('') +
+    `<details class="panel"><summary>ข้อความย่อสำหรับ LINE (ไม่แสดง Lv / เพศ)</summary><div class="actions"><button type="button" class="primary" data-copy-line>Copy ข้อความลง LINE</button><small id="copyStatus" role="status"></small></div><textarea aria-label="ข้อความสำหรับโพสต์ในกลุ่ม LINE" id="lineOutput" rows="14" readonly>${esc(lineText())}</textarea></details>`;
+}
 function cupRestMessage() {
- const matches=state.cup?.matches || [];
- if(matches.length<2)return 'มีเกมเดียว จึงยังไม่มีเกมถัดไปให้สลับพัก';
- const conflicts=Sena.cupRestConflicts(matches);
- return conflicts ? '⚠ ตารางนี้มีผู้เล่นลงติดกัน '+conflicts+' ครั้ง จำนวนทีมและลำดับเกมยังทำให้พักครบทุกคนไม่ได้ กรุณาเว้นเวลาพักก่อนเกมที่มีเครื่องหมาย ⚠' : '✓ ทุกคู่ได้พักอย่างน้อย 1 เกมก่อนแข่งอีกครั้ง';
+  const matches = state.cup?.matches || [];
+  if (matches.length < 2) return 'มีเกมเดียว จึงยังไม่มีเกมถัดไปให้สลับพัก';
+  const conflicts = Sena.cupRestConflicts(matches);
+  return conflicts
+    ? '⚠ ตารางนี้มีผู้เล่นลงติดกัน ' +
+        conflicts +
+        ' ครั้ง จำนวนทีมและลำดับเกมยังทำให้พักครบทุกคนไม่ได้ กรุณาเว้นเวลาพักก่อนเกมที่มีเครื่องหมาย ⚠'
+    : '✓ ทุกคู่ได้พักอย่างน้อย 1 เกมก่อนแข่งอีกครั้ง';
 }
-function renderCup(){let c=state.cup;if(!c){$('#cupResults').innerHTML='';return;}const rows=Sena.standings(c.teams,c.matches),complete=c.matches.every(m=>m.sa!==''&&m.sb!==''),equal=(a,b)=>a&&a.w===b.w&&a.pf-a.pa===b.pf-b.pa&&a.pf===b.pf;let rank=0;$('#cupResults').innerHTML=`<div class="actions"><button type="button" id="copyCupSchedule" class="primary">Copy ตารางแข่งลง LINE</button><small id="cupScheduleCopyStatus" role="status"></small></div><details class="panel"><summary>ดูข้อความตารางก่อนแข่งสำหรับ LINE</summary><textarea id="cupScheduleOutput" aria-label="ตาราง Sena Cup ก่อนแข่งสำหรับ LINE" rows="12" readonly>${esc(cupScheduleText())}</textarea></details><h2>ผลการแข่งขัน</h2><p>`+esc(cupRestMessage())+'</p>'+c.matches.map((m,i)=>`<div class="cupmatch"><b>เกม ${i+1}${i>0&&Sena.cupRestConflicts(c.matches.slice(i-1,i+1))?" ⚠ พักก่อนลงต่อ":""}</b><span>${esc(c.teams[m.a].map(decoratedName).join(' / '))}</span><input class="score" data-match="${i}" data-side="sa" type="number" min="0" step="1" value="${m.sa}" aria-label="คะแนนทีมแรกเกม ${i+1}"><span>:</span><input class="score" data-match="${i}" data-side="sb" type="number" min="0" step="1" value="${m.sb}" aria-label="คะแนนทีมสองเกม ${i+1}"><span>${esc(c.teams[m.b].map(decoratedName).join(' / '))}</span></div>`).join('')+`<button class="primary" id="saveScores" style="margin-top:15px">บันทึกคะแนน</button><h2 style="margin-top:24px">${complete?'อันดับสุดท้าย':'อันดับชั่วคราว'}</h2><table><thead><tr><th>#</th><th>ทีม</th><th>แข่ง</th><th>ชนะ</th><th>ได้–เสีย</th><th>ผลต่าง</th></tr></thead><tbody>${rows.map((r,i)=>{if(!equal(rows[i-1],r))rank=i+1;return `<tr><td>${rank}</td><td>${''}${esc(c.teams[r.i].map(decoratedName).join(' / '))}</td><td>${r.played}</td><td>${r.w}</td><td>${r.pf}–${r.pa}</td><td>${r.pf-r.pa}</td></tr>`;}).join('')}</tbody></table><details class="panel"><summary>ข้อความสำหรับ LINE</summary><div class="actions"><button type="button" id="copyCupLine" class="primary">Copy ผล Sena Cup ลง LINE</button><small id="cupCopyStatus" role="status"></small></div><textarea id="cupLineOutput" aria-label="ผล Sena Cup สำหรับ LINE" rows="10" readonly>${esc(cupLineText())}</textarea></details>`;}
-$('#search').oninput=renderPlayers;$('#players').onchange=e=>{let id=e.target.dataset.id;if(!id)return;state.selected=e.target.checked?[...state.selected,id]:state.selected.filter(x=>x!==id);invalidate();renderPlayers();renderLocks();};$('#all').onclick=()=>{state.selected=state.players.map(p=>p.id);invalidate();renderPlayers();renderLocks();};$('#clear').onclick=()=>{state.selected=[];invalidate();renderPlayers();renderLocks();};
-$('#selectNames').onclick=()=>{let clean=s=>s.toLowerCase().replace(/[^\p{L}\p{N}']/gu,'');let names=$('#pasteNames').value.split(/[,\n]+/).map(clean).filter(Boolean),found=[],unknown=[];for(let n of names){let p=state.players.find(p=>[clean(p.name),clean(p.thai)].includes(n));if(p)found.push(p.id);else unknown.push(n);}if(unknown.length){alert('ยังไม่มีชื่อ: '+unknown.join(', ')+' กรุณาเพิ่มชื่อ Lv และเพศในแท็บรายชื่อก่อน');return;}state.selected=[...new Set(found)];invalidate();renderPlayers();renderLocks();};
-$('#rounds').value=state.rounds;$('#rounds').onchange=()=>{state.rounds=Math.max(1,Math.min(30,Math.trunc(+$('#rounds').value||10)));$('#rounds').value=state.rounds;invalidate();};$('#addLock').onclick=()=>{state.locks.push({round:5,ids:['','','','']});invalidate();renderLocks();};$('#king').onclick=()=>{state.locks=state.locks.filter(l=>l.round!==5);state.locks.push({round:5,ids:['','','','']});invalidate();renderLocks();note('เลือกผู้เล่น 4 คนสำหรับคู่พิเศษรอบ 5');};$('#locks').onchange=e=>{let i=e.target.dataset.lock,f=e.target.dataset.field;if(i===undefined)return;if(f==='round')state.locks[i].round=+e.target.value;else state.locks[i].ids[+f]=e.target.value;invalidate();};$('#locks').onclick=e=>{let i=e.target.dataset.removeLock;if(i!==undefined){state.locks.splice(+i,1);invalidate();renderLocks();}};
+function renderCup() {
+  let c = state.cup;
+  if (!c) {
+    $('#cupResults').innerHTML = '';
+    return;
+  }
+  const rows = Sena.standings(c.teams, c.matches),
+    complete = c.matches.every(m => m.sa !== '' && m.sb !== ''),
+    equal = (a, b) => a && a.w === b.w && a.pf - a.pa === b.pf - b.pa && a.pf === b.pf;
+  let rank = 0;
+  $('#cupResults').innerHTML =
+    `<div class="actions"><button type="button" id="copyCupSchedule" class="primary">Copy ตารางแข่งลง LINE</button><small id="cupScheduleCopyStatus" role="status"></small></div><details class="panel"><summary>ดูข้อความตารางก่อนแข่งสำหรับ LINE</summary><textarea id="cupScheduleOutput" aria-label="ตาราง Sena Cup ก่อนแข่งสำหรับ LINE" rows="12" readonly>${esc(cupScheduleText())}</textarea></details><h2>ผลการแข่งขัน</h2><p>` +
+    esc(cupRestMessage()) +
+    '</p>' +
+    c.matches
+      .map(
+        (m, i) =>
+          `<div class="cupmatch"><b>เกม ${i + 1}${i > 0 && Sena.cupRestConflicts(c.matches.slice(i - 1, i + 1)) ? ' ⚠ พักก่อนลงต่อ' : ''}</b><span>${esc(c.teams[m.a].map(decoratedName).join(' / '))}</span><input class="score" data-match="${i}" data-side="sa" type="number" min="0" step="1" value="${m.sa}" aria-label="คะแนนทีมแรกเกม ${i + 1}"><span>:</span><input class="score" data-match="${i}" data-side="sb" type="number" min="0" step="1" value="${m.sb}" aria-label="คะแนนทีมสองเกม ${i + 1}"><span>${esc(c.teams[m.b].map(decoratedName).join(' / '))}</span></div>`,
+      )
+      .join('') +
+    `<button class="primary" id="saveScores" style="margin-top:15px">บันทึกคะแนน</button><h2 style="margin-top:24px">${complete ? 'อันดับสุดท้าย' : 'อันดับชั่วคราว'}</h2><table><thead><tr><th>#</th><th>ทีม</th><th>แข่ง</th><th>ชนะ</th><th>ได้–เสีย</th><th>ผลต่าง</th></tr></thead><tbody>${rows
+      .map((r, i) => {
+        if (!equal(rows[i - 1], r)) rank = i + 1;
+        return `<tr><td>${rank}</td><td>${''}${esc(c.teams[r.i].map(decoratedName).join(' / '))}</td><td>${r.played}</td><td>${r.w}</td><td>${r.pf}–${r.pa}</td><td>${r.pf - r.pa}</td></tr>`;
+      })
+      .join(
+        '',
+      )}</tbody></table><details class="panel"><summary>ข้อความสำหรับ LINE</summary><div class="actions"><button type="button" id="copyCupLine" class="primary">Copy ผล Sena Cup ลง LINE</button><small id="cupCopyStatus" role="status"></small></div><textarea id="cupLineOutput" aria-label="ผล Sena Cup สำหรับ LINE" rows="10" readonly>${esc(cupLineText())}</textarea></details>`;
+}
+$('#search').oninput = renderPlayers;
+$('#players').onchange = e => {
+  let id = e.target.dataset.id;
+  if (!id) return;
+  state.selected = e.target.checked
+    ? [...state.selected, id]
+    : state.selected.filter(x => x !== id);
+  invalidate();
+  renderPlayers();
+  renderLocks();
+};
+$('#all').onclick = () => {
+  state.selected = state.players.map(p => p.id);
+  invalidate();
+  renderPlayers();
+  renderLocks();
+};
+$('#clear').onclick = () => {
+  state.selected = [];
+  invalidate();
+  renderPlayers();
+  renderLocks();
+};
+$('#selectNames').onclick = () => {
+  let clean = s => s.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
+  let names = $('#pasteNames')
+      .value.split(/[,\n]+/)
+      .map(clean)
+      .filter(Boolean),
+    found = [],
+    unknown = [];
+  for (let n of names) {
+    let p = state.players.find(p => [clean(p.name), clean(p.thai)].includes(n));
+    if (p) found.push(p.id);
+    else unknown.push(n);
+  }
+  if (unknown.length) {
+    alert('ยังไม่มีชื่อ: ' + unknown.join(', ') + ' กรุณาเพิ่มชื่อ Lv และเพศในแท็บรายชื่อก่อน');
+    return;
+  }
+  state.selected = [...new Set(found)];
+  invalidate();
+  renderPlayers();
+  renderLocks();
+};
+$('#rounds').value = state.rounds;
+$('#rounds').onchange = () => {
+  state.rounds = Math.max(1, Math.min(30, Math.trunc(+$('#rounds').value || 10)));
+  $('#rounds').value = state.rounds;
+  invalidate();
+};
+$('#addLock').onclick = () => {
+  state.locks.push({ round: 5, ids: ['', '', '', ''] });
+  invalidate();
+  renderLocks();
+};
+$('#king').onclick = () => {
+  state.locks = state.locks.filter(l => l.round !== 5);
+  state.locks.push({ round: 5, ids: ['', '', '', ''] });
+  invalidate();
+  renderLocks();
+  note('เลือกผู้เล่น 4 คนสำหรับคู่พิเศษรอบ 5');
+};
+$('#locks').onchange = e => {
+  let i = e.target.dataset.lock,
+    f = e.target.dataset.field;
+  if (i === undefined) return;
+  if (f === 'round') state.locks[i].round = +e.target.value;
+  else state.locks[i].ids[+f] = e.target.value;
+  invalidate();
+};
+$('#locks').onclick = e => {
+  let i = e.target.dataset.removeLock;
+  if (i !== undefined) {
+    state.locks.splice(+i, 1);
+    invalidate();
+    renderLocks();
+  }
+};
 $('#generate').onclick = async () => {
-  const button = $('#generate'); button.disabled = true; note('กำลังจัดคู่…');
+  const button = $('#generate');
+  button.disabled = true;
+  note('กำลังจัดคู่…');
   try {
-    if (canManage) state.result = Sena.generate(state.players.filter(p=>state.selected.includes(p.id)),state.rounds,state.locks);
+    if (canManage)
+      state.result = Sena.generate(
+        state.players.filter(p => state.selected.includes(p.id)),
+        state.rounds,
+        state.locks,
+      );
     else {
-      const response = await venueFetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:state.selected,rounds:state.rounds,locks:state.locks})});
-      const data = await response.json(); if (!response.ok) throw Error(data.error);
+      const response = await venueFetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selected: state.selected,
+          rounds: state.rounds,
+          locks: state.locks,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error);
       state.result = data.result;
     }
-    save(); renderResults(); note('ตารางพร้อมแล้ว');
-  } catch(error) { note(error.message,true); } finally { button.disabled=false; }
+    save();
+    renderResults();
+    note('ตารางพร้อมแล้ว');
+  } catch (error) {
+    note(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 };
 $('#results').onclick = async event => {
   const button = event.target.closest('[data-copy-line]');
@@ -88,7 +406,9 @@ $('#results').onclick = async event => {
     output.select();
     output.setSelectionRange(0, output.value.length);
     let copied = false;
-    try { copied = document.execCommand('copy'); } catch {}
+    try {
+      copied = document.execCommand('copy');
+    } catch {}
     if (!copied) {
       status.textContent = 'เลือกข้อความไว้แล้ว แตะค้างแล้วเลือก “คัดลอก”';
       return;
@@ -97,24 +417,210 @@ $('#results').onclick = async event => {
   button.textContent = 'คัดลอกแล้ว ✓';
   status.textContent = 'พร้อมวางในกลุ่ม LINE';
 };
-$('#playerForm').onsubmit=e=>{e.preventDefault();let f=e.target,n=f.elements.name.value.trim();if(!n)return;if(state.players.some(p=>p.name.toLowerCase()===n.toLowerCase()))return alert('มีชื่อนี้แล้ว');state.players.push({id:crypto.randomUUID(),name:n,thai:f.thai.value.trim(),lv:+f.lv.value,gender:f.gender.value});f.reset();invalidate();renderPlayers();renderRoster();renderLocks();};let editId;
-$('#rosterRows').onclick=e=>{if(e.target.dataset.edit){editId=e.target.dataset.edit;let p=person(editId),f=$('#editForm');for(let k of ['name','thai','lv','gender'])f.elements[k].value=p[k];$('#editDialog').showModal();}if(e.target.dataset.delete){let id=e.target.dataset.delete;if(!confirm('ลบ '+person(id).name+' ออกจากรายชื่อในเว็บ?'))return;state.players=state.players.filter(p=>p.id!==id);state.selected=state.selected.filter(x=>x!==id);state.locks=state.locks.filter(l=>!l.ids.includes(id));invalidate();renderRoster();renderPlayers();renderLocks();}};$('#cancelEdit').onclick=()=>$('#editDialog').close();$('#editForm').onsubmit=e=>{e.preventDefault();let f=e.target,n=f.elements.name.value.trim();if(!n)return;if(state.players.some(p=>p.id!==editId&&p.name.toLowerCase()===n.toLowerCase()))return alert('มีชื่อนี้แล้ว');Object.assign(person(editId),{name:n,thai:f.thai.value.trim(),lv:+f.lv.value,gender:f.gender.value});invalidate();renderRoster();renderPlayers();renderLocks();$('#editDialog').close();};
-$('#export').onclick=()=>{let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download=activeClub+'-court-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};$('#import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>2000000)throw Error('ไฟล์ใหญ่เกิน 2 MB');let s=JSON.parse(await f.text());if(!Array.isArray(s.players)||s.players.length>200||s.players.some(p=>typeof p.id!=='string'||typeof p.name!=='string'||!p.name.trim()||typeof p.thai!=='string'||!Number.isFinite(p.lv)||p.lv<0||p.lv>100||!['M','F'].includes(p.gender))||new Set(s.players.map(p=>p.id)).size!==s.players.length)throw Error('ข้อมูลผู้เล่นไม่ถูกต้อง');if(!confirm('แทนที่รายชื่อปัจจุบันด้วยข้อมูลนำเข้า? ตารางปัจจุบันจะถูกล้าง'))return;state={players:s.players,selected:[],rounds:10,locks:[],result:null,cup:null};save();renderPlayers();renderRoster();renderLocks();renderResults();renderCup();renderCupPicker();}catch(e){alert(e.message);}finally{e.target.value='';}};
-$('#createCup').onclick=()=>{let teams=$('#teams').value.split('\n').map(s=>s.trim()).filter(Boolean).map(s=>s.split('/').map(x=>x.trim()));if(teams.length<2||teams.length>20||teams.some(t=>t.length!==2||t.some(x=>!x)))return alert('ใส่ 2–20 ทีม ทีมละ 2 คน แยกด้วย /');if(new Set(teams.flat().map(s=>s.toLowerCase())).size!==teams.flat().length)return alert('ผู้เล่นแต่ละคนต้องอยู่เพียงทีมเดียว');if(state.cup&&!confirm('สร้างการแข่งขันใหม่และล้างคะแนนเดิม?'))return;state.cup={id:crypto.randomUUID(),teams,matches:Sena.roundRobin(teams)};save();renderCup();refreshAwards();};$('#cupResults').onclick=async e=>{if(e.target.id==='copyCupSchedule'){await copyCupText(e.target,$('#cupScheduleOutput'),$('#cupScheduleCopyStatus'));return;}if(e.target.id==='copyCupLine'){await copyCupText(e.target,$('#cupLineOutput'),$('#cupCopyStatus'));return;}if(e.target.id!=='saveScores')return;let matches=state.cup.matches.map(m=>({...m}));for(const el of document.querySelectorAll('#cupResults input[data-match]')){let v=el.value;if(v!==''&&(!Number.isInteger(+v)||+v<0||+v>999))return alert('คะแนนต้องเป็นจำนวนเต็ม 0–999');matches[+el.dataset.match][el.dataset.side]=v===''?'':+v;}if(matches.some(m=>m.sa!==''&&m.sb!==''&&m.sa===m.sb))return alert('เกมแบดมินตันห้ามเสมอ กรุณาแก้คะแนน');state.cup.matches=matches;save();renderCup();refreshAwards();};
+$('#playerForm').onsubmit = e => {
+  e.preventDefault();
+  let f = e.target,
+    n = f.elements.name.value.trim();
+  if (!n) return;
+  if (state.players.some(p => p.name.toLowerCase() === n.toLowerCase()))
+    return alert('มีชื่อนี้แล้ว');
+  state.players.push({
+    id: crypto.randomUUID(),
+    name: n,
+    thai: f.thai.value.trim(),
+    lv: +f.lv.value,
+    gender: f.gender.value,
+  });
+  f.reset();
+  invalidate();
+  renderPlayers();
+  renderRoster();
+  renderLocks();
+};
+let editId;
+$('#rosterRows').onclick = e => {
+  if (e.target.dataset.edit) {
+    editId = e.target.dataset.edit;
+    let p = person(editId),
+      f = $('#editForm');
+    for (let k of ['name', 'thai', 'lv', 'gender']) f.elements[k].value = p[k];
+    $('#editDialog').showModal();
+  }
+  if (e.target.dataset.delete) {
+    let id = e.target.dataset.delete;
+    if (!confirm('ลบ ' + person(id).name + ' ออกจากรายชื่อในเว็บ?')) return;
+    state.players = state.players.filter(p => p.id !== id);
+    state.selected = state.selected.filter(x => x !== id);
+    state.locks = state.locks.filter(l => !l.ids.includes(id));
+    invalidate();
+    renderRoster();
+    renderPlayers();
+    renderLocks();
+  }
+};
+$('#cancelEdit').onclick = () => $('#editDialog').close();
+$('#editForm').onsubmit = e => {
+  e.preventDefault();
+  let f = e.target,
+    n = f.elements.name.value.trim();
+  if (!n) return;
+  if (state.players.some(p => p.id !== editId && p.name.toLowerCase() === n.toLowerCase()))
+    return alert('มีชื่อนี้แล้ว');
+  Object.assign(person(editId), {
+    name: n,
+    thai: f.thai.value.trim(),
+    lv: +f.lv.value,
+    gender: f.gender.value,
+  });
+  invalidate();
+  renderRoster();
+  renderPlayers();
+  renderLocks();
+  $('#editDialog').close();
+};
+$('#export').onclick = () => {
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(
+    new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }),
+  );
+  a.download = activeClub + '-court-backup.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('#import').onchange = async e => {
+  try {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 2000000) throw Error('ไฟล์ใหญ่เกิน 2 MB');
+    let s = JSON.parse(await f.text());
+    if (
+      !Array.isArray(s.players) ||
+      s.players.length > 200 ||
+      s.players.some(
+        p =>
+          typeof p.id !== 'string' ||
+          typeof p.name !== 'string' ||
+          !p.name.trim() ||
+          typeof p.thai !== 'string' ||
+          !Number.isFinite(p.lv) ||
+          p.lv < 0 ||
+          p.lv > 100 ||
+          !['M', 'F'].includes(p.gender),
+      ) ||
+      new Set(s.players.map(p => p.id)).size !== s.players.length
+    )
+      throw Error('ข้อมูลผู้เล่นไม่ถูกต้อง');
+    if (!confirm('แทนที่รายชื่อปัจจุบันด้วยข้อมูลนำเข้า? ตารางปัจจุบันจะถูกล้าง')) return;
+    state = { players: s.players, selected: [], rounds: 10, locks: [], result: null, cup: null };
+    save();
+    renderPlayers();
+    renderRoster();
+    renderLocks();
+    renderResults();
+    renderCup();
+    renderCupPicker();
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    e.target.value = '';
+  }
+};
+$('#createCup').onclick = () => {
+  let teams = $('#teams')
+    .value.split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s.split('/').map(x => x.trim()));
+  if (teams.length < 2 || teams.length > 20 || teams.some(t => t.length !== 2 || t.some(x => !x)))
+    return alert('ใส่ 2–20 ทีม ทีมละ 2 คน แยกด้วย /');
+  if (new Set(teams.flat().map(s => s.toLowerCase())).size !== teams.flat().length)
+    return alert('ผู้เล่นแต่ละคนต้องอยู่เพียงทีมเดียว');
+  if (state.cup && !confirm('สร้างการแข่งขันใหม่และล้างคะแนนเดิม?')) return;
+  state.cup = { id: crypto.randomUUID(), teams, matches: Sena.roundRobin(teams) };
+  save();
+  renderCup();
+  refreshAwards();
+};
+$('#cupResults').onclick = async e => {
+  if (e.target.id === 'copyCupSchedule') {
+    await copyCupText(e.target, $('#cupScheduleOutput'), $('#cupScheduleCopyStatus'));
+    return;
+  }
+  if (e.target.id === 'copyCupLine') {
+    await copyCupText(e.target, $('#cupLineOutput'), $('#cupCopyStatus'));
+    return;
+  }
+  if (e.target.id !== 'saveScores') return;
+  let matches = state.cup.matches.map(m => ({ ...m }));
+  for (const el of document.querySelectorAll('#cupResults input[data-match]')) {
+    let v = el.value;
+    if (v !== '' && (!Number.isInteger(+v) || +v < 0 || +v > 999))
+      return alert('คะแนนต้องเป็นจำนวนเต็ม 0–999');
+    matches[+el.dataset.match][el.dataset.side] = v === '' ? '' : +v;
+  }
+  if (matches.some(m => m.sa !== '' && m.sb !== '' && m.sa === m.sb))
+    return alert('เกมแบดมินตันห้ามเสมอ กรุณาแก้คะแนน');
+  state.cup.matches = matches;
+  save();
+  renderCup();
+  refreshAwards();
+};
 
-renderPlayers();renderRoster();renderLocks();renderResults();renderCup();if(state.cup)$('#teams').value=state.cup.teams.map(t=>t.join(' / ')).join('\n');
+renderPlayers();
+renderRoster();
+renderLocks();
+renderResults();
+renderCup();
+if (state.cup) $('#teams').value = state.cup.teams.map(t => t.join(' / ')).join('\n');
 
-let cupPicked=[];
-function renderCupPicker(){
- const used=new Set($('#teams').value.split(/[\n/]/).map(s=>s.trim().toLowerCase()).filter(Boolean));
- cupPicked=cupPicked.filter(id=>person(id)&&!used.has(person(id).name.toLowerCase()));
- $('#cupPicker').innerHTML=state.players.map(p=>{let selected=cupPicked.includes(p.id),taken=used.has(p.name.toLowerCase());return `<button type="button" class="${selected?'primary':'secondary'}" data-cup-player="${esc(p.id)}" aria-pressed="${selected}" ${taken?'disabled':''}>${esc(decoratedName(p.name))}${taken?' ✓':''}</button>`;}).join('');
- $('#cupPickStatus').textContent=cupPicked.length?cupPicked.map(id=>person(id).name).join(' + '):'ยังไม่ได้เลือกผู้เล่น';
- $('#addCupPair').disabled=cupPicked.length!==2;
+let cupPicked = [];
+function renderCupPicker() {
+  const used = new Set(
+    $('#teams')
+      .value.split(/[\n/]/)
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  cupPicked = cupPicked.filter(id => person(id) && !used.has(person(id).name.toLowerCase()));
+  $('#cupPicker').innerHTML = state.players
+    .map(p => {
+      let selected = cupPicked.includes(p.id),
+        taken = used.has(p.name.toLowerCase());
+      return `<button type="button" class="${selected ? 'primary' : 'secondary'}" data-cup-player="${esc(p.id)}" aria-pressed="${selected}" ${taken ? 'disabled' : ''}>${esc(decoratedName(p.name))}${taken ? ' ✓' : ''}</button>`;
+    })
+    .join('');
+  $('#cupPickStatus').textContent = cupPicked.length
+    ? cupPicked.map(id => person(id).name).join(' + ')
+    : 'ยังไม่ได้เลือกผู้เล่น';
+  $('#addCupPair').disabled = cupPicked.length !== 2;
 }
-$('#cupPicker').onclick=e=>{let id=e.target.dataset.cupPlayer;if(!id)return;if(cupPicked.includes(id))cupPicked=cupPicked.filter(x=>x!==id);else if(cupPicked.length<2)cupPicked.push(id);else return;renderCupPicker();};
-$('#addCupPair').onclick=()=>{if(cupPicked.length!==2)return;const line=cupPicked.map(id=>person(id).name).join(' / ');$('#teams').value=[$('#teams').value.trim(),line].filter(Boolean).join('\n');cupPicked=[];renderCupPicker();};
-$('#teams').addEventListener('input',renderCupPicker);
-$('#resetCup').onclick=()=>{if(!confirm('ล้างทีม ผู้เล่นที่เลือก และคะแนน Sena Cup เพื่อเริ่มใหม่? รายชื่อประจำก๊วนจะยังอยู่'))return;state.cup=null;cupPicked=[];$('#teams').value='';save();renderCup();refreshAwards();};
-document.querySelector('[data-tab="cup"]').addEventListener('click',renderCupPicker);
+$('#cupPicker').onclick = e => {
+  let id = e.target.dataset.cupPlayer;
+  if (!id) return;
+  if (cupPicked.includes(id)) cupPicked = cupPicked.filter(x => x !== id);
+  else if (cupPicked.length < 2) cupPicked.push(id);
+  else return;
+  renderCupPicker();
+};
+$('#addCupPair').onclick = () => {
+  if (cupPicked.length !== 2) return;
+  const line = cupPicked.map(id => person(id).name).join(' / ');
+  $('#teams').value = [$('#teams').value.trim(), line].filter(Boolean).join('\n');
+  cupPicked = [];
+  renderCupPicker();
+};
+$('#teams').addEventListener('input', renderCupPicker);
+$('#resetCup').onclick = () => {
+  if (
+    !confirm('ล้างทีม ผู้เล่นที่เลือก และคะแนน Sena Cup เพื่อเริ่มใหม่? รายชื่อประจำก๊วนจะยังอยู่')
+  )
+    return;
+  state.cup = null;
+  cupPicked = [];
+  $('#teams').value = '';
+  save();
+  renderCup();
+  refreshAwards();
+};
+document.querySelector('[data-tab="cup"]').addEventListener('click', renderCupPicker);
 renderCupPicker();
