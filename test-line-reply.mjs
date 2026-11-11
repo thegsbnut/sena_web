@@ -405,48 +405,72 @@ test('very long bills still list every payer by name and stay within five LINE m
     assert.equal(Object.keys(m.substitution).length, 1);
 });
 
-test('tagtest4 puts plain names first and one miscounted name last with padding', async t => {
+test('tagtest4 buffers every mention with two or three special names in either order', async t => {
   const f = fixture(t),
     sender = 'U' + 'c'.repeat(32),
     a = 'U' + 'a'.repeat(32),
     b = 'U' + 'b'.repeat(32);
-  const names = { [sender]: 'Nut', [a]: '♠️❄️Pete❄️♠️', [b]: 'TaToM55∞' };
+  // Infinity with a variation selector is one grapheme but two UTF-16 units.
+  const names = { [sender]: 'Nut', [a]: '♠️❄️Pete❄️♠️', [b]: 'TaToM55∞\uFE0F' };
+  let missingMember = false;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (String(url).includes('/group/')) {
       const userId = String(url).split('/').at(-1);
+      if (missingMember && userId === b) return Response.json({}, { status: 404 });
       return Response.json({ userId, displayName: names[userId] });
     }
     f.calls.push(JSON.parse(options.body));
-    return Response.json({ sentMessages: [] });
+    return Response.json({});
   });
-  const send = async (text, mentionees) => {
-    const event = f.event(text);
+  async function send(mentionees) {
+    const event = f.event('badbot tagtest4 @pete @tatom');
     event.source.userId = sender;
     event.message.mention = { mentionees: mentionees.map(id => ({ type: 'user', userId: id })) };
     await f.hook([event]);
     return f.calls.at(-1).messages;
-  };
-  const run = await send('badbot tagtest4 @pete @tatom', [a, b]);
-  assert.deepEqual(
-    run.map(m => m.type),
-    ['text', 'textV2', 'textV2', 'textV2', 'textV2'],
-  );
-  assert.match(run[0].text, /LINE นับเกิน 4 ตัว/);
+  }
   const ids = m => Object.values(m.substitution).map(v => v.mentionee.userId);
-  assert.deepEqual(ids(run[1]), [b, sender]); // plain names only
-  assert.deepEqual(ids(run[2]), [b, sender, a]); // miscounted name last
-  assert.match(run[2].text, /\{m2\}\u200b{16}\n/); // invisible padding after it
-  assert.match(run[3].text, /\{m2\} {16}\n/); // space padding variant
-  assert.deepEqual(ids(run[4]), [a, b, sender]); // control: miscounted name first
-  assert.doesNotMatch(textOf(await sendHelp(f)), /tagtest/);
-  // Without a miscounted name the experiment explains instead of sending mentions.
+  function check(run, order) {
+    assert.deepEqual(run.map(m => m.type), ['text', 'textV2', 'textV2', 'textV2', 'textV2']);
+    assert.deepEqual(ids(run[1]), order);
+    assert.deepEqual(ids(run[2]), order);
+    assert.deepEqual(ids(run[3]), [...order].reverse());
+    assert.deepEqual(ids(run[4]), order);
+    assert.equal(run[1].text, '[2] {m0} {m1} {m2}\nครบไหม ข้อความนี้');
+    for (const index of [2, 3]) {
+      assert.equal(
+        run[index].text,
+        '[' + (index + 1) + '] ' +
+          [0, 1, 2].map(i => '{m' + i + '}' + '\u200b'.repeat(16)).join(' ') +
+          '\nครบไหม ข้อความนี้',
+      );
+    }
+    assert.equal(
+      run[4].text,
+      '[5] ' + [0, 1, 2].map(i => '{m' + i + '}' + ' '.repeat(16)).join(' ') +
+        '\nครบไหม ข้อความนี้',
+    );
+  }
+  const order = [a, b, sender];
+  const run = await send([a, b]);
+  check(run, order);
+  assert.match(run[0].text, /Pete.*ตัวที่เห็น 4/);
+  assert.match(run[0].text, /TaToM55.*ตัวที่เห็น 1/);
+  check(await send([b, a]), [b, a, sender]);
+  names[sender] = 'Nut😀';
+  check(await send([a, b]), order);
+  names[sender] = 'Nut';
   names[a] = 'Pete';
-  const plain = await send('badbot tagtest4 @pete @tatom', [a, b]);
-  assert.deepEqual(
-    plain.map(m => m.type),
-    ['text'],
-  );
-  assert.match(plain[0].text, /Pete \(ธรรมดา\)/);
+  names[b] = 'Tatom';
+  check(await send([a, b]), order);
+  const incomplete = await send([a]);
+  assert.equal(incomplete.length, 1);
+  assert.match(incomplete[0].text, /แตะเลือกเพื่อนอีก 2 คน/);
+  missingMember = true;
+  const unavailable = await send([a, b]);
+  assert.equal(unavailable.length, 1);
+  assert.match(unavailable[0].text, /ตรวจยืนยันสมาชิกในกลุ่มไม่ครบ/);
+  assert.doesNotMatch(textOf(await sendHelp(f)), /tagtest/);
 });
 async function sendHelp(f) {
   await f.hook([f.event('badbot help')]);

@@ -412,8 +412,8 @@ export async function replyToGroupCommand(event, env) {
     const messages = [],
       mentionDiagnostics = [];
     if (action.kind === 'tagTest4') {
-      // Confirms the name-length theory: names LINE miscounts must come last in a
-      // message, at most one per message, followed by invisible padding.
+      // TEMPORARY: compare padding after each mention using the same three members.
+      // The displayed-name expansion is a hypothesis until checked in LINE.
       const friends = (event.message.mention?.mentionees || [])
         .filter(m => m.type === 'user' && !m.isSelf && validLineUserId(m.userId))
         .map(m => m.userId);
@@ -440,62 +440,54 @@ export async function replyToGroupCommand(event, env) {
           name: c.displayName,
           risk: mentionNameRisk(c.displayName),
         }));
-        const safe = people.filter(p => !p.risk),
-          risky = people.filter(p => p.risk);
-        if (!risky.length || safe.length < 2)
-          messages.push({
+        const sub = list =>
+          Object.fromEntries(
+            list.map((p, i) => [
+              'm' + i,
+              { type: 'mention', mentionee: { type: 'user', userId: p.id } },
+            ]),
+          );
+        // Test whether padding absorbs the suspected name expansion. Include it
+        // after every mention, including the last, and keep it outside the token.
+        const tags = (list, padding = '') =>
+          list.map((_, i) => '{m' + i + '}' + padding).join(' ');
+        const zwsp = '\u200b'.repeat(16),
+          reversed = [...people].reverse(),
+          run = Math.random().toString(36).slice(2, 6);
+        messages.push(
+          {
             type: 'text',
             text:
-              'ทดสอบนี้ต้องมีคนชื่อธรรมดา 2 คน และคนชื่อมีอักขระพิเศษ 1 คน ตอนนี้: ' +
-              people.map(p => p.name + (p.risk ? ' (พิเศษ)' : ' (ธรรมดา)')).join(', '),
-          });
-        else {
-          const [s1, s2] = safe,
-            r = risky[0],
-            sub = list =>
-              Object.fromEntries(
-                list.map((p, i) => [
-                  'm' + i,
-                  { type: 'mention', mentionee: { type: 'user', userId: p.id } },
-                ]),
-              ),
-            tags = list => list.map((_, i) => '{m' + i + '}').join(' '),
-            zwsp = '\u200b'.repeat(16),
-            run = Math.random().toString(36).slice(2, 6);
-          messages.push(
-            {
-              type: 'text',
-              text:
-                'ทดสอบแท็ก รอบ ' +
-                run +
-                '\nชื่อมีอักขระพิเศษ: ' +
-                r.name +
-                ' (LINE นับเกิน ' +
-                r.risk +
-                ' ตัว)\nดูว่า [2]–[5] อันไหนสีฟ้า และข้อความ "ครบไหม" อยู่ครบหรือแหว่ง',
-            },
-            {
-              type: 'textV2',
-              text: '[2] ' + tags([s1, s2]) + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2]),
-            },
-            {
-              type: 'textV2',
-              text: '[3] ' + tags([s1, s2, r]) + zwsp + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2, r]),
-            },
-            {
-              type: 'textV2',
-              text: '[4] ' + tags([s1, s2, r]) + ' '.repeat(16) + '\nครบไหม ข้อความนี้',
-              substitution: sub([s1, s2, r]),
-            },
-            {
-              type: 'textV2',
-              text: '[5] ' + tags([r, s1, s2]) + '\nครบไหม ข้อความนี้',
-              substitution: sub([r, s1, s2]),
-            },
-          );
-        }
+              'ทดสอบแท็ก รอบ ' +
+              run +
+              '\n' +
+              people
+                .map(p => p.name + ' (ส่วนต่าง UTF-16/ตัวที่เห็น ' + p.risk + ')')
+                .join('\n') +
+              '\n[2] ไม่ใส่กันชน\n[3] กันชนมองไม่เห็นหลังทุกชื่อ\n[4] เหมือน [3] แต่กลับลำดับ\n[5] ช่องว่างหลังทุกชื่อ' +
+              '\nดูว่าแต่ละข้อความแท็กครบเป็นสีฟ้าไหม และคำว่า "ครบไหม" อยู่ครบหรือแหว่ง',
+          },
+          {
+            type: 'textV2',
+            text: '[2] ' + tags(people) + '\nครบไหม ข้อความนี้',
+            substitution: sub(people),
+          },
+          {
+            type: 'textV2',
+            text: '[3] ' + tags(people, zwsp) + '\nครบไหม ข้อความนี้',
+            substitution: sub(people),
+          },
+          {
+            type: 'textV2',
+            text: '[4] ' + tags(reversed, zwsp) + '\nครบไหม ข้อความนี้',
+            substitution: sub(reversed),
+          },
+          {
+            type: 'textV2',
+            text: '[5] ' + tags(people, ' '.repeat(16)) + '\nครบไหม ข้อความนี้',
+            substitution: sub(people),
+          },
+        );
       }
     } else if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
