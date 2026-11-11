@@ -1,10 +1,8 @@
+import { clubOf } from './clubs.js';
 import { cleanCup } from './leaderboard.js';
 const reply = (data, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
-const tables = club => ({
-  state: club === '88' ? 'club_state_88' : 'club_state',
-  history: club === '88' ? 'cup_history_88' : 'cup_history',
-});
+const tables = club => ({ state: clubOf(club).stateTable, history: clubOf(club).cupTable });
 // SQLite triggers snapshot OLD in the same transaction as the successful write.
 // A rejected revision never creates a misleading backup; a failed backup aborts the write.
 export async function prepareBackups(db, club) {

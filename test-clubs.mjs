@@ -166,3 +166,31 @@ test('Sena aliases are scoped to Sena and 88 has no historical baseline', () => 
     'Beau',
   );
 });
+
+test('club config keeps the production table names, order and fallbacks', async () => {
+  const { CLUB_LIST, CLUB_IDS, DEFAULT_CLUB, isClub, clubOf, counterpartClub } =
+    await import('./clubs.js');
+  // These names are in the live database: changing them would orphan existing data.
+  assert.deepEqual(
+    CLUB_LIST.map(c => [c.id, c.stateTable, c.cupTable]),
+    [
+      ['sena', 'club_state', 'cup_history'],
+      ['88', 'club_state_88', 'cup_history_88'],
+    ],
+  );
+  assert.deepEqual(CLUB_IDS, ['sena', '88']);
+  assert.equal(DEFAULT_CLUB, 'sena');
+  assert.deepEqual(
+    [isClub('sena'), isClub('88'), isClub('99'), isClub(null)],
+    [true, true, false, false],
+  );
+  assert.equal(clubOf('nope').id, 'sena');
+  assert.deepEqual([counterpartClub('sena'), counterpartClub('88')], ['88', 'sena']);
+  assert.deepEqual(
+    CLUB_LIST.map(c => [c.label, c.heading, c.cupName, c.defaultCupWeek, c.hasBaseline]),
+    [
+      ['Sena', 'เสนา', 'Sena Cup', 2, true],
+      ['88', '88', '88 Cup', 4, false],
+    ],
+  );
+});

@@ -1,3 +1,4 @@
+import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import { memberMode } from './member.js';
 import { once } from './schema-cache.js';
 import './public/engine.js';
@@ -67,7 +68,7 @@ const validDate = d =>
   new Date(d + 'T00:00:00Z').toISOString().slice(0, 10) === d;
 const validTime = t => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 const integer = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
-const cupWeekFor = (doc, club) => doc.cupWeek ?? (club === '88' ? 4 : 2);
+const cupWeekFor = (doc, club) => doc.cupWeek ?? clubOf(club).defaultCupWeek;
 const weekOfMonth = date => Math.ceil(Number(date.slice(8, 10)) / 7);
 function normalizeCourtNumbers(value) {
   if (typeof value !== 'string' || value.length > 80) fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
@@ -129,7 +130,7 @@ async function prepare(DB) {
   // The two starter rows only need to exist once; do not repeat them on every request.
   await once(DB, 'booking_clubs:seed', () =>
     Promise.all(
-      ['sena', '88'].map(club =>
+      CLUB_IDS.map(club =>
         DB.prepare(
           'INSERT OR IGNORE INTO booking_clubs (club,revision,payload,updated_at) VALUES (?,0,?,?)',
         )
@@ -149,7 +150,7 @@ async function prepare(DB) {
   );
 }
 async function clubStateFor(DB, club) {
-  const table = club === '88' ? 'club_state_88' : 'club_state';
+  const table = clubOf(club).stateTable;
   // A newly configured club need not have a roster yet.
   await DB.prepare(
     `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
@@ -336,7 +337,7 @@ export function publicBooking(
   players,
   admin,
   now = new Date(),
-  club = 'sena',
+  club = DEFAULT_CLUB,
   awards = new Map(),
 ) {
   const cfg = doc.settings,
@@ -850,5 +851,5 @@ export async function bookingRoute(req, env, admin, club, member = null) {
   }
 }
 export async function scheduledBookings(env) {
-  for (const club of ['sena', '88']) await mutateBooking(env, club, null);
+  for (const club of CLUB_IDS) await mutateBooking(env, club, null);
 }

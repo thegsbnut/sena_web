@@ -1,3 +1,4 @@
+import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
 import { memberRoute, memberFor, memberMode } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
 import { lineAdmin, lineWebhook } from './line.js';
@@ -195,12 +196,13 @@ export default {
         if (!id) return json({ error: 'ไม่พบลิงก์บิล' }, 404);
         return Response.redirect(new URL('/billing.html?bill=' + id, url.origin).href, 302);
       }
-      const club = url.searchParams.get('club') || 'sena';
-      if (!['sena', '88'].includes(club)) return json({ error: 'ไม่พบก๊วนที่เลือก' }, 400);
-      const stateTable = club === '88' ? 'club_state_88' : 'club_state';
-      if (club === '88' && env.DB && ['/api/state', '/api/generate'].includes(path))
+      const club = url.searchParams.get('club') || DEFAULT_CLUB;
+      if (!isClub(club)) return json({ error: 'ไม่พบก๊วนที่เลือก' }, 400);
+      const stateTable = clubOf(club).stateTable;
+      // The default club's table comes from schema.sql; every other club's is created on demand.
+      if (club !== DEFAULT_CLUB && env.DB && ['/api/state', '/api/generate'].includes(path))
         await env.DB.prepare(
-          'CREATE TABLE IF NOT EXISTS club_state_88 (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)',
+          `CREATE TABLE IF NOT EXISTS ${stateTable} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
         ).run();
       if (path === '/') return Response.redirect(url.origin + '/court.html', 302);
       if (path === '/api/line/webhook') return await lineWebhook(req, env);

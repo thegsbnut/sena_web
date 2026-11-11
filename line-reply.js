@@ -1,3 +1,4 @@
+import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
 import { logError } from './log.js';
@@ -6,7 +7,7 @@ import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 
 const defaultBookingUrl = 'https://sena-web.thegsbnut.workers.dev/court#booking';
-const clubs = ['sena', '88'];
+const clubs = CLUB_IDS;
 const day = 86400000;
 const thaiDay = new Intl.DateTimeFormat('th-TH', {
   weekday: 'long',
@@ -75,14 +76,14 @@ function command(event) {
   };
 }
 
-function bookingUrl(env, club = 'sena') {
+function bookingUrl(env, club = DEFAULT_CLUB) {
   if (memberMode(env) && env.LINE_LIFF_ID) return liffUrl(env, club);
   return courtUrl(env, club);
 }
-function courtUrl(env, club = 'sena') {
+function courtUrl(env, club = DEFAULT_CLUB) {
   const url = new URL(env.LINE_BOOKING_URL || defaultBookingUrl);
   if (url.protocol !== 'https:' || url.username || url.password) throw Error('Invalid booking URL');
-  if (club === '88') url.searchParams.set('club', '88');
+  if (club !== DEFAULT_CLUB) url.searchParams.set('club', club);
   else url.searchParams.delete('club');
   return url.href;
 }
@@ -94,7 +95,7 @@ function menu(urls) {
     color: '#168B42',
     action: {
       type: 'uri',
-      label: '🏸 จอง / ถอน ' + (club === '88' ? '88' : 'Sena'),
+      label: '🏸 จอง / ถอน ' + clubOf(club).label,
       uri: urls[club],
     },
   });
@@ -174,7 +175,7 @@ function displayNames(data, session) {
 }
 
 async function rosterSection(env, club, now) {
-  const heading = '📍 ' + (club === '88' ? '88' : 'เสนา');
+  const heading = '📍 ' + clubOf(club).heading;
   const response = await bookingRoute(
     new Request('https://badbot.internal/api/booking'),
     env,
@@ -216,15 +217,14 @@ async function rosterSection(env, club, now) {
 
 async function shortcutText(action, env, urls) {
   const club = action.club;
-  const cupName = club === '88' ? '88 Cup' : 'Sena Cup';
+  const cupName = clubOf(club).cupName;
   if (action.kind === 'help')
     return [
       '🏸 คำสั่ง Badbot',
       ...[...shortcuts].map(([key, value]) => 'badbot ' + key + ' · ' + value.description),
     ].join('\n');
   if (action.kind === 'bill') return billingLineText(env, action.scope, new URL(urls.sena).origin);
-  if (action.kind === 'book')
-    return '🏸 จอง / ถอน ' + (club === '88' ? '88' : 'Sena') + '\n' + urls[club];
+  if (action.kind === 'book') return '🏸 จอง / ถอน ' + clubOf(club).label + '\n' + urls[club];
   if (action.kind === 'matchup') {
     const response = await bookingRoute(
       new Request('https://badbot.internal/api/booking'),
@@ -259,7 +259,7 @@ async function shortcutText(action, env, urls) {
     ]);
   }
   if (action.kind === 'cupMatchup') {
-    const table = club === '88' ? 'club_state_88' : 'club_state';
+    const table = clubOf(club).stateTable;
     await env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     ).run();
@@ -328,7 +328,7 @@ async function shortcutText(action, env, urls) {
 }
 
 async function leaderboardSection(env, club, url) {
-  const heading = '🏆 ' + (club === '88' ? '88' : 'Sena') + ' Leaderboard';
+  const heading = '🏆 ' + clubOf(club).label + ' Leaderboard';
   const response = await leaderboardRoute(
     new Request('https://badbot.internal/api/leaderboard'),
     env,
