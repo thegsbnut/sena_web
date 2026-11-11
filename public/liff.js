@@ -28,15 +28,16 @@
    });return;
   }
   button('ออกจากระบบ',async()=>{try{await api('/logout',{});if(liff.isLoggedIn())liff.logout();location.reload();}catch(e){message(e.message);}});
+  if(session.mappingError){message(session.mappingError+' · ให้ผู้จัดตรวจการแมพทั้งสองสนาม');return;}
   if(session.link?.status!=='approved'){
    const data=await api('/choices');
-   for(const player of data.players){const option=document.createElement('option');option.value=player.id;option.textContent=player.name;q('existing').append(option);}
+   for(const player of data.players){const option=document.createElement('option');option.value=JSON.stringify({playerId:player.id,sourceClub:player.club});option.textContent=player.name;q('existing').append(option);}
    if(!data.players.length)q('mapStatus').textContent='ไม่มีชื่อว่างให้เลือก กรุณาติดต่อผู้จัด';
    q('mapForm').onsubmit=async event=>{
     event.preventDefault();const submit=q('mapForm').querySelector('button');submit.disabled=true;
-    try{await api('/link',{playerId:q('existing').value});location.reload();}catch(e){q('mapStatus').textContent=e.message;submit.disabled=false;}
+    try{await api('/link',JSON.parse(q('existing').value));location.reload();}catch(e){q('mapStatus').textContent=e.message;submit.disabled=false;}
    };
-   message('เลือกชื่อของคุณสำหรับสนาม '+(club==='88'?'88':'Sena'));q('mapping').showModal();return;
+   message('เลือกชื่อครั้งเดียว ใช้ได้ทั้ง Sena และ 88');q('mapping').showModal();return;
   }
   if(!pay){location.replace('/court'+(club==='88'?'?club=88':'')+'#booking');return;}
   q('title').textContent='บิลของคุณ · '+(club==='88'?'88':'Sena');

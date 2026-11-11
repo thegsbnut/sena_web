@@ -2,7 +2,7 @@
  const response=await venueFetch('/api/session'),session=await response.json();if(!session.canEdit)return;
  const container=document.getElementById('roster');if(!container)return;
  const panel=document.createElement('section');panel.className='panel';
- panel.innerHTML='<h2>บัญชี LINE และการแมพผู้เล่น</h2><p>ช่วงเก็บตก ผู้เล่นเลือกชื่อเดิมแล้วใช้งานได้ทันที ผู้จัดแก้ชื่อได้จากรายชื่อผู้เล่นด้านล่าง และแก้การแมพ LINE ได้ที่นี่ หากชื่อเป้าหมายผูกกับบัญชีอื่น ให้ยกเลิกการผูกนั้นก่อนย้าย</p><button type="button">โหลดการแมพล่าสุด</button><div class="member-requests"></div><p role="status"></p>';
+ panel.innerHTML='<h2>บัญชี LINE และการแมพผู้เล่น</h2><p>ช่วงเก็บตก ผู้เล่นเลือกชื่อเดิมแล้วใช้งานได้ทันที ผู้จัดแก้ชื่อได้จากรายชื่อผู้เล่นด้านล่าง และแก้การแมพ LINE ได้ที่นี่ การแก้และลบการผูกมีผลทั้งสองสนาม หากชื่อเป้าหมายผูกกับบัญชีอื่น ให้ยกเลิกการผูกนั้นก่อนย้าย</p><button type="button">โหลดการแมพล่าสุด</button><div class="member-requests"></div><p role="status"></p>';
  container.prepend(panel);
  const rows=panel.querySelector('.member-requests'),status=panel.querySelector('[role=status]');
  const api=async(action,body)=>{
@@ -23,7 +23,7 @@
     button.onclick=async()=>{
      if(action==='reassign'&&!picker.value){status.textContent='เลือกชื่อผู้เล่นก่อน';return;}
      const target=players.find(p=>p.id===picker.value)?.name||'';
-     if(!confirm(action==='reassign'?'ย้ายบัญชี LINE นี้ไปเป็น '+target+'? สิทธิ์จองและบิลจะอ้างถึงชื่อใหม่นี้':'ลบการผูก LINE ของ '+item.name+'? เปิด LIFF อีกครั้งจะเลือกชื่อใหม่ได้ ข้อมูลผู้เล่น บิล และประวัติยังอยู่'))return;
+     if(!confirm(action==='reassign'?'ย้ายบัญชี LINE นี้ไปเป็น '+target+'? เปลี่ยนการผูกทั้งสองสนาม สิทธิ์จองและบิลจะอ้างถึงชื่อใหม่นี้':'ลบการผูก LINE ของ '+item.name+'? ลบการผูกทั้งสองสนาม เปิด LIFF อีกครั้งจะเลือกชื่อใหม่ได้ ข้อมูลผู้เล่น บิล และประวัติยังอยู่'))return;
      for(const b of buttons)b.disabled=true;
      try{await api(action,{userId:item.user_id,playerId:picker.value,previousPlayerId:item.player_id,previousStatus:item.status});status.textContent=action==='unlink'?'ลบการผูกแล้ว เปิดหรือรีเฟรช LIFF เพื่อเลือกชื่อใหม่ได้':'บันทึกการแมพแล้ว';await load();}catch(e){status.textContent=e.message;for(const b of buttons)b.disabled=false;}
     };

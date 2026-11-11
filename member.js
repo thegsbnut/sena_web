@@ -1,3 +1,4 @@
+import {mapBoth,MappingError} from './member-shared.js';
 const json=(data,status=200,headers={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer',...headers}});
 export const memberMode=env=>env.LINE_MEMBER_AUTH_ENABLED==='true';
 export const loginEnabled=env=>memberMode(env)||env.LINE_LOGIN_ENABLED==='true';
@@ -22,16 +23,18 @@ export async function memberFor(req,env,club){
  const session=await env.DB.prepare('SELECT user_id FROM member_sessions WHERE token_hash=? AND expires_at>?').bind(await hash(token),Date.now()).first();
  if(!session)return null;
  let link=await env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?').bind(session.user_id,club).first();
- // Existing pending selections from the approval trial become active on revisit.
- if(link?.status==='pending'&&link.kind==='existing'){
-  const {state}=await roster(env.DB,club);
-  if(state.players.some(p=>p.id===link.player_id))try{
-   await env.DB.prepare("UPDATE member_links SET status='approved' WHERE user_id=? AND club=? AND status='pending' AND player_id=?").bind(session.user_id,club,link.player_id).run();
-   link=await env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?').bind(session.user_id,club).first();
-  }catch(error){if(!String(error.message).includes('UNIQUE'))throw error;}
- }
- return {userId:session.user_id,link:link||null};
+ const otherClub=club==='sena'?'88':'sena';
+ const other=await env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?').bind(session.user_id,otherClub).first();
+ const anchor=link?.status==='approved'||link?.status==='pending'&&link.kind==='existing'?{club,link}
+  :other?.status==='approved'||other?.status==='pending'&&other.kind==='existing'?{club:otherClub,link:other}:null;
+ let mappingError=null;
+ if(anchor&&(link?.status!=='approved'||other?.status!=='approved'))try{
+  await mapBoth(env.DB,session.user_id,anchor.club,anchor.link.player_id);
+  link=await env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?').bind(session.user_id,club).first();
+ }catch(error){if(!(error instanceof MappingError))throw error;mappingError=error.message;}
+ return {userId:session.user_id,link:link||null,mappingError};
 }
+
 async function roster(db,club){
  const table=club==='88'?'club_state_88':'club_state';
  await db.prepare(`CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`).run();
@@ -39,20 +42,34 @@ async function roster(db,club){
  return {row,table,state:row?JSON.parse(row.payload):{players:[],selected:[],rounds:10,locks:[],result:null,cup:null}};
 }
 export async function memberRoute(req,env,admin,club){
+ try{return await route(req,env,admin,club);}catch(error){if(error instanceof MappingError)return json({error:error.message},409);throw error;}
+}
+async function route(req,env,admin,club){
  if(!env.DB)return json({error:'ระบบสมาชิกยังไม่พร้อม'},503);
  if(!['GET','POST'].includes(req.method))return json({error:'Method not allowed'},405);
  await prepareMembers(env.DB);
  const url=new URL(req.url),action=url.pathname.split('/').at(-1);
  if(req.method==='GET'&&action==='member'){
   const member=await memberFor(req,env,club),csrf=random();
-  return json({enabled:loginEnabled(env),requireLogin:memberMode(env),configured:Boolean(env.LINE_LIFF_ID&&env.LINE_LOGIN_CHANNEL_ID),liffId:env.LINE_LIFF_ID||null,csrf,loggedIn:Boolean(member),link:member?.link||null},200,{'Set-Cookie':'__Host-sena-member-csrf='+csrf+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600'});
+  return json({enabled:loginEnabled(env),requireLogin:memberMode(env),configured:Boolean(env.LINE_LIFF_ID&&env.LINE_LOGIN_CHANNEL_ID),liffId:env.LINE_LIFF_ID||null,csrf,loggedIn:Boolean(member),mappingError:member?.mappingError||null,link:member?.link||null},200,{'Set-Cookie':'__Host-sena-member-csrf='+csrf+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600'});
  }
  if(req.method==='GET'&&action==='choices'){
   const member=await memberFor(req,env,club);if(!member)return json({error:'กรุณาเข้าสู่ระบบ LINE'},401);
-  const {state}=await roster(env.DB,club);
-  const taken=await env.DB.prepare("SELECT player_id FROM member_links WHERE club=? AND status='approved' AND user_id<>?").bind(club,member.userId).all();
-  const ids=new Set(taken.results.map(r=>r.player_id));
-  return json({players:state.players.filter(p=>!ids.has(p.id)).map(({id,name})=>({id,name}))});
+  const states={},taken={};
+  for(const c of ['sena','88']){
+   states[c]=(await roster(env.DB,c)).state;
+   const rows=await env.DB.prepare("SELECT player_id FROM member_links WHERE club=? AND status='approved' AND user_id<>?").bind(c,member.userId).all();
+   taken[c]=new Set(rows.results.map(r=>r.player_id));
+  }
+  const names=new Set(),players=[];
+  for(const c of [club,club==='sena'?'88':'sena'])for(const p of states[c].players){
+   const key=p.name.normalize('NFC').trim().toLowerCase();
+   if(names.has(key))continue;
+   const blocked=['sena','88'].some(v=>states[v].players.some(x=>x.name.normalize('NFC').trim().toLowerCase()===key&&taken[v].has(x.id)));
+   if(blocked)continue;
+   names.add(key);players.push({id:p.id,name:p.name,club:c});
+  }
+  return json({players});
  }
  if(req.method==='GET'&&action==='requests'){
   if(!admin)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
@@ -107,14 +124,11 @@ export async function memberRoute(req,env,admin,club){
  if(!input||typeof input!=='object'||Array.isArray(input))return json({error:'ข้อมูลไม่ถูกต้อง'},400);
  if(action==='link'){
   if(!member)return json({error:'กรุณาเข้าสู่ระบบ LINE'},401);
-  if(member.link?.status==='approved')return member.link.player_id===input.playerId?json({ok:true}):json({error:'ผูกชื่อแล้ว หากเลือกผิดให้ผู้จัดแก้ไข'},409);
-  const {state}=await roster(env.DB,club),player=state.players.find(p=>p.id===input.playerId);
+  const sourceClub=input.sourceClub??club;
+  if(!['sena','88'].includes(sourceClub))return json({error:'สนามไม่ถูกต้อง'},400);
+  const {state}=await roster(env.DB,sourceClub),player=state.players.find(p=>p.id===input.playerId);
   if(!player||input.name!==undefined)return json({error:'ช่วงเก็บตกให้เลือกชื่อผู้เล่นเดิมเท่านั้น'},400);
-  try{
-   const changed=await env.DB.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?) ON CONFLICT(user_id,club) DO UPDATE SET player_id=excluded.player_id,name=excluded.name,kind='existing',status='approved',created_at=excluded.created_at WHERE member_links.status IN ('rejected','pending')")
-    .bind(member.userId,club,player.id,player.name,'existing',new Date().toISOString()).run();
-   if(!changed.meta.changes){const current=await env.DB.prepare("SELECT player_id FROM member_links WHERE user_id=? AND club=? AND status='approved'").bind(member.userId,club).first();if(current?.player_id!==player.id)return json({error:'การผูกเปลี่ยนแล้ว กรุณาโหลดใหม่'},409);}
-  }catch(error){if(!String(error.message).includes('UNIQUE'))throw error;return json({error:'ชื่อนี้มีคนผูกแล้ว กรุณาเลือกชื่ออื่นหรือให้ผู้จัดแก้ไข'},409);}
+  await mapBoth(env.DB,member.userId,sourceClub,player.id);
   return json({ok:true});
  }
  if(['reassign','revoke','unlink'].includes(action)){
@@ -122,25 +136,13 @@ export async function memberRoute(req,env,admin,club){
   if(typeof input.previousStatus!=='string'||!(input.previousPlayerId===null||typeof input.previousPlayerId==='string'))return json({error:'กรุณาโหลดการแมพล่าสุดก่อนแก้ไข'},400);
  }
  if(action==='reassign'){
-  if(!admin)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
   if(typeof input.userId!=='string'||!/^U[a-f0-9]{32}$/.test(input.userId))return json({error:'เลือกบัญชี LINE ที่มีในระบบ'},400);
-  const {state}=await roster(env.DB,club),player=state.players.find(p=>p.id===input.playerId);
-  if(!player)return json({error:'ไม่พบผู้เล่นที่เลือก'},400);
-  try{
-   const changed=await env.DB.prepare("UPDATE member_links SET player_id=?,name=?,kind='existing',status='approved',created_at=? WHERE user_id=? AND club=? AND player_id IS ? AND status=?")
-    .bind(player.id,player.name,new Date().toISOString(),input.userId,club,input.previousPlayerId??null,input.previousStatus).run();
-   if(!changed.meta.changes)return json({error:'การผูกเปลี่ยนจากอีกเครื่องแล้ว กรุณาโหลดล่าสุด'},409);
-  }catch(error){if(!String(error.message).includes('UNIQUE'))throw error;return json({error:'ชื่อนี้ผูกกับบัญชีอื่นอยู่ ให้ยกเลิกการผูกเดิมก่อน'},409);}
+  await mapBoth(env.DB,input.userId,club,input.playerId,{allowMove:true,expected:{playerId:input.previousPlayerId,status:input.previousStatus}});
   return json({ok:true});
  }
- if(action==='unlink'){
-  const changed=await env.DB.prepare('DELETE FROM member_links WHERE user_id=? AND club=? AND player_id IS ? AND status=?').bind(input.userId,club,input.previousPlayerId,input.previousStatus).run();
-  return changed.meta.changes?json({ok:true}):json({error:'การผูกเปลี่ยนจากอีกเครื่องแล้ว กรุณาโหลดล่าสุด'},409);
- }
- if(action==='revoke'){
-  if(!admin)return json({error:'กรุณาเข้าสู่ระบบผู้จัด'},401);
-  const changed=await env.DB.prepare("UPDATE member_links SET status='rejected' WHERE user_id=? AND club=? AND player_id IS ? AND status=?").bind(input.userId,club,input.previousPlayerId,input.previousStatus).run();
-  return changed.meta.changes?json({ok:true}):json({error:'การผูกเปลี่ยนจากอีกเครื่องแล้ว กรุณาโหลดล่าสุด'},409);
+ if(action==='unlink'||action==='revoke'){
+  await mapBoth(env.DB,input.userId,club,null,{remove:true,expected:{playerId:input.previousPlayerId,status:input.previousStatus}});
+  return json({ok:true});
  }
  return json({error:'Not found'},404);
 }

@@ -10,6 +10,7 @@ function fixture(t){
  db.exec('CREATE TABLE club_state(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT);CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)');
  db.prepare('INSERT INTO club_state VALUES(1,1,?,?)').run(JSON.stringify({players:[{id:'p0',name:'Nut',thai:'',lv:8,gender:'M'},{id:'p1',name:'Pete',thai:'',lv:7,gender:'M'}],selected:[],rounds:10,locks:[],result:null,cup:null}),'initial');
  const binding={prepare(sql){const stmt=db.prepare(sql);let args=[];return {bind(...v){args=v.map(x=>x instanceof ArrayBuffer?new Uint8Array(x):x);return this;},first(){return stmt.get(...args);},all(){return {results:stmt.all(...args)};},run(){return {meta:{changes:stmt.run(...args).changes}};}};}};
+ binding.batch=statements=>{db.exec('BEGIN');try{const results=statements.map(s=>s.run());db.exec('COMMIT');return results;}catch(error){db.exec('ROLLBACK');throw error;}};
  const env={DB:binding,SLIPS_DB:binding,ADMIN_KEY:'test-key',LINE_MEMBER_AUTH_ENABLED:'true',LINE_LOGIN_CHANNEL_ID:'12345',LINE_LIFF_ID:'12345-test',LINE_CHANNEL_ACCESS_TOKEN:'fixture-token'};
  let identity=uid,profileOverride={},calls=0;
  t.mock.method(globalThis,'fetch',async(url,options)=>{
@@ -27,6 +28,58 @@ function fixture(t){
  const admin=async()=>cookieOf(await request('/api/login',{key:env.ADMIN_KEY}));
  return {db,env,request,login,admin,cookieOf,get calls(){return calls;},profile:value=>profileOverride=value};
 }
+test('one selection creates the missing counterpart once, copying source level and gender',async t=>{
+ const f=fixture(t),member=await f.login();
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
+ const counterpart=(await(await f.request('/api/member?club=88',null,member)).json()).link;
+ assert.equal(counterpart.status,'approved');assert.notEqual(counterpart.player_id,'p0');
+ const before=f.db.prepare('SELECT payload,revision FROM club_state_88 WHERE id=1').get();
+ const player=JSON.parse(before.payload).players[0];
+ assert.deepEqual({name:player.name,lv:player.lv,gender:player.gender},{name:'Nut',lv:8,gender:'M'});
+ await f.request('/api/member?club=88',null,member);await f.request('/api/member/link',{playerId:'p0'},member);
+ assert.deepEqual(f.db.prepare('SELECT payload,revision FROM club_state_88 WHERE id=1').get(),before);
+});
+test('shared mapping preserves existing counterpart IDs and never alters its level, history or bills',async t=>{
+ const f=fixture(t),member=await f.login();
+ const state={players:[{id:'old-88',name:'Nut',thai:'',lv:4,gender:'M'}],selected:['old-88'],rounds:10,locks:[],result:null,cup:null};
+ f.db.exec('CREATE TABLE club_state_88(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT)');
+ f.db.prepare('INSERT INTO club_state_88 VALUES(1,9,?,?)').run(JSON.stringify(state),'old');
+ const before=f.db.prepare('SELECT * FROM club_state_88').get();
+ await f.request('/api/member/link',{playerId:'p0'},member);
+ assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link.player_id,'old-88');
+ assert.deepEqual(f.db.prepare('SELECT * FROM club_state_88').get(),before);
+});
+test('an existing one-court account backfills both courts without asking again',async t=>{
+ const f=fixture(t),member=await f.login();
+ f.db.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)").run(uid,'sena','p0','Nut','existing',new Date().toISOString());
+ const response=await(await f.request('/api/member?club=88',null,member)).json();
+ assert.equal(response.link.status,'approved');assert.equal(response.mappingError,null);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM member_links WHERE user_id=?').get(uid).n,2);
+});
+test('users can select a player from either roster; counterpart conflicts roll back both mappings',async t=>{
+ const f=fixture(t),member=await f.login();
+ f.db.exec('CREATE TABLE club_state_88(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT)');
+ f.db.prepare('INSERT INTO club_state_88 VALUES(1,1,?,?)').run(JSON.stringify({players:[{id:'only-88',name:'Bank',thai:'',lv:5,gender:'M'},{id:'old-88',name:'Nut',thai:'',lv:7,gender:'M'}],selected:[],rounds:10,locks:[],result:null,cup:null}),'old');
+ f.db.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)").run(other,'88','old-88','Nut','existing',new Date().toISOString());
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,409);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM member_links WHERE user_id=?').get(uid).n,0);
+ const choices=await(await f.request('/api/member/choices',null,member)).json();
+ assert(!choices.players.some(p=>p.name==='Nut'));assert(choices.players.some(p=>p.id==='only-88'&&p.club==='88'));
+ assert.equal((await f.request('/api/member/link',{playerId:'only-88',sourceClub:'88'},member)).status,200);
+ assert.equal((await(await f.request('/api/member',null,member)).json()).link.status,'approved');
+});
+test('roster changes during mapping abort the transaction without creating a player or partial links',async t=>{
+ const f=fixture(t),member=await f.login(),original=f.env.DB.batch;
+ f.env.DB.batch=statements=>{
+  f.db.prepare('UPDATE club_state SET revision=revision+1').run();
+  return original(statements);
+ };
+ assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,409);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM member_links WHERE user_id=?').get(uid).n,0);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM club_state_88').get().n,0);
+ assert.equal(f.db.prepare('SELECT count(*) AS n FROM member_write_guards').get().n,0);
+});
+
 test('LIFF endpoint serves HTML without redirecting away from its registered URL',async()=>{
  const response=await worker.fetch(new Request(origin+'/liff.html?club=88'),{ASSETS:{fetch(request){
   const url=new URL(request.url);assert.equal(url.pathname,'/liff');assert.equal(url.searchParams.get('club'),'88');
@@ -70,7 +123,7 @@ test('existing-player linking is immediate, isolates clubs, and limits booking a
  assert.equal((await f.request('/api/member/approve',{userId:uid},admin)).status,404);
  assert.equal((await f.request('/api/booking',booking,member)).status,200);
  assert.equal((await f.request('/api/booking',{...booking,playerId:'p1'},member)).status,403);
- assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link,null);
+ assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link.status,'approved');
  await f.request('/api/booking',{...booking,playerId:'p1'},admin);
  let data=await(await f.request('/api/booking',null,member)).json(),session=data.sessions.find(s=>s.id===sessionId);
  const mine=session.registrations.find(r=>r.playerId==='p0'),theirs=session.registrations.find(r=>r.playerId==='p1');
@@ -115,6 +168,7 @@ test('admin unlink resets the first-login picker without deleting players, bills
  assert.equal((await f.request('/api/member/unlink',body,admin)).status,200);
  const session=await(await f.request('/api/member',null,member)).json();
  assert.equal(session.loggedIn,true);assert.equal(session.link,null);
+ assert.equal((await(await f.request('/api/member?club=88',null,member)).json()).link,null);
  assert.equal(f.db.prepare('SELECT payload FROM club_state WHERE id=1').get().payload,rosterBefore);
  assert((await(await f.request('/api/member/choices',null,member)).json()).players.some(p=>p.id==='p0'));
  assert.equal((await f.request('/api/member/link',{playerId:'p0'},member)).status,200);
