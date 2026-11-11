@@ -125,6 +125,7 @@
   const who = payerToken ? rows[0] : null;
   const promptpay = validPromptPay(bill.transfer);
   root.innerHTML = `
+   ${organizer ? '<button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>' : ''}
    <h1>${bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
    <p class="muted">${dateLabel(bill.date)} · ผู้ถูกเรียกเก็บ ${bill.people} คน</p>
    <section class="summary">
@@ -250,6 +251,7 @@
   const rows = adminList.bills;
   root.innerHTML = `
    <h1>บิลค่าใช้จ่าย</h1>
+   <button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>
    <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button>
    <a class="button" href="/billing.html?manage=1&club=${club === '88' ? 'sena' : '88'}">เปิดบิลสนาม ${club === '88' ? 'Sena' : '88'}</a></div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
@@ -365,6 +367,21 @@
   if (!target || busy) return;
   const action = target.dataset.action;
   const payer = bill?.payers.find(p => p.id === target.dataset.payer);
+  if (action === 'mention-diagnostics') return run(async () => {
+   const response=await fetch('/api/line?mentionDiagnostics=1&club='+club,{cache:'no-store'}),data=await response.json();
+   if(!response.ok)throw Error(data.error||'ตรวจไม่ได้');
+   const reasons={mention_ready:'พร้อมแท็กจริง',not_linked:'ยังไม่พบการผูกบัญชีผู้จ่าย',legacy_payer_key:'บิลเก่าไม่ได้อ้างอิงรหัสสมาชิก',not_in_group_or_provider_mismatch:'LINE หาในกลุ่มไม่เจอ: ตรวจสมาชิกกลุ่มและ Provider',line_credentials_rejected:'LINE ไม่รับสิทธิ์ Access Token',line_profile_error:'LINE ตรวจสมาชิกไม่สำเร็จ',line_profile_timeout_or_network:'ตรวจสมาชิกหมดเวลาหรือเครือข่ายขัดข้อง'};
+   const lines=['ผลตรวจแท็ก LINE · '+clubName(club),
+    'รูปแบบข้อความ: HTTP '+data.validation.status,
+    'พร้อมแท็กตอนตรวจ: '+data.mentionCount+' คน',
+    data.webhook.checked?'Webhook: '+(data.webhook.endpointMatches?'URL ถูกต้อง':'URL ไม่ตรงกับเว็บนี้')+' · '+(data.webhook.active?'เปิดอยู่':'ปิดอยู่'):'ยังตรวจ Webhook ไม่ได้',
+    ...data.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)+(p.httpStatus?' (HTTP '+p.httpStatus+')':''))];
+   if(data.latest)lines.push('คำสั่งบิลล่าสุด: '+new Date(data.latest.updatedAt).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'}),'ส่งถึง LINE: HTTP '+data.latest.replyStatus+' · แท็กจริง '+data.latest.mentionCount+' รายการ · '+data.latest.messageTypes.join(', '),...data.latest.payers.map(p=>'• '+p.name+': '+(reasons[p.reason]||p.reason)));
+   else lines.push('ยังไม่มีบันทึกคำสั่งจริง ให้พิมพ์ badbot bill ในกลุ่มแล้วกดตรวจอีกครั้ง');
+   if(data.validation.message)lines.push(data.validation.message);
+   let report=root.querySelector('#mentionReport');if(!report){report=document.createElement('textarea');report.id='mentionReport';report.readOnly=true;report.rows=12;report.setAttribute('aria-label','ผลตรวจแท็ก LINE สำหรับคัดลอก');root.prepend(report);}report.value=lines.join('\n');
+   message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้');
+  });
   if (action === 'reload') return run(load);
   if (action === 'set-promptpay') {
    const promptpay = prompt('เลขพร้อมเพย์เริ่มต้น 10 หรือ 13 หลัก', adminList.promptpay)?.trim();

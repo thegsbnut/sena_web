@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
 import {defaultSettings,bangkokDate} from './booking.js';
+import {prepareMembers} from './member.js';
 
 const origin='https://example.com',group='C'+'a'.repeat(32);
 const future=n=>bangkokDate(new Date(Date.now()+n*86400000));
@@ -47,6 +48,29 @@ function session(date,{names=2,closed=false,holiday=null,capacity=8}={}){
   registrations:Array.from({length:names},(_,i)=>({id:'r'+i,playerId:'p'+i,seq:i,source:'manual',ownerHash:'never-show-this'}))};
 }
 const textOf=call=>call.messages.filter(m=>m.type==='text').map(m=>m.text).join('\n');
+
+test('signed bill webhook sends a real LINE mention object all the way to the reply API',async t=>{
+ const f=fixture(t),userId='U'+'a'.repeat(32);
+ f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';
+ await prepareMembers(f.env.DB);
+ f.db.exec('CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)');
+ f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run('a'.repeat(32),'sena',future(0),JSON.stringify({payers:[{name:'Nut',payerKey:'member:p0',amount:8500,status:'unpaid'}]}));
+ f.db.prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)").run(userId,'sena','p0','Nut','existing',new Date().toISOString());
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  if(url==='https://api.line.me/v2/bot/group/'+group+'/member/'+userId)return Response.json({userId,displayName:'Nut'});
+  assert.equal(url,'https://api.line.me/v2/bot/message/reply');
+  f.calls.push(JSON.parse(options.body));return Response.json({sentMessages:[{id:'test-message'}]});
+ });
+ assert.equal((await f.hook([f.event('badbot bill')])).status,200);
+ const message=f.calls[0].messages[0];
+ assert.equal(message.type,'textV2');
+ assert.deepEqual(message.substitution.u0,{type:'mention',mentionee:{type:'user',userId}});
+ assert.match(message.text,/Nut 85 บ\. \{u0\}/);
+ assert.doesNotMatch(message.text,/@Nut/);
+ const diagnostic=JSON.parse(f.db.prepare('SELECT payload FROM line_bill_diagnostics WHERE group_id=?').get(group).payload);
+ assert.equal(diagnostic.replyStatus,200);assert.equal(diagnostic.mentionCount,1);assert.deepEqual(diagnostic.messageTypes,['textV2']);
+ assert.doesNotMatch(JSON.stringify(diagnostic),new RegExp(userId));
+});
 
 test('enabled member mode sends both booking buttons through the configured LIFF app',async t=>{
  const f=fixture(t);f.env.LINE_MEMBER_AUTH_ENABLED='true';f.env.LINE_LIFF_ID='12345-test';

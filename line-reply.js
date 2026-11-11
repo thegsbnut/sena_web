@@ -209,7 +209,7 @@ export async function replyToGroupCommand(event,env){
  const claim=await db.prepare('INSERT OR IGNORE INTO line_reply_events (id,created_at) VALUES (?,?)').bind(id,+now).run();
  if(!claim.meta.changes)return;
  try{
-  const messages=[];
+  const messages=[],mentionDiagnostics=[];
   if(action.kind==='roster'){
    const selected=action.scope==='all'?clubs:[action.scope];
    const sections=await Promise.all(selected.map(club=>rosterSection(env,club,now)));
@@ -217,7 +217,7 @@ export async function replyToGroupCommand(event,env){
     '\n\nอัปเดต ณ '+thaiTime.format(now)+' น.';
    messages.push(...textMessages(text));
   }else if(action.kind==='bill'&&memberMode(env)&&env.LINE_LIFF_ID){
-   messages.push(...await billingLineMessages(env,action.scope,new URL(urls.sena).origin,group));
+   messages.push(...await billingLineMessages(env,action.scope,new URL(urls.sena).origin,group,mentionDiagnostics));
   }else if(action.kind==='menu'){
    messages.push(menu(urls));
   }else{
@@ -227,6 +227,11 @@ export async function replyToGroupCommand(event,env){
    method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},
    body:JSON.stringify({replyToken:event.replyToken,messages}),signal:AbortSignal.timeout(10000)
   });
+  if(action.kind==='bill')try{
+   await db.prepare('CREATE TABLE IF NOT EXISTS line_bill_diagnostics (group_id TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
+   const report={replyStatus:response.status,mentionCount:messages.reduce((n,m)=>n+Object.values(m.substitution||{}).filter(v=>v.type==='mention').length,0),messageTypes:messages.map(m=>m.type),payers:mentionDiagnostics};
+   await db.prepare('INSERT INTO line_bill_diagnostics VALUES(?,?,?) ON CONFLICT(group_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at').bind(group,JSON.stringify(report),new Date().toISOString()).run();
+  }catch{console.error('Unable to store bill mention diagnostic');}
   // Expired/used tokens and other permanent failures must never become Pushes.
   if(!response.ok&&response.status!==400)throw Error('LINE reply unavailable');
  }catch(error){

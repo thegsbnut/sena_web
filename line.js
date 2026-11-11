@@ -1,3 +1,4 @@
+import {billingLineMessages} from './billing.js';
 import {normalizeLineText,replyToGroupCommand} from './line-reply.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
@@ -79,6 +80,24 @@ export async function lineAdmin(req,env,admin,club){
  if(req.method==='GET'){
   const row=await env.DB.prepare('SELECT group_id,expires_at FROM line_groups WHERE club=?').bind(club).first();
   const connected=!!row?.group_id;
+  if(new URL(req.url).searchParams.has('mentionDiagnostics')){
+   if(!connected)return reply({error:'สนามนี้ยังไม่เชื่อมกลุ่ม LINE'},409);
+   const payers=[],messages=await billingLineMessages(env,club,new URL(req.url).origin,row.group_id,payers);
+   if(!messages)return reply({error:'ยังไม่เปิดโหมดสมาชิก LINE'},409);
+   let validation={status:0,message:'ติดต่อ LINE เพื่อตรวจรูปแบบไม่ได้'};
+   try{
+    const result=await fetch('https://api.line.me/v2/bot/message/validate/reply',{method:'POST',headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({messages}),signal:AbortSignal.timeout(10000)});
+    validation={status:result.status};if(!result.ok){const data=await result.json();validation.message=String(data.message||'LINE ไม่รับรูปแบบข้อความ').slice(0,240);}
+   }catch{}
+   let webhook={checked:false};
+   try{
+    const result=await fetch('https://api.line.me/v2/bot/channel/webhook/endpoint',{headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN},signal:AbortSignal.timeout(10000)});
+    if(result.ok){const data=await result.json();webhook={checked:true,active:data.active,endpointMatches:data.endpoint===new URL('/api/line/webhook',req.url).href};}
+   }catch{}
+   const table=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='line_bill_diagnostics'").first();
+   const latest=table?await env.DB.prepare('SELECT payload,updated_at FROM line_bill_diagnostics WHERE group_id=?').bind(row.group_id).first():null;
+   return reply({webhook,validation,mentionCount:messages.reduce((n,m)=>n+Object.keys(m.substitution||{}).length,0),payers,latest:latest?{...JSON.parse(latest.payload),updatedAt:latest.updated_at}:null});
+  }
   const diagnosis=!connected&&new URL(req.url).searchParams.has('diagnose')?await diagnoseLine(req,env,row?.expires_at):null;
   return reply({connected,diagnosis});
  }

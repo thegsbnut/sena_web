@@ -219,6 +219,34 @@ test('pending existing-name requests from the trial activate on revisit without 
  assert.equal((await(await f.request('/api/member',null,member)).json()).link.status,'approved');
 });
 
+test('organizer mention diagnostics report the actual fallback and verify the webhook without sending chat messages',async t=>{
+ const f=fixture(t),admin=await f.admin(),member=await f.login();f.env.LINE_CHANNEL_SECRET='fixture-secret';
+ await f.request('/api/member/link',{playerId:'p0'},member);
+ const draft={date:'2026-11-10',court:10000,shuttle:0,transfer:'0000000000',attendees:[{name:'Nut',payer:'Nut',payerKey:'member:p0'},{name:'Pete',payer:'Pete',payerKey:'name:pete'}]};
+ await f.request('/api/billing',draft,admin);
+ f.db.exec('CREATE TABLE line_groups(club TEXT PRIMARY KEY,group_id TEXT,pair_code TEXT,expires_at INTEGER)');
+ f.db.prepare('INSERT INTO line_groups(club,group_id) VALUES(?,?)').run('sena','Ctest');
+ let profileStatus=200,networkFailure=false;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{
+  assert(!String(url).endsWith('/message/reply'));assert(!String(url).endsWith('/message/push'));
+  if(String(url).includes('/group/')){if(networkFailure)throw Error('network');return new Response('{}',{status:profileStatus});}
+  if(String(url).endsWith('/message/validate/reply')){const payload=JSON.parse(options.body);assert(payload.messages.every(m=>m.type==='textV2'));return new Response('{}');}
+  assert(String(url).endsWith('/channel/webhook/endpoint'));
+  return Response.json({endpoint:origin+'/api/line/webhook',active:true});
+ });
+ assert.equal((await f.request('/api/line?mentionDiagnostics=1')).status,401);
+ let report=await(await f.request('/api/line?mentionDiagnostics=1',null,admin)).json();
+ assert.equal(report.mentionCount,1);assert.equal(report.validation.status,200);assert.equal(report.webhook.endpointMatches,true);
+ assert(report.payers.some(p=>p.reason==='legacy_payer_key'));
+ profileStatus=404;
+ report=await(await f.request('/api/line?mentionDiagnostics=1',null,admin)).json();
+ assert.equal(report.mentionCount,0);assert(report.payers.some(p=>p.reason==='not_in_group_or_provider_mismatch'&&p.httpStatus===404));
+ networkFailure=true;
+ report=await(await f.request('/api/line?mentionDiagnostics=1',null,admin)).json();
+ assert(report.payers.some(p=>p.reason==='line_profile_timeout_or_network'));
+ assert(!JSON.stringify(report).includes(uid));
+});
+
 test('personal bill links reveal only the owner; uploads enforce ownership; group mentions contain no payer tokens',async t=>{
  const f=fixture(t),admin=await f.admin(),member=await f.login();
  await f.request('/api/member/link',{playerId:'p0'},member);

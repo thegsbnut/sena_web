@@ -412,7 +412,7 @@ export async function prunePaidSlips(env) {
 
 // No private payer tokens are placed in group messages. The LIFF destination
 // resolves the signed-in account to its own payer after authentication.
-export async function billingLineMessages(env,scope,origin,groupId){
+export async function billingLineMessages(env,scope,origin,groupId,diagnostics=[]){
  if(!memberMode(env)||!env.LINE_LIFF_ID)return null;
  await prepare(env.DB);await prepareMembers(env.DB);
  const clubs=scope==='all'?['sena','88']:[scope],limit=scope==='all'?3:5;
@@ -425,18 +425,19 @@ export async function billingLineMessages(env,scope,origin,groupId){
   const bill={...row,...JSON.parse(row.payload)},pending=bill.payers.filter(p=>p.status!=='paid'),unpaid=pending.filter(p=>p.status!=='review');
   const entries=await Promise.all(unpaid.slice(0,8).map(async p=>{
    const link=await env.DB.prepare("SELECT user_id FROM member_links WHERE club=? AND player_id=? AND status='approved'").bind(bill.club,p.payerKey?.startsWith('member:')?p.payerKey.slice(7):'').first();
-   if(!link)return {p};
+   if(!link){diagnostics.push({name:p.name,reason:p.payerKey?.startsWith('member:')?'not_linked':'legacy_payer_key'});return {p};}
    try{
     const response=await fetch('https://api.line.me/v2/bot/group/'+encodeURIComponent(groupId)+'/member/'+link.user_id,{headers:{Authorization:'Bearer '+env.LINE_CHANNEL_ACCESS_TOKEN},signal:AbortSignal.timeout(2000)});
+    diagnostics.push({name:p.name,reason:response.ok?'mention_ready':response.status===404?'not_in_group_or_provider_mismatch':response.status===401||response.status===403?'line_credentials_rejected':'line_profile_error',httpStatus:response.status});
     return {p,userId:response.ok?link.user_id:null};
-   }catch{return {p};}
+   }catch{diagnostics.push({name:p.name,reason:'line_profile_timeout_or_network'});return {p};}
   }));
   if(text.length>3000||Object.keys(substitution).length+entries.filter(e=>e.userId).length>20){chunks.push({type:'textV2',text,substitution});text='💸 บิลค้าง (ต่อ)';substitution={};}
   text+='\n\n'+clubName(bill.club)+' · '+displayDate(billDate(bill))+(bill.session_date.length>10?' · บิลเพิ่มเติม':'')+' · ค้าง '+money(outstanding(bill))+' บ.';
   for(const {p,userId} of entries){
    const key='u'+Object.keys(substitution).length;
    if(userId)substitution[key]={type:'mention',mentionee:{type:'user',userId}};
-   text+='\n• '+safe(p.name)+' '+money(p.amount)+' บ.'+(userId?' {'+key+'}':'');
+   text+='\n• '+safe(p.name)+' '+money(p.amount)+' บ.'+(userId?' {'+key+'}':' · ยังไม่ได้แท็ก LINE');
   }
   if(unpaid.length>8)text+='\n… ยังไม่จ่ายอีก '+(unpaid.length-8)+' คน';
   const reviewing=pending.length-unpaid.length;if(reviewing)text+='\nรอตรวจสลิป '+reviewing+' คน';
