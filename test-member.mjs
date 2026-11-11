@@ -80,6 +80,19 @@ test('roster changes during mapping abort the transaction without creating a pla
  assert.equal(f.db.prepare('SELECT count(*) AS n FROM member_write_guards').get().n,0);
 });
 
+test('linked accounts get no mapping choices and other users cannot see any already-linked name',async t=>{
+ const f=fixture(t),first=await f.login();await f.request('/api/member/link',{playerId:'p0'},first);
+ for(const club of ['sena','88']){
+  const own=await(await f.request('/api/member/choices?club='+club,null,first)).json();
+  assert.deepEqual(own,{players:[],linked:true});
+ }
+ const second=await f.login(other);
+ for(const club of ['sena','88']){
+  const available=await(await f.request('/api/member/choices?club='+club,null,second)).json();
+  assert(!available.players.some(p=>p.name==='Nut'));assert(available.players.some(p=>p.name==='Pete'));
+ }
+});
+
 test('LIFF endpoint serves HTML without redirecting away from its registered URL',async()=>{
  const response=await worker.fetch(new Request(origin+'/liff.html?club=88'),{ASSETS:{fetch(request){
   const url=new URL(request.url);assert.equal(url.pathname,'/liff');assert.equal(url.searchParams.get('club'),'88');

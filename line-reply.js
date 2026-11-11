@@ -54,6 +54,9 @@ function command(event){
 
 function bookingUrl(env,club='sena'){
  if(memberMode(env)&&env.LINE_LIFF_ID)return liffUrl(env,club);
+ return courtUrl(env,club);
+}
+function courtUrl(env,club='sena'){
  const url=new URL(env.LINE_BOOKING_URL||defaultBookingUrl);
  if(url.protocol!=='https:'||url.username||url.password)throw Error('Invalid booking URL');
  if(club==='88')url.searchParams.set('club','88');else url.searchParams.delete('club');
@@ -157,7 +160,7 @@ async function shortcutText(action,env,urls){
   })]);
  }
  const selected=action.scope==='all'?clubs:[action.scope];
- const sections=await Promise.all(selected.map(club=>leaderboardSection(env,club,urls[club])));
+ const sections=await Promise.all(selected.map(club=>leaderboardSection(env,club,courtUrl(env,club))));
  return sections.join('\n\n━━━━━━━━━━\n\n');
 }
 

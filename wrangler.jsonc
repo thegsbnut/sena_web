@@ -8,7 +8,7 @@
     "LINE_LOGIN_CHANNEL_ID": "2012537788",
     "LINE_LIFF_ID": "2012537788-9E2msitp",
     "LINE_LOGIN_ENABLED": "true",
-    "LINE_MEMBER_AUTH_ENABLED": "false"
+    "LINE_MEMBER_AUTH_ENABLED": "true"
   },
   "triggers": {"crons": ["0 18 * * *"]},
   "d1_databases": [

@@ -55,6 +55,7 @@ async function route(req,env,admin,club){
  }
  if(req.method==='GET'&&action==='choices'){
   const member=await memberFor(req,env,club);if(!member)return json({error:'กรุณาเข้าสู่ระบบ LINE'},401);
+  if(member.link?.status==='approved')return json({players:[],linked:true});
   const states={},taken={};
   for(const c of ['sena','88']){
    states[c]=(await roster(env.DB,c)).state;

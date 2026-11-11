@@ -57,6 +57,9 @@ test('enabled member mode sends both booking buttons through the configured LIFF
   assert.equal(url.origin,'https://liff.line.me');assert.equal(url.pathname,'/12345-test');
   assert.equal(url.searchParams.get('club'),club);assert.equal(url.searchParams.get('page'),'book');
  }
+ await f.hook([f.event('badbot leaderboard sena')]);
+ assert.match(textOf(f.calls.at(-1)),/https:\/\/sena-web\.thegsbnut\.workers\.dev\/court#leaderboard/);
+ assert.doesNotMatch(textOf(f.calls.at(-1)),/liff\.line\.me/);
 });
 
 test('signed badbot command replies with five buttons and distinct existing booking URLs',async t=>{

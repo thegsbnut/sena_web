@@ -31,6 +31,7 @@
   if(session.mappingError){message(session.mappingError+' · ให้ผู้จัดตรวจการแมพทั้งสองสนาม');return;}
   if(session.link?.status!=='approved'){
    const data=await api('/choices');
+   if(data.linked){location.reload();return;}
    for(const player of data.players){const option=document.createElement('option');option.value=JSON.stringify({playerId:player.id,sourceClub:player.club});option.textContent=player.name;q('existing').append(option);}
    if(!data.players.length)q('mapStatus').textContent='ไม่มีชื่อว่างให้เลือก กรุณาติดต่อผู้จัด';
    q('mapForm').onsubmit=async event=>{
