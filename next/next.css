@@ -990,3 +990,345 @@ body.next-admin main a {
 body.next #clubBrand {
   color: var(--n-lime);
 }
+
+/* ===== layout layer for next-ui.js ===== */
+
+/* organizer tools only after tapping ⚙ */
+body.next:not(.nx-tools-open) #club-tools,
+body.next:not(.nx-tools-open) #backups,
+body.next:not(.nx-tools-open) .booking-footnote {
+  display: none !important;
+}
+body.next .next-tools[aria-expanded='true'] {
+  background: var(--n-paper);
+  color: var(--n-ink);
+  border-color: var(--n-paper);
+}
+body.next .booking-toolbar .booking-club {
+  visibility: hidden;
+}
+
+/* hero: next round */
+body.next[data-tab='booking'] .rally-copy > p {
+  display: none;
+}
+body.next[data-tab='booking'] .rally-copy h1 {
+  font-size: 34px;
+  margin: 2px 0 8px;
+}
+body.next .nx-next {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+}
+body.next .nx-eyebrow {
+  font: 700 10.5px var(--n-mono);
+  letter-spacing: 2px;
+  color: var(--n-moss);
+}
+body.next .nx-when {
+  font: 700 16px/1.25 var(--n-body);
+  color: var(--n-ink);
+}
+body.next .nx-time {
+  font: 500 12.5px var(--n-body);
+  color: var(--n-mute-ink);
+}
+body.next .nx-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 4px;
+  max-width: 190px;
+}
+body.next .nx-seats i {
+  width: 7px;
+  height: 13px;
+  background: var(--n-ink);
+  clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
+}
+body.next .nx-seats i.free {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--n-ink);
+}
+body.next .nx-note {
+  font: 600 12px var(--n-body);
+  color: var(--n-ink-2);
+}
+body.next .nx-cta {
+  margin-top: 8px;
+  padding: 10px 16px;
+  font: 700 14px var(--n-display);
+  color: var(--n-paper);
+  background: var(--n-ink);
+  border: 2px solid var(--n-ink);
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+body.next .nx-cta.go {
+  background: var(--n-lime);
+  color: var(--n-ink);
+  box-shadow: 3px 3px 0 var(--n-ink);
+}
+body.next .nx-cta:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--n-ink);
+}
+
+/* compact date cards: date block | time + court | status, whole card taps to select */
+body.next #bookingDates .booking-date[data-nx] {
+  padding: 14px 14px 12px 92px;
+  min-height: 104px;
+}
+body.next .booking-date[data-nx] .booking-date-label {
+  display: block;
+  cursor: pointer;
+  min-height: 0;
+  margin: 0;
+}
+body.next .booking-date[data-nx] .booking-date-label::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+body.next .booking-date[data-nx] .booking-date-bottom,
+body.next .booking-date[data-nx] .booking-cup-badge,
+body.next .booking-date[data-nx] .booking-holiday {
+  position: relative;
+  z-index: 1;
+}
+body.next .booking-date[data-nx] input[data-book-date] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+body.next .nx-date {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  bottom: 14px;
+  width: 62px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  line-height: 1;
+  border-right: 1.5px dashed var(--n-line-p);
+  padding-right: 12px;
+}
+body.next .nx-date small {
+  font: 600 12px var(--n-body);
+  color: var(--n-mute-ink);
+}
+body.next .nx-date b {
+  font: 700 30px var(--n-mono);
+  color: var(--n-ink);
+  margin: 4px 0 3px;
+}
+body.next .nx-date i {
+  font: 600 11px var(--n-body);
+  font-style: normal;
+  color: var(--n-mute-ink);
+}
+body.next .booking-date[data-nx] .booking-date-label strong {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+body.next .booking-date[data-nx] .booking-date-label small {
+  display: block;
+  font: italic 700 18px/1.25 var(--n-display);
+  color: var(--n-ink);
+  letter-spacing: -0.2px;
+}
+body.next .booking-date[data-nx] .booking-date-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+body.next .booking-date[data-nx] .booking-availability {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+body.next .booking-date[data-nx] .booking-availability small {
+  font: 700 11px var(--n-display);
+  color: var(--n-ink);
+  border: 1.5px solid var(--n-ink);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+body.next .booking-date[data-nx] .booking-date-bottom .booking-roster-action {
+  background: none;
+  color: var(--n-ink);
+  min-height: 0;
+  width: auto;
+  padding: 4px 0;
+  font: 700 13px var(--n-display);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+body.next .booking-date[data-nx]:has(input:checked)::before {
+  content: '✓ เลือกแล้ว';
+  position: absolute;
+  top: -11px;
+  right: 12px;
+  z-index: 2;
+  font: 700 11px var(--n-display);
+  color: var(--n-ink);
+  background: var(--n-lime);
+  border: 1.5px solid var(--n-ink);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+body.next .booking-date[data-nx]:has(input:focus-visible) {
+  outline: 2px solid var(--n-lime);
+  outline-offset: 3px;
+}
+body.next .booking-date.is-closed[data-nx] .booking-date-label {
+  cursor: default;
+}
+body.next .booking-date[data-nx] .booking-cup-badge {
+  margin: 0 0 6px;
+}
+
+/* details sheet: roster as an avatar grid */
+body.next #bookingDetail > .booking-person,
+body.next #bookingDetail .booking-waitlist > .booking-person {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  vertical-align: top;
+  width: calc(33.333% - 6px);
+  gap: 4px;
+  margin: 0 3px 12px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+body.next #bookingDetail > .booking-person > div,
+body.next #bookingDetail .booking-waitlist > .booking-person > div {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+body.next #bookingDetail > .booking-person strong,
+body.next #bookingDetail .booking-waitlist > .booking-person strong {
+  font: 600 13px var(--n-body);
+  overflow-wrap: anywhere;
+}
+body.next #bookingDetail > .booking-person small,
+body.next #bookingDetail .booking-waitlist > .booking-person small {
+  font-size: 10.5px;
+}
+body.next #bookingDetail > .booking-person .booking-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 15px;
+}
+body.next #bookingDetail .booking-person .booking-cancel {
+  min-height: 0;
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+/* leaderboard podium */
+body.next .nx-podium {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  align-items: end;
+  gap: 8px;
+  padding: 22px 12px 0;
+  margin: 0 0 18px;
+  overflow: hidden;
+  background: var(--n-paper);
+  color: var(--n-ink);
+  border: 2px solid var(--n-ink);
+  box-shadow: 4px 4px 0 var(--n-ink);
+}
+body.next .nx-podium::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 30%,
+    color-mix(in srgb, var(--n-ink) 12%, transparent) 0 0.8deg,
+    transparent 0.8deg 7deg
+  );
+}
+body.next .nx-pod {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+body.next .nx-pod b {
+  font: 600 14px var(--n-body);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.next .nx-pod small {
+  font: 700 11px var(--n-mono);
+  color: var(--n-mute-ink);
+}
+body.next .nx-ava {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--n-ink);
+  color: var(--n-paper);
+  font: 700 15px var(--n-display);
+}
+body.next .nx-pod.first .nx-ava {
+  width: 66px;
+  height: 66px;
+  font-size: 19px;
+  box-shadow: 0 0 0 3px var(--n-gold);
+}
+body.next .nx-crown {
+  font: 700 11px var(--n-display);
+  letter-spacing: 1px;
+  color: #9a6b00;
+}
+body.next .nx-block {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--n-ink);
+  color: var(--n-paper);
+  font: italic 700 26px var(--n-display);
+  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0 100%);
+}
+body.next .nx-pod.first .nx-block {
+  height: 78px;
+  background: var(--n-moss);
+  color: var(--n-ink);
+}
+body.next .nx-pod.second .nx-block {
+  height: 56px;
+}
+body.next .nx-pod.third .nx-block {
+  height: 40px;
+}

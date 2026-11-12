@@ -6,7 +6,7 @@
 ## โครงสร้าง
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `next/` | เฉพาะไฟล์ที่ดีไซน์ใหม่: `court.html`, `billing.html`, `liff.html`, `admin.html`, `next.css`, `next-billing.css`, `next-shell.js` |
+| `next/` | เฉพาะไฟล์ที่ดีไซน์ใหม่: `court.html`, `billing.html`, `liff.html`, `admin.html`, `next.css`, `next-billing.css`, `next-shell.js`, `next-ui.js` (จัดโครงหน้าใหม่จาก DOM ที่สคริปต์เดิมสร้าง: hero รอบถัดไป, การ์ดวันที่, รายชื่อแบบวงกลม, แท่นรางวัล, ซ่อนเครื่องมือผู้จัดไว้หลัง ⚙) |
 | `scripts/build-next.mjs` | `npm run build:next` = คัด `public/` ไป `dist-next/` แล้วทับด้วย `next/` แล้วรวมทุกไฟล์เป็น `.next-build/assets.mjs` |
 | `worker-next.js` | entry ของเว็บ next: เรียก `worker.js` เดิม แต่เสิร์ฟไฟล์หน้าเว็บจากโมดูลที่รวมไว้ (ไม่ใช้ Workers Assets) |
 | `wrangler.next.jsonc` | Worker ชื่อ `sena-web-next` · D1 ทั้งสองตัวระบุ ID ตรงกับ production · **ไม่มี cron** (production รันอยู่แล้ว) |
