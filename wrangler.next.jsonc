@@ -1,0 +1,36 @@
+// Redesign preview Worker ("SENA Court next"). Same code and same D1 data as production,
+// but serves dist-next/ (public/ + overrides in next/) on its own URL.
+// Deploy: npm run build:next && npx wrangler deploy -c wrangler.next.jsonc
+// Differences from wrangler.jsonc, on purpose:
+// - no cron triggers (production already runs the nightly job; running twice would duplicate it)
+// - LINE_LIFF_ID: replace with a second LIFF app whose endpoint is this Worker's URL,
+//   otherwise LINE login redirects back to the production site.
+{
+  "name": "sena-web-next",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist-next",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/b/*", "/liff.html", "/admin", "/"]
+  },
+  "keep_vars": true,
+  "observability": { "enabled": true },
+  "vars": {
+    "LINE_LOGIN_CHANNEL_ID": "2012537788",
+    "LINE_LIFF_ID": "2012537788-9E2msitp",
+    "LINE_LOGIN_ENABLED": "true",
+    "LINE_MEMBER_AUTH_ENABLED": "true",
+    "SLIP_AI_ENABLED": "true",
+    "SLIP_AI_MODEL": "@cf/meta/llama-4-scout-17b-16e-instruct"
+  },
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sena-db",
+      "database_id": "0e9a8106-d9e8-4d61-bfcb-1668f1374b1b"
+    },
+    { "binding": "SLIPS_DB", "database_name": "sena-bill-slips" }
+  ]
+}

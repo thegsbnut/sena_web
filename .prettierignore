@@ -5,3 +5,4 @@ seed.json
 leaderboard-data.js
 *.html
 *.md
+dist-next/

@@ -4,10 +4,13 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-12 · Claude · branch `ccr-cf6f2e61-foyp2b` (งานล่าสุดทั้งหมด merge เข้า `main` และขึ้น production แล้ว)
+- 2026-11-12 · Claude · branch `ccr-27af7eaa-fgzk24` — เว็บดีไซน์ใหม่ "SENA Court next" (ยังไม่ merge, ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง)
 
 ## ค้างอยู่ / ขั้นต่อไป
-- ไม่มีงานค้าง
+- **Redesign (ดู `NEXT.md`)**: Worker แยก `sena-web-next` = โค้ดเดิม + overlay `next/` (HTML/CSS ใหม่) ใช้ D1 เดียวกัน ไม่มี cron
+  - รอเจ้าของโปรเจกต์สร้างโปรเจกต์ Workers ชี้ branch นี้ + ใส่ `ADMIN_KEY` + (ถ้าจะลอง LINE) สร้าง LIFF ตัวที่สองแล้วแก้ `LINE_LIFF_ID` ใน `wrangler.next.jsonc`
+  - เดโม mood & tone (ข้อมูลปลอม): https://claude.ai/artifact/JqtzfvCBDWd8SuCGksdiYj
+  - ถัดไปตามฟีดแบ็ก: ปรับหน้ารายละเอียดรอบให้เป็นตารางวงกลมแบบเดโม, หน้าบิลผู้เล่นแบบใบเสร็จ+QR, แท่นรางวัลใน Leaderboard (ต้องแก้ JS ฝั่งหน้าเว็บ — ทำใน `next/` เป็นไฟล์แยก อย่าแก้ `public/`)
 - (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริงช่วงแรก โดยเฉพาะภาพถ่ายหน้าจอเอียง/เบลอ และดู neurons ที่ใช้ในหน้า Workers AI
 - (ไม่บังคับ) แสดงยอด/วันที่ที่ AI อ่านได้ทุกครั้ง; ถอด QR บนสลิปเพื่อได้เลขอ้างอิงที่แม่นกว่า (นอก scope เดิม)
 
@@ -28,7 +31,7 @@
 - token Cloudflare ที่ใช้ทดสอบ: เจ้าของโปรเจกต์ลบออกจาก Cloudflare แล้ว (รายการ `api.cloudflare.com` ใน Network secrets ของ environment `sena_web` ใช้งานไม่ได้แล้ว ลบทิ้งได้); โดเมน `developers.cloudflare.com` ยังอยู่ใน allowlist (ลบได้ที่ environment → Edit)
 
 ## สถานะเทส
-- `npm test` 167/167 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 172/172 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)
