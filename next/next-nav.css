@@ -16,9 +16,9 @@ body.nxc nav.next-tabbar {
   margin: 0;
   padding: 6px max(6px, env(safe-area-inset-right, 0px))
     calc(8px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
-  background: #041f17;
+  background: var(--lime);
   border: 0;
-  border-top: 1px solid #738b62;
+  border-top: 2px solid #102219;
   border-radius: 0;
   overflow: visible;
   box-shadow: 0 -8px 24px -12px #000;
@@ -35,8 +35,8 @@ body.nxc nav.next-tabbar .tab {
   border: 0;
   border-radius: 10px;
   background: none;
-  color: #fff8de;
-  opacity: 0.72;
+  color: #102219;
+  opacity: 0.68;
   font-size: 11px;
   font-weight: 700;
 }
@@ -53,18 +53,9 @@ body.nxc nav.next-tabbar svg {
   stroke-linejoin: round;
 }
 body.nxc nav.next-tabbar .tab.active {
-  background: none;
+  background: #102219;
   color: var(--lime);
   opacity: 1;
-}
-body.nxc nav.next-tabbar .tab.active::before {
-  content: '';
-  position: absolute;
-  top: -7px;
-  width: 22px;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: var(--lime);
 }
 /* booking's "continue" bar sits above the menu */
 body.nxc .booking-action {
