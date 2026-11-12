@@ -121,7 +121,7 @@ function menu(urls) {
   ];
   return {
     type: 'flex',
-    altText: 'SENA Badbot · จอง / ถอนชื่อ รายชื่อ บิล และตารางจัดคู่',
+    altText: 'Badbot น้องขุนเงิน · จอง / ถอนชื่อ รายชื่อ บิล และตารางจัดคู่',
     contents: {
       type: 'bubble',
       body: {
@@ -129,7 +129,7 @@ function menu(urls) {
         layout: 'vertical',
         spacing: 'md',
         contents: [
-          { type: 'text', text: '🏸 SENA Badbot', weight: 'bold', size: 'lg', wrap: true },
+          { type: 'text', text: '🏸 Badbot น้องขุนเงิน', weight: 'bold', size: 'lg', wrap: true },
           {
             type: 'text',
             text: 'จอง / ถอน · รายชื่อ · บิล · ตารางจัดคู่ · อันดับ',
