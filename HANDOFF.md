@@ -10,6 +10,7 @@
 - **Redesign (ดู `NEXT.md`)**: Worker แยก `sena-web-next` = โค้ดเดิม + overlay `next/` (HTML/CSS ใหม่) ใช้ D1 เดียวกัน ไม่มี cron
   - deploy แล้วที่ https://sena-web-next.thegsbnut.workers.dev (ด้วย `npm run deploy:next`, ดู `NEXT.md`) · รอเจ้าของโปรเจกต์ใส่ secret `ADMIN_KEY` ใน dashboard + (ถ้าจะลอง LINE) สร้าง LIFF ตัวที่สองแล้วแก้ `LINE_LIFF_ID`
   - network ของ session ไม่อนุญาต host `sena-web-next.thegsbnut.workers.dev` จึงยังเปิดตรวจจากใน session ไม่ได้
+  - 2026-11-12 เจ้าของโปรเจกต์ขอดู "หน้าตาเดิม + เมนูล่าง": `/court` ตอนนี้เป็นแบบนั้น, `/court-full` = ดีไซน์ใหม่เต็ม (tag `redesign-full-v2`)
   - เดโม mood & tone (ข้อมูลปลอม): https://claude.ai/artifact/JqtzfvCBDWd8SuCGksdiYj
   - ถัดไปตามฟีดแบ็ก: ปรับหน้ารายละเอียดรอบให้เป็นตารางวงกลมแบบเดโม, หน้าบิลผู้เล่นแบบใบเสร็จ+QR, แท่นรางวัลใน Leaderboard (ต้องแก้ JS ฝั่งหน้าเว็บ — ทำใน `next/` เป็นไฟล์แยก อย่าแก้ `public/`)
 - (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริงช่วงแรก โดยเฉพาะภาพถ่ายหน้าจอเอียง/เบลอ และดู neurons ที่ใช้ในหน้า Workers AI

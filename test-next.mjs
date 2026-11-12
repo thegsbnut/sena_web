@@ -8,18 +8,20 @@ import { join } from 'node:path';
 import { buildNext } from './scripts/build-next.mjs';
 
 const pages = readdirSync('next').filter(f => f.endsWith('.html'));
+// court-full.html is the full redesign of court.html, kept for side-by-side comparison.
+const original = f => join('public', f.replace(/-full\.html$/, '.html'));
 const ids = s => [...s.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]).sort();
 const scripts = s =>
   [...s.matchAll(/<script[^>]*\ssrc="([^"?]+)/g)].map(m => m[1].replace(/^\//, '')).sort();
 
 test('every redesigned page replaces an existing page', () => {
   assert.ok(pages.length > 0);
-  for (const f of pages) assert.ok(existsSync(join('public', f)), f + ' has no original');
+  for (const f of pages) assert.ok(existsSync(original(f)), f + ' has no original');
 });
 
 test('redesigned pages keep every element id of the original', () => {
   for (const f of pages) {
-    const before = ids(readFileSync(join('public', f), 'utf8'));
+    const before = ids(readFileSync(original(f), 'utf8'));
     const after = ids(readFileSync(join('next', f), 'utf8'));
     assert.deepEqual(
       before.filter(id => !after.includes(id)),
@@ -31,7 +33,7 @@ test('redesigned pages keep every element id of the original', () => {
 
 test('redesigned pages load every original script', () => {
   for (const f of pages) {
-    const before = scripts(readFileSync(join('public', f), 'utf8'));
+    const before = scripts(readFileSync(original(f), 'utf8'));
     const after = scripts(readFileSync(join('next', f), 'utf8'));
     assert.deepEqual(
       before.filter(src => !after.includes(src)),
@@ -71,8 +73,8 @@ test('bundled assets behave like Workers Assets', async () => {
   r = get('/court');
   assert.equal(r.status, 200);
   assert.match(r.headers.get('Content-Type'), /text\/html/);
-  assert.match(await r.text(), /next\.css/);
-  r = get('/next.css');
+  assert.match(await r.text(), /next-nav\.css/);
+  r = get('/next-nav.css');
   assert.match(r.headers.get('Content-Type'), /text\/css/);
   r = get('/final-rally.webp');
   assert.equal(r.headers.get('Content-Type'), 'image/webp');

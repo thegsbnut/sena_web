@@ -6,13 +6,18 @@
 ## โครงสร้าง
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `next/` | เฉพาะไฟล์ที่ดีไซน์ใหม่: `court.html`, `billing.html`, `liff.html`, `admin.html`, `next.css`, `next-billing.css`, `next-shell.js`, `next-ui.js` (จัดโครงหน้าใหม่จาก DOM ที่สคริปต์เดิมสร้าง: hero รอบถัดไป, การ์ดวันที่, รายชื่อแบบวงกลม, แท่นรางวัล, ซ่อนเครื่องมือผู้จัดไว้หลัง ⚙) |
+| `next/` | เฉพาะไฟล์ที่ดีไซน์ใหม่: `court.html`, `billing.html`, `liff.html`, `admin.html`, `next.css`, `next-billing.css`, `next-shell.js`, `next-nav.css`, `next-ui.js` (จัดโครงหน้าใหม่จาก DOM ที่สคริปต์เดิมสร้าง: hero รอบถัดไป, การ์ดวันที่, รายชื่อแบบวงกลม, แท่นรางวัล, ซ่อนเครื่องมือผู้จัดไว้หลัง ⚙) |
 | `scripts/build-next.mjs` | `npm run build:next` = คัด `public/` ไป `dist-next/` แล้วทับด้วย `next/` แล้วรวมทุกไฟล์เป็น `.next-build/assets.mjs` |
 | `worker-next.js` | entry ของเว็บ next: เรียก `worker.js` เดิม แต่เสิร์ฟไฟล์หน้าเว็บจากโมดูลที่รวมไว้ (ไม่ใช้ Workers Assets) |
 | `wrangler.next.jsonc` | Worker ชื่อ `sena-web-next` · D1 ทั้งสองตัวระบุ ID ตรงกับ production · **ไม่มี cron** (production รันอยู่แล้ว) |
 | `test-next.mjs` | กันฟีเจอร์หาย: หน้าใหม่ต้องมี id ครบและโหลดสคริปต์เดิมครบทุกตัว |
 
 กติกา: แก้ดีไซน์ได้แค่ HTML layout/CSS ใน `next/` ห้ามลบ id หรือ `<script>` เดิม (เทสจะล้ม) — logic ทั้งหมดอยู่ใน `public/*.js` เดิม แก้บั๊กที่นั่นแล้วทั้งสองเว็บได้พร้อมกัน
+
+## หน้าที่เปิดดูได้
+- `/court` = **หน้าตาเดิมทั้งหมด + เมนูย้ายลงแถบล่างแบบแอป** (`next/court.html` + `next-nav.css`)
+- `/court-full` = ดีไซน์ใหม่เต็มรูปแบบ (hero รอบถัดไป, การ์ดวันที่, แท่นรางวัล) เก็บไว้เทียบ · ไฟล์ `court-full.html`, `next.css`, `next-ui.js` · tag `redesign-full-v2` มีชุดเต็มรวมหน้าบิล/LINE/admin
+- หน้าอื่น (billing, liff, admin) ใช้ของเดิมจาก `public/`
 
 ## ที่อยู่และการ deploy
 - URL: https://sena-web-next.thegsbnut.workers.dev (deploy ครั้งแรก 2026-11-12)
