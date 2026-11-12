@@ -65,17 +65,25 @@
           level: 'warn',
           text:
             'สลิปไม่ชัดเจน — ' +
-            (reason.why === 'not_slip' ? 'รูปนี้ไม่ใช่สลิปโอนเงิน' : 'อ่านยอดเงินไม่ได้'),
+            ({
+              not_slip: 'รูปนี้ไม่ใช่สลิปโอนเงิน',
+              unparsed: 'AI อ่านสลิปไม่ได้ ลองตรวจอีกครั้งหรือเปิดดูเอง',
+            }[reason.why] || 'อ่านยอดเงินไม่ได้'),
         };
       default:
         return { icon: 'ℹ️', level: 'info', text: 'อ่านวันที่ไม่ได้ (ไม่ได้ตัดสินเรื่องวันที่)' };
     }
   }
 
-  // Payers whose finished check has a warning, for the summary card.
+  // Payers whose finished check has a warning, for the summary card. Slips the
+  // organizer already dealt with (sent back, or settled in cash) do not count.
   const flaggedCount = payers =>
     payers.filter(
-      p => p.aiCheck?.state === 'done' && p.aiCheck.reasons.some(r => WARNINGS.includes(r.code)),
+      p =>
+        p.status !== 'rejected' &&
+        p.method !== 'cash' &&
+        p.aiCheck?.state === 'done' &&
+        p.aiCheck.reasons.some(r => WARNINGS.includes(r.code)),
     ).length;
 
   // The organizer may re-run a check that failed or has hung for 2+ minutes.

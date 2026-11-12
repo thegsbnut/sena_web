@@ -524,3 +524,31 @@ test('flaggedCount counts only finished checks with a warning', () => {
   assert.equal(stale({ state: 'pending', checkedAt: 0 }, 121000), true);
   assert.equal(stale({ state: 'done', checkedAt: 0 }, 999999), false);
 });
+
+// ---- review fixes: unparseable replies and the organizer summary count ----
+test('an unparseable AI reply is not reported as "not a slip"', async () => {
+  const reading = await readSlip({ AI: fakeAi({ response: 'ขออภัย' }) }, png, 'image/png');
+  const ctx = { amountSatang: 20000, billDate: '2026-11-12', duplicate: null, now };
+  assert.deepEqual(judgeSlip(reading, ctx), [{ code: 'unreadable', why: 'unparsed' }]);
+  assert.equal(
+    globalThis.SlipCheckText.describe({ code: 'unreadable', why: 'unparsed' }, {}).text,
+    'สลิปไม่ชัดเจน — AI อ่านสลิปไม่ได้ ลองตรวจอีกครั้งหรือเปิดดูเอง',
+  );
+});
+
+test('validateReading accepts is_transfer_slip sent as the string "true"', () => {
+  assert.equal(validateReading({ is_transfer_slip: 'true', amount: 5 }).isSlip, true);
+});
+
+test('flaggedCount skips slips the organizer already handled', () => {
+  const warn = { state: 'done', reasons: [{ code: 'amount_mismatch' }] };
+  assert.equal(
+    globalThis.SlipCheckText.flaggedCount([
+      { status: 'paid', method: 'transfer', aiCheck: warn },
+      { status: 'review', aiCheck: warn },
+      { status: 'rejected', aiCheck: warn },
+      { status: 'paid', method: 'cash', aiCheck: warn },
+    ]),
+    2,
+  );
+});

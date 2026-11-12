@@ -98,7 +98,7 @@ export function validateReading(raw) {
         : NaN;
   const satang = Math.round(parsed * 100);
   return {
-    isSlip: obj.is_transfer_slip === true,
+    isSlip: obj.is_transfer_slip === true || obj.is_transfer_slip === 'true',
     amountSatang: satang > 0 && satang <= MAX_AMOUNT_SATANG ? satang : null,
     dateText: text(obj.date_text, 60),
     ref: text(obj.ref, 64),
@@ -106,7 +106,8 @@ export function validateReading(raw) {
 }
 
 export function judgeSlip(reading, { amountSatang, billDate, duplicate, now = new Date() }) {
-  if (!reading.isSlip) return [{ code: 'unreadable', why: 'not_slip' }];
+  if (!reading.isSlip)
+    return [{ code: 'unreadable', why: reading.unparsed ? 'unparsed' : 'not_slip' }];
   if (reading.amountSatang == null) return [{ code: 'unreadable', why: 'amount' }];
   const reasons = [];
   if (reading.amountSatang !== amountSatang)
@@ -180,7 +181,10 @@ export async function readSlip(env, bytes, contentType) {
     max_tokens: 300,
     temperature: 0,
   });
-  return validateReading(replyOf(output));
+  const reply = replyOf(output);
+  const reading = validateReading(reply);
+  // A reply we could not parse says nothing about the picture: keep that apart from "not a slip".
+  return reply ? reading : { ...reading, unparsed: true };
 }
 
 // ---- storage: derived data in its own table, never in the bill payload ----
