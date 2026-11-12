@@ -46,5 +46,12 @@ npm run format:check
 - เมื่อเพิ่มไฟล์เทสใหม่ ต้องเพิ่มชื่อไฟล์ใน script `test` ของ `package.json`
 - รัน `npm run format` ก่อน commit; HTML และ `*.md` ไม่ได้จัดรูปแบบ (ดู `.prettierignore`)
 
+## ทำงานร่วมกับ AI หลายตัว (Claude / GPT)
+- เครื่องมือ GPT อ่าน `AGENTS.md` ซึ่งชี้กลับมาที่ไฟล์นี้ — แก้กฎที่นี่ที่เดียว
+- `HANDOFF.md` = สถานะงานที่ส่งต่อ: ก่อนหยุดงาน (โควตาใกล้หมด) ให้อัปเดต แล้ว commit + push ทันที ตอนเริ่มงานให้อ่านก่อน
+- หนึ่ง branch ให้ AI ทำทีละตัว ห้ามสองตัวแก้ branch เดียวพร้อมกัน; commit เล็กๆ บ่อยๆ
+- ส่งต่อได้เมื่อ `npm test` และ `npm run build` ผ่านเท่านั้น
+- merge เข้า `main` เมื่อเจ้าของโปรเจกต์สั่งเท่านั้น
+
 ## เอกสารเพิ่มเติม
 `README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md`
