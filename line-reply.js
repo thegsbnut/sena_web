@@ -98,7 +98,7 @@ function menu(urls) {
     style: 'primary',
     color: '#168B42',
     height: 'sm',
-    action: { type: 'uri', label: '🏸 จอง ' + clubOf(club).label, uri: urls[club] },
+    action: { type: 'uri', label: '🏸 ' + clubOf(club).label, uri: urls[club] },
   });
   const postback = (label, data, displayText) => ({
     type: 'button',
@@ -127,7 +127,6 @@ function menu(urls) {
     altText: 'Badbot น้องขุนเงิน · จอง / ถอนชื่อ รายชื่อ บิล และตารางจัดคู่',
     contents: {
       type: 'bubble',
-      size: 'kilo',
       header: {
         type: 'box',
         layout: 'vertical',
