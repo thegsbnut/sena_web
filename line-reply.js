@@ -151,7 +151,7 @@ function menu(urls) {
         spacing: 'lg',
         paddingAll: 'lg',
         contents: [
-          section('จองคิว', row(...clubs.map(link))),
+          section('จอง / ถอน คิว', row(...clubs.map(link))),
           section('รายชื่อผู้ตี', row(...clubs.map(roster))),
           section(
             'บิล และตาราง',
