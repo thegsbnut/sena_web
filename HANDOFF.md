@@ -4,15 +4,19 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-12 · Claude · branch `ccr-27af7eaa-fgzk24` — เว็บดีไซน์ใหม่ "SENA Court next" (ยังไม่ merge, ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง)
+- 2026-11-12 · Claude · branch `ccr-27af7eaa-fgzk24` — งาน redesign เว็บ next (ยังไม่ merge); production `main` ไม่ถูกแตะ
 
 ## ค้างอยู่ / ขั้นต่อไป
-- **Redesign (ดู `NEXT.md`)**: Worker แยก `sena-web-next` = โค้ดเดิม + overlay `next/` (HTML/CSS ใหม่) ใช้ D1 เดียวกัน ไม่มี cron
-  - deploy แล้วที่ https://sena-web-next.thegsbnut.workers.dev (ด้วย `npm run deploy:next`, ดู `NEXT.md`) · รอเจ้าของโปรเจกต์ใส่ secret `ADMIN_KEY` ใน dashboard + (ถ้าจะลอง LINE) สร้าง LIFF ตัวที่สองแล้วแก้ `LINE_LIFF_ID`
-  - network ของ session ไม่อนุญาต host `sena-web-next.thegsbnut.workers.dev` จึงยังเปิดตรวจจากใน session ไม่ได้
-  - 2026-11-12 เจ้าของโปรเจกต์ขอดู "หน้าตาเดิม + เมนูล่าง": `/court` ตอนนี้เป็นแบบนั้น, `/court-full` = ดีไซน์ใหม่เต็ม (tag `redesign-full-v2`)
+- **Redesign "SENA Court next" (ดู `NEXT.md`)** — Worker แยก `sena-web-next` ใช้โค้ดเดิม + overlay `next/` และ D1 ชุดเดียวกับ production ไม่มี cron · branch นี้ **ยังไม่ merge ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง**
+  - URL: https://sena-web-next.thegsbnut.workers.dev · deploy ด้วย `CLOUDFLARE_API_TOKEN=proxy-injected CLOUDFLARE_ACCOUNT_ID=807aa489f9e84863cc0dc67625b674f3 npm run deploy:next` (ไม่ใช้ Workers Assets เพราะ proxy ของ session ทำให้อัปโหลดได้ 401 → `worker-next.js` รวมไฟล์หน้าเว็บเข้าสคริปต์)
+  - `/court` = **หน้าตาเดิมทั้งหมด + เมนูล่างสีเขียวมะนาว** (`next/court.html` + `next-nav.css`, แก้แถบปุ่มเข้าสู่ระบบ LINE ที่ล้นแล้ว) ← แบบที่เจ้าของโปรเจกต์ขอดูล่าสุด
+  - `/court-full` = ดีไซน์ใหม่เต็ม (hero รอบถัดไป, การ์ดวันที่, รายชื่อวงกลม, แท่นรางวัล) · ชุดเต็มรวมหน้าบิล/LINE/admin อยู่ใน commit ก่อนหน้า (tag `redesign-full-v2` push ไม่ผ่าน ใช้ `git log` หา commit "จัดโครงหน้าใหม่ให้ใกล้เดโม")
+  - รอเจ้าของโปรเจกต์: ใส่ secret `ADMIN_KEY` ใน dashboard ของ `sena-web-next`; ถ้าจะลองจอง/จ่ายบิลผ่าน LINE ต้องสร้าง LIFF ตัวที่สองชี้ `/liff.html` ของเว็บ next แล้วแก้ `LINE_LIFF_ID` ใน `wrangler.next.jsonc`
+  - ยังไม่ได้ตัดสินใจ: จะเลือก `/court` (เดิม+เมนูล่าง) หรือ `/court-full` หรือผสม (เช่น เดิม + เมนูล่าง + การ์ดวันที่ใหม่); เมนูล่างของ `/court-full` ยังเป็นสีเข้ม
+  - session ไม่เปิดโดเมน next ได้ (proxy 403) → ตรวจหน้าจริงจาก session ไม่ได้ ใช้ `wrangler dev --local --compatibility-date 2026-05-22` + playwright แทน (ดู `NEXT.md`)
+  - ปัญหาแถบปุ่ม LINE ล้น (`#bookingMemberLogin`) มีใน production ด้วย (`public/booking.css`) — แก้เฉพาะ next, แก้ production เมื่อเจ้าของโปรเจกต์สั่ง
+  - สลับเป็นเว็บหลัก: คัดไฟล์ `next/` ที่เลือกทับ `public/` ใน commit เดียวแล้ว merge เมื่อสั่งเท่านั้น
   - เดโม mood & tone (ข้อมูลปลอม): https://claude.ai/artifact/JqtzfvCBDWd8SuCGksdiYj
-  - ถัดไปตามฟีดแบ็ก: ปรับหน้ารายละเอียดรอบให้เป็นตารางวงกลมแบบเดโม, หน้าบิลผู้เล่นแบบใบเสร็จ+QR, แท่นรางวัลใน Leaderboard (ต้องแก้ JS ฝั่งหน้าเว็บ — ทำใน `next/` เป็นไฟล์แยก อย่าแก้ `public/`)
 - (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริงช่วงแรก โดยเฉพาะภาพถ่ายหน้าจอเอียง/เบลอ และดู neurons ที่ใช้ในหน้า Workers AI
 - (ไม่บังคับ) แสดงยอด/วันที่ที่ AI อ่านได้ทุกครั้ง; ถอด QR บนสลิปเพื่อได้เลขอ้างอิงที่แม่นกว่า (นอก scope เดิม)
 
