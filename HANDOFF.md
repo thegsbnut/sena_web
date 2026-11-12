@@ -8,7 +8,8 @@
 
 ## ค้างอยู่ / ขั้นต่อไป
 - **Redesign (ดู `NEXT.md`)**: Worker แยก `sena-web-next` = โค้ดเดิม + overlay `next/` (HTML/CSS ใหม่) ใช้ D1 เดียวกัน ไม่มี cron
-  - รอเจ้าของโปรเจกต์สร้างโปรเจกต์ Workers ชี้ branch นี้ + ใส่ `ADMIN_KEY` + (ถ้าจะลอง LINE) สร้าง LIFF ตัวที่สองแล้วแก้ `LINE_LIFF_ID` ใน `wrangler.next.jsonc`
+  - deploy แล้วที่ https://sena-web-next.thegsbnut.workers.dev (ด้วย `npm run deploy:next`, ดู `NEXT.md`) · รอเจ้าของโปรเจกต์ใส่ secret `ADMIN_KEY` ใน dashboard + (ถ้าจะลอง LINE) สร้าง LIFF ตัวที่สองแล้วแก้ `LINE_LIFF_ID`
+  - network ของ session ไม่อนุญาต host `sena-web-next.thegsbnut.workers.dev` จึงยังเปิดตรวจจากใน session ไม่ได้
   - เดโม mood & tone (ข้อมูลปลอม): https://claude.ai/artifact/JqtzfvCBDWd8SuCGksdiYj
   - ถัดไปตามฟีดแบ็ก: ปรับหน้ารายละเอียดรอบให้เป็นตารางวงกลมแบบเดโม, หน้าบิลผู้เล่นแบบใบเสร็จ+QR, แท่นรางวัลใน Leaderboard (ต้องแก้ JS ฝั่งหน้าเว็บ — ทำใน `next/` เป็นไฟล์แยก อย่าแก้ `public/`)
 - (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริงช่วงแรก โดยเฉพาะภาพถ่ายหน้าจอเอียง/เบลอ และดู neurons ที่ใช้ในหน้า Workers AI
@@ -28,10 +29,10 @@
 ## ข้อควรรู้เรื่องเครื่องมือ
 - ต้อง `npm install` ก่อนรันเทส (ไม่มี `node_modules` ใน session ใหม่)
 - force push ถูกปฏิเสธ; ถ้า branch ถูก squash-merge แล้ว ให้ `git reset --hard origin/main` ในเครื่อง แล้ว `git merge -s ours origin/<branch>` เพื่อ push ปกติได้
-- token Cloudflare ที่ใช้ทดสอบ: เจ้าของโปรเจกต์ลบออกจาก Cloudflare แล้ว (รายการ `api.cloudflare.com` ใน Network secrets ของ environment `sena_web` ใช้งานไม่ได้แล้ว ลบทิ้งได้); โดเมน `developers.cloudflare.com` ยังอยู่ใน allowlist (ลบได้ที่ environment → Edit)
+- token Cloudflare: เจ้าของโปรเจกต์สร้างใหม่ 2026-11-12 (Workers + D1 Edit) เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 172/172 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 173/173 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)

@@ -44,7 +44,7 @@ test('redesigned pages load every original script', () => {
 test('build copies public/ and overlays next/', () => {
   const out = mkdtempSync(join(tmpdir(), 'sena-next-'));
   try {
-    buildNext(out);
+    buildNext(out, join(out, '..', 'sena-next-assets-' + process.pid + '.mjs'));
     for (const f of readdirSync('public')) assert.ok(existsSync(join(out, f)), f + ' missing');
     for (const f of readdirSync('next'))
       assert.equal(readFileSync(join(out, f), 'utf8'), readFileSync(join('next', f), 'utf8'));
@@ -53,10 +53,33 @@ test('build copies public/ and overlays next/', () => {
   }
 });
 
-test('preview worker has no cron and does not serve public/ directly', () => {
+test('preview worker has no cron and production config is unchanged', () => {
   const cfg = readFileSync('wrangler.next.jsonc', 'utf8');
   assert.doesNotMatch(cfg, /"triggers"/);
-  assert.match(cfg, /"directory": "\.\/dist-next"/);
-  assert.notEqual(JSON.parse(readFileSync('package.json', 'utf8')).name, undefined);
+  assert.match(cfg, /"main": "worker-next\.js"/);
   assert.match(readFileSync('wrangler.jsonc', 'utf8'), /"directory": "\.\/public"/);
+  assert.match(readFileSync('wrangler.jsonc', 'utf8'), /"main": "worker\.js"/);
+});
+
+test('bundled assets behave like Workers Assets', async () => {
+  buildNext();
+  const { serveAsset } = await import('./worker-next.js');
+  const get = path => serveAsset(new Request('https://next.test' + path));
+  let r = get('/court.html?club=88');
+  assert.equal(r.status, 307);
+  assert.equal(r.headers.get('Location'), 'https://next.test/court?club=88');
+  r = get('/court');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('Content-Type'), /text\/html/);
+  assert.match(await r.text(), /next\.css/);
+  r = get('/next.css');
+  assert.match(r.headers.get('Content-Type'), /text\/css/);
+  r = get('/final-rally.webp');
+  assert.equal(r.headers.get('Content-Type'), 'image/webp');
+  assert.deepEqual(
+    new Uint8Array(await r.arrayBuffer()),
+    new Uint8Array(readFileSync('public/final-rally.webp')),
+  );
+  assert.equal(get('/missing.js').status, 404);
+  assert.equal(serveAsset(new Request('https://next.test/court', { method: 'POST' })).status, 405);
 });

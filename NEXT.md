@@ -7,22 +7,24 @@
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `next/` | เฉพาะไฟล์ที่ดีไซน์ใหม่: `court.html`, `billing.html`, `liff.html`, `admin.html`, `next.css`, `next-billing.css`, `next-shell.js` |
-| `scripts/build-next.mjs` | `npm run build:next` = คัด `public/` ไป `dist-next/` แล้วทับด้วย `next/` |
-| `wrangler.next.jsonc` | Worker ชื่อ `sena-web-next` เสิร์ฟ `dist-next/` · **ไม่มี cron** (production รันอยู่แล้ว) |
+| `scripts/build-next.mjs` | `npm run build:next` = คัด `public/` ไป `dist-next/` แล้วทับด้วย `next/` แล้วรวมทุกไฟล์เป็น `.next-build/assets.mjs` |
+| `worker-next.js` | entry ของเว็บ next: เรียก `worker.js` เดิม แต่เสิร์ฟไฟล์หน้าเว็บจากโมดูลที่รวมไว้ (ไม่ใช้ Workers Assets) |
+| `wrangler.next.jsonc` | Worker ชื่อ `sena-web-next` · D1 ทั้งสองตัวระบุ ID ตรงกับ production · **ไม่มี cron** (production รันอยู่แล้ว) |
 | `test-next.mjs` | กันฟีเจอร์หาย: หน้าใหม่ต้องมี id ครบและโหลดสคริปต์เดิมครบทุกตัว |
 
 กติกา: แก้ดีไซน์ได้แค่ HTML layout/CSS ใน `next/` ห้ามลบ id หรือ `<script>` เดิม (เทสจะล้ม) — logic ทั้งหมดอยู่ใน `public/*.js` เดิม แก้บั๊กที่นั่นแล้วทั้งสองเว็บได้พร้อมกัน
 
-## ตั้งค่าครั้งแรก (เจ้าของโปรเจกต์ทำใน Cloudflare)
-1. Workers & Pages → Create → Import a repository → เลือก repo `sena_web`
-   - Project name: `sena-web-next`
-   - Production branch: branch ของงานนี้ (ไม่ใช่ `main`)
-   - Build command: `npm run build:next`
-   - Deploy command: `npx wrangler deploy -c wrangler.next.jsonc`
+## ที่อยู่และการ deploy
+- URL: https://sena-web-next.thegsbnut.workers.dev (deploy ครั้งแรก 2026-11-12)
+- deploy ด้วยมือ: `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=807aa489f9e84863cc0dc67625b674f3 npm run deploy:next`
+  - ใน Claude cloud session token ถูกฉีดโดย proxy: ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
+  - ที่ไม่ใช้ Workers Assets เพราะ proxy เขียนทับ header ของการอัปโหลด assets (ได้ 401)
+
+## ตั้งค่าเพิ่มเติม (เจ้าของโปรเจกต์ทำใน Cloudflare)
+1. (ไม่บังคับ) ให้ deploy อัตโนมัติเมื่อ push: Workers & Pages → `sena-web-next` → Settings → Build → Connect repo `sena_web`, branch ของงานนี้, Build command `npm run build:next`, Deploy command `npx wrangler deploy -c wrangler.next.jsonc`
 2. Settings → Variables and Secrets ของ `sena-web-next`: ใส่ `ADMIN_KEY` (ค่าเดียวกับเว็บเดิมได้)
    - ไม่ต้องใส่ `LINE_CHANNEL_SECRET` (เว็บนี้ไม่รับ webhook)
    - `LINE_CHANNEL_ACCESS_TOKEN` ใส่ก็ได้ถ้าอยากให้ปุ่มแท็ก/ตรวจกลุ่ม LINE ใช้ได้ (จะส่งข้อความเข้ากลุ่มจริง)
-3. ตรวจ Bindings: `DB` = `sena-db`, `SLIPS_DB` = `sena-bill-slips` (ตัวเดียวกับเว็บเดิม), `AI`
 4. LINE login (ถ้าจะลองจอง/จ่ายบิลแบบผู้เล่น): LINE Developers → channel LINE Login เดิม → LIFF → Add
    - Endpoint URL: `https://sena-web-next.<บัญชี>.workers.dev/liff.html`
    - Scope: `openid`, `profile` เหมือนตัวเดิม

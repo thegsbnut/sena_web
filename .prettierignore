@@ -6,3 +6,4 @@ leaderboard-data.js
 *.html
 *.md
 dist-next/
+.next-build/
