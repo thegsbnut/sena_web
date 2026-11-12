@@ -14,7 +14,7 @@
     "LINE_LIFF_ID": "2012537788-9E2msitp",
     "LINE_LOGIN_ENABLED": "true",
     "LINE_MEMBER_AUTH_ENABLED": "true",
-    "SLIP_AI_ENABLED": "false",
+    "SLIP_AI_ENABLED": "true",
     "SLIP_AI_MODEL": "@cf/meta/llama-4-scout-17b-16e-instruct"
   },
   "ai": { "binding": "AI" },
