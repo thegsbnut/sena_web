@@ -52,7 +52,7 @@ export function mentionNameRisk(name) {
 }
 
 // Group payers into mention messages that LINE renders as real mentions.
-// Findings from the real group (see LINE-MENTION-AUDIT.md): a name LINE
+// Findings from the real group (see LINE-MENTION-AUDIT.md and docs/archive/): a name LINE
 // miscounts (excess > 0) shifts the position of every mention after it, and one
 // invalid position drops all mentions in that message. So names are ordered from
 // plain to miscounted, a message only continues while the excess before the next
