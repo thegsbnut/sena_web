@@ -1,11 +1,5 @@
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
-import {
-  lineReplyEvidence,
-  redactedMentionPayload,
-  groupMentionTarget,
-  validLineUserId,
-  mentionNameRisk,
-} from './line-mentions.js';
+import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
 import { memberMode, liffUrl } from './member.js';
 import { logError } from './log.js';
 import { billingLineText, billingLineMessages } from './billing.js';
@@ -69,8 +63,6 @@ function command(event) {
   const match = /^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  // TEMPORARY diagnostic (remove once the mention rule is known): hidden from `help`.
-  if (/^tagtest4(\s|$)/.test(action)) return { kind: 'tagTest4' };
   if (shortcuts.has(action)) return shortcuts.get(action);
   // Pairing codes are consumed by the existing administrator-only pairing flow.
   if (/^[a-f0-9]{32}$/i.test(action)) return null;
@@ -413,84 +405,7 @@ export async function replyToGroupCommand(event, env) {
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'tagTest4') {
-      // TEMPORARY: compare padding after each mention using the same three members.
-      // The displayed-name expansion is a hypothesis until checked in LINE.
-      const friends = (event.message.mention?.mentionees || [])
-        .filter(m => m.type === 'user' && !m.isSelf && validLineUserId(m.userId))
-        .map(m => m.userId);
-      const ids = [
-        ...new Set([...friends.slice(0, 2), event.source.userId].filter(validLineUserId)),
-      ];
-      const checks =
-        ids.length === 3
-          ? await Promise.all(ids.map(id => groupMentionTarget(env, group, id)))
-          : [];
-      if (ids.length < 3)
-        messages.push({
-          type: 'text',
-          text: 'ทดสอบแท็ก: พิมพ์ badbot tagtest4 แล้ว @ แตะเลือกเพื่อนอีก 2 คนจากรายชื่อของ LINE ก่อนส่ง (ระบบรวมตัวคุณให้เอง)',
-        });
-      else if (!checks.every(c => c.userId))
-        messages.push({
-          type: 'text',
-          text: 'ทดสอบแท็กไม่ได้: ตรวจยืนยันสมาชิกในกลุ่มไม่ครบทั้ง 3 คน',
-        });
-      else {
-        const people = checks.map(c => ({
-          id: c.userId,
-          name: c.displayName,
-          risk: mentionNameRisk(c.displayName),
-        }));
-        const sub = list =>
-          Object.fromEntries(
-            list.map((p, i) => [
-              'm' + i,
-              { type: 'mention', mentionee: { type: 'user', userId: p.id } },
-            ]),
-          );
-        // Compare the passing order with and without padding, then move the
-        // highest-risk name to the middle and isolate it in its own message.
-        const tags = (list, padding = '') => list.map((_, i) => '{m' + i + '}' + padding).join(' ');
-        const zwsp = '\u200b'.repeat(16),
-          ordered = [...people].sort((a, b) => a.risk - b.risk),
-          middle = [ordered[0], ordered[2], ordered[1]],
-          single = [ordered[2]],
-          run = Math.random().toString(36).slice(2, 6);
-        messages.push(
-          {
-            type: 'text',
-            text:
-              'ทดสอบแท็ก รอบ ' +
-              run +
-              '\n' +
-              people.map(p => p.name + ' (ส่วนต่าง UTF-16/ตัวที่เห็น ' + p.risk + ')').join('\n') +
-              '\n[2] เรียงส่วนต่างน้อยไปมาก ไม่ใส่กันชน\n[3] ลำดับเดียวกับ [2] ใส่กันชน\n[4] ย้ายชื่อส่วนต่างมากสุดไว้กลาง ใส่กันชน\n[5] ชื่อส่วนต่างมากสุดคนเดียว ใส่กันชน' +
-              '\nดูว่าแต่ละข้อความแท็กครบเป็นสีฟ้าไหม และคำว่า "ครบไหม" อยู่ครบหรือแหว่ง',
-          },
-          {
-            type: 'textV2',
-            text: '[2] ' + tags(ordered) + '\nครบไหม ข้อความนี้',
-            substitution: sub(ordered),
-          },
-          {
-            type: 'textV2',
-            text: '[3] ' + tags(ordered, zwsp) + '\nครบไหม ข้อความนี้',
-            substitution: sub(ordered),
-          },
-          {
-            type: 'textV2',
-            text: '[4] ' + tags(middle, zwsp) + '\nครบไหม ข้อความนี้',
-            substitution: sub(middle),
-          },
-          {
-            type: 'textV2',
-            text: '[5] ยอดทดสอบ 1 บ. · ' + tags(single, zwsp) + '\nครบไหม ข้อความนี้',
-            substitution: sub(single),
-          },
-        );
-      }
-    } else if (action.kind === 'roster') {
+    if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
       const sections = await Promise.all(selected.map(club => rosterSection(env, club, now)));
       const text =
