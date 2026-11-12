@@ -105,7 +105,16 @@ export function validateReading(raw) {
   };
 }
 
-export function judgeSlip(reading, { amountSatang, billDate, duplicate, now = new Date() }) {
+// A slip is "old" when it is dated more than this many days before it was sent.
+// Comparing with the upload day (not the session day) keeps early and late
+// payers fine, and still catches a stale slip being reused.
+const OLD_SLIP_DAYS = 3;
+const DAY_MS = 86400000;
+
+// 'YYYY-MM-DD' of a timestamp in Bangkok time (UTC+7, no daylight saving).
+export const bangkokDate = ms => new Date(ms + 7 * 3600000).toISOString().slice(0, 10);
+
+export function judgeSlip(reading, { amountSatang, uploadDate, duplicate, now = new Date() }) {
   if (!reading.isSlip)
     return [{ code: 'unreadable', why: reading.unparsed ? 'unparsed' : 'not_slip' }];
   if (reading.amountSatang == null) return [{ code: 'unreadable', why: 'amount' }];
@@ -118,7 +127,8 @@ export function judgeSlip(reading, { amountSatang, billDate, duplicate, now = ne
     });
   const slipDate = parseSlipDate(reading.dateText, now);
   if (!slipDate) reasons.push({ code: 'date_unreadable' });
-  else if (slipDate < billDate) reasons.push({ code: 'old_date', slipDate, billDate });
+  else if (Date.parse(slipDate) < Date.parse(uploadDate) - OLD_SLIP_DAYS * DAY_MS)
+    reasons.push({ code: 'old_date', slipDate, uploadDate, days: OLD_SLIP_DAYS });
   if (duplicate)
     reasons.push({
       code: 'duplicate_ref',
@@ -255,7 +265,7 @@ export async function checkSlip(
       : null;
     const reasons = judgeSlip(reading, {
       amountSatang: payer.amount, // bills store satang
-      billDate: bill.session_date.slice(0, 10),
+      uploadDate: bangkokDate(payer.submittedAt ?? now.getTime()),
       duplicate,
       now,
     });

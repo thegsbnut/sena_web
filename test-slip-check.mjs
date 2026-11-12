@@ -9,6 +9,7 @@ import {
   judgeSlip,
   readSlip,
   slipAiEnabled,
+  bangkokDate,
   DEFAULT_MODEL,
   checkSlip,
   slipChecksFor,
@@ -85,7 +86,7 @@ test('validateReading refuses implausible amounts and shapes', () => {
 
 test('judgeSlip picks the right labels', () => {
   const base = { isSlip: true, amountSatang: 20000, dateText: '12 พ.ย. 69', ref: null };
-  const ctx = { amountSatang: 20000, billDate: '2026-11-12', duplicate: null, now };
+  const ctx = { amountSatang: 20000, uploadDate: '2026-11-12', duplicate: null, now };
   const codes = (reading, extra = {}) => judgeSlip(reading, { ...ctx, ...extra }).map(r => r.code);
   assert.deepEqual(judgeSlip(base, ctx), [{ code: 'ok' }]);
   assert.deepEqual(judgeSlip({ ...base, amountSatang: 12000 }, ctx), [
@@ -93,7 +94,7 @@ test('judgeSlip picks the right labels', () => {
   ]);
   assert.deepEqual(codes({ ...base, amountSatang: 20001 }), ['amount_mismatch']);
   assert.deepEqual(judgeSlip({ ...base, dateText: '03 พ.ย. 69' }, ctx), [
-    { code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' },
+    { code: 'old_date', slipDate: '2026-11-03', uploadDate: '2026-11-12', days: 3 },
   ]);
   assert.deepEqual(codes({ ...base, dateText: '13 พ.ย. 69' }), ['ok']);
   assert.deepEqual(codes({ ...base, dateText: null }), ['date_unreadable']);
@@ -261,7 +262,7 @@ function fixture(t, { enabled = true } = {}) {
 }
 const slipAnswer = (payer, extra = {}) => ({
   // payer.amount is stored in satang; slips show baht
-  response: { ...good, amount: payer.amount / 100, date_text: '02 ต.ค. 69', ...extra },
+  response: { ...good, amount: payer.amount / 100, date_text: '10 พ.ย. 69', ...extra },
 });
 const args = (bill, payer, slipKey) => ({
   bill: bill.row,
@@ -282,7 +283,7 @@ test('checkSlip stores a done row without touching the bill', async t => {
   assert.equal(row.state, 'done');
   assert.deepEqual(JSON.parse(row.labels), [{ code: 'ok' }]);
   assert.equal(row.read_amount, nut.amount);
-  assert.equal(row.read_date, '2026-10-02');
+  assert.equal(row.read_date, '2026-11-10');
   const after = f.db.prepare('SELECT revision, payload FROM bills WHERE id=?').get(bill.id);
   assert.equal(after.revision, bill.row.revision);
   assert.equal(after.payload, bill.row.payload);
@@ -331,7 +332,7 @@ test('slipChecksFor returns known keys only', async t => {
     state: 'done',
     reasons: [{ code: 'ok' }],
     readAmount: nut.amount,
-    readDate: '2026-10-02',
+    readDate: '2026-11-10',
     checkedAt: checkedAt.getTime(),
   });
 });
@@ -357,13 +358,33 @@ test('pruneSlipChecks drops rows older than 180 days only', async t => {
   );
 });
 
+const THAI_ABBR = [
+  'ม.ค.',
+  'ก.พ.',
+  'มี.ค.',
+  'เม.ย.',
+  'พ.ค.',
+  'มิ.ย.',
+  'ก.ค.',
+  'ส.ค.',
+  'ก.ย.',
+  'ต.ค.',
+  'พ.ย.',
+  'ธ.ค.',
+];
+// The worker stamps uploads with the real clock, so integration slips are dated today (Bangkok).
+const todayThai = () => {
+  const d = new Date(Date.now() + 7 * 3600e3);
+  return `${d.getUTCDate()} ${THAI_ABBR[d.getUTCMonth()]} ${String(d.getUTCFullYear() + 543).slice(-2)}`;
+};
+
 // ---- integration through the worker: the real upload and organizer routes ----
 async function withUpload(f) {
   const bill = await f.newBill();
   const path = '/api/billing?bill=' + bill.id;
   const read = async () => (await (await f.request(path, { cookie: bill.cookie })).json()).payers;
   const [nut, bua] = await read();
-  f.ai.answer = () => slipAnswer(nut);
+  f.ai.answer = () => slipAnswer(nut, { date_text: todayThai() });
   const upload = (p = nut) =>
     f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, {
       method: 'POST',
@@ -433,7 +454,7 @@ test('slip-check re-runs the check for organizers only', async t => {
   f.ai.answer = () => Promise.reject(new Error('down'));
   await b.upload();
   await f.settle();
-  f.ai.answer = () => slipAnswer(b.nut);
+  f.ai.answer = () => slipAnswer(b.nut, { date_text: todayThai() });
   const recheck = (extra = {}, payer = b.nut) =>
     f.request(b.path + '&action=slip-check', {
       method: 'POST',
@@ -480,8 +501,8 @@ test('label text matches the wording agreed in the spec', () => {
     'ยอดเงินไม่ตรง — สลิป 120 บาท แต่บิล 200 บาท',
   );
   assert.equal(
-    text({ code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' }),
-    'วันที่ไม่ตรง — สลิปลงวันที่ 3 พ.ย. 69 ซึ่งก่อนวันตีแบด 12 พ.ย. 69',
+    text({ code: 'old_date', slipDate: '2026-11-08', uploadDate: '2026-11-12', days: 3 }),
+    'วันที่ไม่ตรง — สลิปลงวันที่ 8 พ.ย. 69 ซึ่งเก่ากว่าวันที่ส่งสลิป 12 พ.ย. 69 เกิน 3 วัน',
   );
   assert.equal(
     text({ code: 'duplicate_ref', billDate: '2026-11-05', payerName: 'สมหญิง' }),
@@ -528,7 +549,7 @@ test('flaggedCount counts only finished checks with a warning', () => {
 // ---- review fixes: unparseable replies and the organizer summary count ----
 test('an unparseable AI reply is not reported as "not a slip"', async () => {
   const reading = await readSlip({ AI: fakeAi({ response: 'ขออภัย' }) }, png, 'image/png');
-  const ctx = { amountSatang: 20000, billDate: '2026-11-12', duplicate: null, now };
+  const ctx = { amountSatang: 20000, uploadDate: '2026-11-12', duplicate: null, now };
   assert.deepEqual(judgeSlip(reading, ctx), [{ code: 'unreadable', why: 'unparsed' }]);
   assert.equal(
     globalThis.SlipCheckText.describe({ code: 'unreadable', why: 'unparsed' }, {}).text,
@@ -551,4 +572,93 @@ test('flaggedCount skips slips the organizer already handled', () => {
     ]),
     2,
   );
+});
+
+// ---- date rule: compare the slip with when it was sent, not with the session ----
+test('bangkokDate rolls over at midnight in Bangkok', () => {
+  assert.equal(bangkokDate(Date.UTC(2026, 10, 12, 16, 59)), '2026-11-12');
+  assert.equal(bangkokDate(Date.UTC(2026, 10, 12, 17, 0)), '2026-11-13');
+});
+
+test('a slip is only old when dated more than 3 days before it was sent', () => {
+  const base = { isSlip: true, amountSatang: 20000, dateText: null, ref: null };
+  const ctx = { amountSatang: 20000, uploadDate: '2026-11-12', duplicate: null, now };
+  const verdict = dateText => judgeSlip({ ...base, dateText }, ctx).map(r => r.code);
+  assert.deepEqual(verdict('12 พ.ย. 69'), ['ok']);
+  assert.deepEqual(verdict('13 พ.ย. 69'), ['ok']);
+  assert.deepEqual(verdict('09 พ.ย. 69'), ['ok']);
+  assert.deepEqual(verdict('08 พ.ย. 69'), ['old_date']);
+});
+
+test('a re-check judges the date against the original upload time', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  const [nut] = bill.payers;
+  f.ai.answer = () => slipAnswer(nut, { date_text: '03 ก.ย. 69' });
+  const uploaded = { ...nut, submittedAt: Date.UTC(2026, 8, 5, 3) };
+  await checkSlip(f.env, args(bill, uploaded, 'k1'));
+  const row = f.db.prepare('SELECT labels FROM slip_checks WHERE slip_key=?').get('k1');
+  assert.deepEqual(JSON.parse(row.labels), [{ code: 'ok' }]);
+});
+
+// ---- the "ให้ส่งใหม่" reason is prefilled for the organizer, in words meant for the player ----
+test('rejectNote words the AI findings for the player without naming anyone else', () => {
+  const { rejectNote } = globalThis.SlipCheckText;
+  const done = reasons => ({ state: 'done', reasons });
+  assert.equal(
+    rejectNote(
+      done([
+        { code: 'amount_mismatch', slipSatang: 12000, billSatang: 20000 },
+        { code: 'old_date', slipDate: '2026-11-03', uploadDate: '2026-11-12', days: 3 },
+      ]),
+    ),
+    'ยอดในสลิปไม่ตรงกับยอดที่ต้องจ่าย (สลิป 120 บาท ต้องจ่าย 200 บาท) · วันที่โอนในสลิปเก่าเกินไป กรุณาแนบสลิปที่โอนล่าสุด',
+  );
+  const duplicate = rejectNote(
+    done([{ code: 'duplicate_ref', billDate: '2026-11-05', payerName: 'สมหญิง' }]),
+  );
+  assert.equal(duplicate, 'สลิปนี้ถูกใช้ไปแล้ว กรุณาแนบสลิปที่ถูกต้อง');
+  assert.equal(
+    rejectNote(done([{ code: 'unreadable', why: 'amount' }])),
+    'สลิปไม่ชัดเจน กรุณาแนบภาพใหม่ให้เห็นยอดเงิน วันที่ และเลขอ้างอิง',
+  );
+});
+
+test('rejectNote is empty without a warning and never exceeds 240 characters', () => {
+  const { rejectNote } = globalThis.SlipCheckText;
+  for (const check of [
+    { state: 'done', reasons: [{ code: 'ok' }] },
+    { state: 'done', reasons: [{ code: 'date_unreadable' }] },
+    { state: 'error', reasons: [] },
+    undefined,
+  ])
+    assert.equal(rejectNote(check), '');
+  const all = rejectNote({
+    state: 'done',
+    reasons: [
+      { code: 'amount_mismatch', slipSatang: 99999999, billSatang: 99999999 },
+      { code: 'old_date', slipDate: '2026-11-03', uploadDate: '2026-11-12', days: 3 },
+      { code: 'duplicate_ref', billDate: '', payerName: 'x' },
+      { code: 'unreadable', why: 'amount' },
+      { code: 'unreadable', why: 'not_slip' },
+    ],
+  });
+  assert.ok(all.length > 0 && all.length <= 240, String(all.length));
+});
+
+test('an old_date check stored before the upload-date rule still reads sensibly', () => {
+  const { describe } = globalThis.SlipCheckText;
+  const legacy = { code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' };
+  assert.equal(
+    describe(legacy, {}).text,
+    'วันที่ไม่ตรง — สลิปลงวันที่ 3 พ.ย. 69 เก่าเกินไป (กด "ตรวจอีกครั้ง" เพื่อตรวจด้วยกฎใหม่)',
+  );
+});
+
+test('a legacy old_date check offers a re-check; a current one does not', () => {
+  const { stale } = globalThis.SlipCheckText;
+  const legacy = { code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' };
+  const current = { code: 'old_date', slipDate: '2026-11-03', uploadDate: '2026-11-12', days: 3 };
+  assert.equal(stale({ state: 'done', reasons: [legacy], checkedAt: 0 }, 1000), true);
+  assert.equal(stale({ state: 'done', reasons: [current], checkedAt: 0 }, 1000), false);
 });

@@ -51,7 +51,10 @@
         return {
           icon: '⚠️',
           level: 'warn',
-          text: `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} ซึ่งก่อนวันตีแบด ${fmtDate(reason.billDate)}`,
+          text: reason.uploadDate
+            ? `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} ซึ่งเก่ากว่าวันที่ส่งสลิป ${fmtDate(reason.uploadDate)} เกิน ${reason.days} วัน`
+            : // stored before the upload-date rule: no upload date to show
+              `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} เก่าเกินไป (กด "ตรวจอีกครั้ง" เพื่อตรวจด้วยกฎใหม่)`,
         };
       case 'duplicate_ref':
         return {
@@ -86,11 +89,36 @@
         p.aiCheck.reasons.some(r => WARNINGS.includes(r.code)),
     ).length;
 
-  // The organizer may re-run a check that failed or has hung for 2+ minutes.
+  // The organizer may re-run a check that failed, has hung for 2+ minutes, or was
+  // stored under the earlier date rule (an old_date with no upload date).
   const stale = (check, now = Date.now()) =>
     check.state === 'error' ||
-    (check.state === 'pending' && now - check.checkedAt > STALE_PENDING_MS);
+    (check.state === 'pending' && now - check.checkedAt > STALE_PENDING_MS) ||
+    check.reasons?.some(r => r.code === 'old_date' && !r.uploadDate) === true;
 
-  root.SlipCheckText = { describe, flaggedCount, stale, fmtDate, fmtBaht };
+  // Reason for "ให้ส่งใหม่", prefilled for the organizer. The player reads it, so it
+  // never names another player or bill. Capped at the server's 240-character limit.
+  const NOTE_MAX = 240;
+  const playerWording = reason => {
+    switch (reason.code) {
+      case 'amount_mismatch':
+        return `ยอดในสลิปไม่ตรงกับยอดที่ต้องจ่าย (สลิป ${fmtBaht(reason.slipSatang)} บาท ต้องจ่าย ${fmtBaht(reason.billSatang)} บาท)`;
+      case 'old_date':
+        return 'วันที่โอนในสลิปเก่าเกินไป กรุณาแนบสลิปที่โอนล่าสุด';
+      case 'duplicate_ref':
+        return 'สลิปนี้ถูกใช้ไปแล้ว กรุณาแนบสลิปที่ถูกต้อง';
+      case 'unreadable':
+        return 'สลิปไม่ชัดเจน กรุณาแนบภาพใหม่ให้เห็นยอดเงิน วันที่ และเลขอ้างอิง';
+      default:
+        return '';
+    }
+  };
+  function rejectNote(check) {
+    if (check?.state !== 'done') return '';
+    const note = check.reasons.map(playerWording).filter(Boolean).join(' · ');
+    return note.length > NOTE_MAX ? note.slice(0, NOTE_MAX - 1) + '…' : note;
+  }
+
+  root.SlipCheckText = { describe, flaggedCount, stale, fmtDate, fmtBaht, rejectNote };
   if (typeof module !== 'undefined') module.exports = root.SlipCheckText;
 })(typeof window === 'undefined' ? globalThis : window);
