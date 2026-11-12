@@ -6,6 +6,9 @@ import {
   isUsableRef,
   validateReading,
   judgeSlip,
+  readSlip,
+  slipAiEnabled,
+  DEFAULT_MODEL,
 } from './slip-check.js';
 
 const now = new Date('2026-11-12T05:00:00Z');
@@ -104,4 +107,59 @@ test('judgeSlip picks the right labels', () => {
   assert.deepEqual(judgeSlip({ ...base, amountSatang: null }, ctx), [
     { code: 'unreadable', why: 'amount' },
   ]);
+});
+
+const png = Uint8Array.of(137, 80, 78, 71, 1, 2, 3);
+const fakeAi = answer => {
+  const calls = [];
+  return { calls, run: async (model, input) => (calls.push({ model, input }), answer) };
+};
+const good = { is_transfer_slip: true, amount: 50, date_text: '12 พ.ย. 69', ref: 'r' };
+const goodReading = { isSlip: true, amountSatang: 5000, dateText: '12 พ.ย. 69', ref: 'r' };
+
+test('readSlip sends the image and strict instructions to the configured model', async () => {
+  const AI = fakeAi({ response: good });
+  await readSlip({ AI }, png, 'image/png');
+  const { model, input } = AI.calls[0];
+  assert.equal(model, '@cf/meta/llama-4-scout-17b-16e-instruct');
+  assert.equal(DEFAULT_MODEL, model);
+  assert.equal(input.temperature, 0);
+  const [instruction, image] = input.messages[0].content;
+  assert.equal(instruction.type, 'text');
+  assert.match(instruction.text, /date_text/);
+  assert.match(image.image_url.url, /^data:image\/png;base64,/);
+  await readSlip({ AI, SLIP_AI_MODEL: 'x' }, png, 'image/png');
+  assert.equal(AI.calls[1].model, 'x');
+});
+
+test('readSlip understands every response shape the platform returns', async () => {
+  const json = JSON.stringify(good);
+  for (const answer of [
+    { response: good },
+    { response: json },
+    { choices: [{ message: { content: json } }] },
+    { response: 'ได้เลย ' + json + ' ขอบคุณ' },
+  ])
+    assert.deepEqual(await readSlip({ AI: fakeAi(answer) }, png, 'image/png'), goodReading);
+});
+
+test('readSlip treats garbage as not a slip and lets AI failures surface', async () => {
+  assert.equal(
+    (await readSlip({ AI: fakeAi({ response: 'ขออภัย' }) }, png, 'image/png')).isSlip,
+    false,
+  );
+  const AI = { run: async () => Promise.reject(new Error('quota')) };
+  await assert.rejects(readSlip({ AI }, png, 'image/png'), /quota/);
+});
+
+test('slipAiEnabled needs the switch, the AI binding and the database', () => {
+  const full = { SLIP_AI_ENABLED: 'true', AI: {}, DB: {} };
+  assert.equal(slipAiEnabled(full), true);
+  for (const broken of [
+    { ...full, SLIP_AI_ENABLED: 'false' },
+    { ...full, SLIP_AI_ENABLED: undefined },
+    { ...full, AI: undefined },
+    { ...full, DB: undefined },
+  ])
+    assert.equal(slipAiEnabled(broken), false);
 });

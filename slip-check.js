@@ -124,3 +124,59 @@ export function judgeSlip(reading, { amountSatang, billDate, duplicate, now = ne
     });
   return reasons.length ? reasons : [{ code: 'ok' }];
 }
+
+export const DEFAULT_MODEL = '@cf/meta/llama-4-scout-17b-16e-instruct';
+
+export const slipAiEnabled = env =>
+  env?.SLIP_AI_ENABLED === 'true' && Boolean(env.AI) && Boolean(env.DB);
+
+const PROMPT = [
+  'You read Thai bank transfer slips. Look at the image and answer with ONE JSON object only, no markdown, no extra text:',
+  '{"is_transfer_slip": true|false, "amount": number|null, "date_text": string|null, "ref": string|null}',
+  '- amount: the transferred amount as a plain number in baht (e.g. 1000.00), not the fee.',
+  '- date_text: the date exactly as printed on the slip, copied character by character (keep Thai month names and the year digits as printed).',
+  '- ref: the transaction reference number (หมายเลขอ้างอิง / รหัสอ้างอิง / เลขที่รายการ / Ref No.). If there are several, choose the longest one. Copy it exactly.',
+  'If a value is unreadable use null. If the image is not a transfer slip set is_transfer_slip to false.',
+].join('\n');
+
+function toBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+// Workers AI answers either {response: object|string} or an OpenAI-style
+// {choices:[{message:{content}}]} depending on the model; accept both.
+function replyOf(output) {
+  const raw = output?.response ?? output?.choices?.[0]?.message?.content;
+  if (raw && typeof raw === 'object') return raw;
+  const match = typeof raw === 'string' ? raw.match(/\{[\s\S]*\}/) : null;
+  try {
+    return match ? JSON.parse(match[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Throws when the AI call itself fails; a reply that cannot be understood is
+// returned as "not a slip" instead.
+export async function readSlip(env, bytes, contentType) {
+  const output = await env.AI.run(env.SLIP_AI_MODEL || DEFAULT_MODEL, {
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: PROMPT },
+          {
+            type: 'image_url',
+            image_url: { url: `data:${contentType};base64,${toBase64(bytes)}` },
+          },
+        ],
+      },
+    ],
+    max_tokens: 300,
+    temperature: 0,
+  });
+  return validateReading(replyOf(output));
+}
