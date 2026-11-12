@@ -56,6 +56,8 @@ function command(event) {
     if (data === 'badbot:roster') return { kind: 'roster', scope: 'all' }; // Existing cards still work.
     const tag = /^badbot:billtag:(all|sena|88):(\d{1,3})$/.exec(data || '');
     if (tag) return { kind: 'billTag', scope: tag[1], offset: Number(tag[2]) };
+    const run = /^badbot:run:([a-z0-9 ]{1,20})$/.exec(data || '');
+    if (run && shortcuts.has(run[1])) return shortcuts.get(run[1]);
     const match = /^badbot:roster:(all|sena|88)$/.exec(data || '');
     return match ? { kind: 'roster', scope: match[1] } : null;
   }
@@ -95,26 +97,31 @@ function menu(urls) {
     type: 'button',
     style: 'primary',
     color: '#168B42',
-    action: {
-      type: 'uri',
-      label: '🏸 จอง / ถอน ' + clubOf(club).label,
-      uri: urls[club],
-    },
+    height: 'sm',
+    action: { type: 'uri', label: '🏸 จอง ' + clubOf(club).label, uri: urls[club] },
   });
   const postback = (label, data, displayText) => ({
     type: 'button',
     style: 'secondary',
+    height: 'sm',
     action: { type: 'postback', label, data, displayText },
   });
+  const row = (...contents) => ({ type: 'box', layout: 'horizontal', spacing: 'sm', contents });
   const buttons = [
-    ...clubs.map(link),
-    postback('👥 ผู้ตีทุกสนาม', 'badbot:roster:all', '👥 ขอรายชื่อผู้ตีทุกสนาม'),
-    postback('👥 ผู้ตี Sena', 'badbot:roster:sena', '👥 ขอรายชื่อผู้ตี Sena'),
-    postback('👥 ผู้ตี 88', 'badbot:roster:88', '👥 ขอรายชื่อผู้ตี 88'),
+    row(...clubs.map(link)),
+    row(
+      postback('👥 รายชื่อผู้ตี', 'badbot:roster:all', '👥 ขอรายชื่อผู้ตี'),
+      postback('💰 บิลค้างจ่าย', 'badbot:run:bill', '💰 ขอบิลค้างจ่าย'),
+    ),
+    row(
+      postback('🆚 ตารางจัดคู่', 'badbot:run:matchup sena', '🆚 ขอตารางจัดคู่'),
+      postback('🏆 อันดับ', 'badbot:run:leaderboard', '🏆 ขออันดับ'),
+    ),
+    postback('❓ คำสั่งทั้งหมด', 'badbot:run:help', '❓ ขอคำสั่งทั้งหมด'),
   ];
   return {
     type: 'flex',
-    altText: 'SENA Badbot · จอง / ถอนชื่อ และดูรายชื่อผู้ตี',
+    altText: 'SENA Badbot · จอง / ถอนชื่อ รายชื่อ บิล และตารางจัดคู่',
     contents: {
       type: 'bubble',
       body: {
@@ -125,7 +132,7 @@ function menu(urls) {
           { type: 'text', text: '🏸 SENA Badbot', weight: 'bold', size: 'lg', wrap: true },
           {
             type: 'text',
-            text: 'เลือกสนามเพื่อจอง / ถอน หรือดูรายชื่อผู้ตี',
+            text: 'จอง / ถอน · รายชื่อ · บิล · ตารางจัดคู่ · อันดับ',
             size: 'sm',
             wrap: true,
           },
@@ -415,6 +422,18 @@ export async function replyToGroupCommand(event, env) {
         thaiTime.format(now) +
         ' น.';
       messages.push(...textMessages(text));
+      if (action.scope === 'all')
+        messages.at(-1).quickReply = {
+          items: clubs.map(club => ({
+            type: 'action',
+            action: {
+              type: 'postback',
+              label: clubOf(club).label,
+              data: 'badbot:roster:' + club,
+              displayText: '👥 ขอรายชื่อผู้ตี ' + clubOf(club).label,
+            },
+          })),
+        };
     } else if (action.kind === 'billTag' && memberMode(env) && env.LINE_LIFF_ID) {
       messages.push(
         ...(await billingLineMessages(
