@@ -114,6 +114,20 @@
       body: JSON.stringify(data),
     });
   }
+  // Organizer-only AI slip check lines; all text is escaped before innerHTML.
+  function aiLines(p) {
+    const text = window.SlipCheckText,
+      check = p.aiCheck;
+    if (!text || !check || !p.hasSlip) return '';
+    if (check.state !== 'done')
+      return `<small class="ai-check info">${text.stale(check) ? '⏳ AI ตรวจไม่สำเร็จ' : '⏳ กำลังตรวจสลิปด้วย AI…'}</small>`;
+    return check.reasons
+      .map(reason => {
+        const d = text.describe(reason, check);
+        return `<small class="ai-check ${d.level}">🤖 ${d.icon} ${escape(d.text)}</small>`;
+      })
+      .join('');
+  }
   function message(text, error = false) {
     status.textContent = text;
     status.classList.toggle('error', error);
@@ -174,6 +188,7 @@
     }
     const rows = [...bill.payers].sort((a, b) => order[a.status] - order[b.status]);
     const who = payerToken ? rows[0] : null;
+    const flagged = organizer ? window.SlipCheckText?.flaggedCount(bill.payers) || 0 : 0;
     const promptpay = validPromptPay(bill.transfer);
     root.innerHTML = `
    ${organizer ? '<button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>' : ''}
@@ -183,6 +198,7 @@
     <div class="card-title"><h2>ยอดเรียกเก็บ ${money(bill.collection)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
     <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
     ${bill.collection > bill.total ? `<p class="muted">ปัดขึ้นรวม ${money(bill.collection - bill.total)} บาท</p>` : ''}
+    ${flagged ? `<p class="ai-check warn">🤖 มีสลิปที่ควรตรวจ ${flagged} ใบ</p>` : ''}
    </section>
    ${memberReadOnly ? '<p><a class="button" href="/liff.html?page=pay&club=' + bill.club + '&bill=' + bill.id + '">เข้าสู่ระบบ LINE เพื่อจ่ายบิลของคุณ</a></p>' : ''}${bill.cancelled ? '<p class="error">บิลนี้ถูกยกเลิกแล้ว</p>' : ''}
    ${bill.transfer && !bill.cancelled ? `<section><h2>${promptpay ? 'พร้อมเพย์' : 'ช่องทางโอนเงิน'}</h2><div class="transfer actions"><strong>${escape(bill.transfer)}</strong>${promptpay ? '<button type="button" data-action="copy-promptpay">คัดลอกเลขพร้อมเพย์</button>' : ''}</div></section>` : ''}
@@ -193,9 +209,11 @@
         p => `
      <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
       <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? (p.status === 'paid' ? 'จ่ายเงินสดแล้ว' : 'แจ้งจ่ายเงินสด รอผู้จัดยืนยัน') : states[p.status]}</div>
+      ${organizer ? aiLines(p) : ''}
       ${organizer && p.withdrawals?.length ? p.withdrawals.map(r => `<small class="withdrawal-time">${escape(r.name)} · ถอน ${escape(withdrawalTime(r.withdrawnAt))}</small>`).join('') : ''}${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
        ${p.hasSlip ? `<button type="button" data-action="slip" data-payer="${p.id}">ดูสลิป</button>` : ''}
+       ${organizer && p.hasSlip && p.aiCheck && window.SlipCheckText?.stale(p.aiCheck) ? `<button type="button" data-action="ai-recheck" data-payer="${p.id}">ตรวจอีกครั้ง</button>` : ''}
        ${!memberReadOnly && !bill.cancelled && promptpay && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" class="primary" data-action="qr" data-payer="${p.id}">จ่ายด้วย QR</button>` : ''}
        ${!memberReadOnly && !bill.cancelled && (promptpay || who) && ['unpaid', 'rejected'].includes(p.status) ? `<button type="button" data-action="upload" data-payer="${p.id}">แนบสลิป</button>` : ''}
        ${who && !organizer && !memberReadOnly && !bill.cancelled && ['unpaid', 'rejected'].includes(p.status) && !p.hasSlip ? `<button type="button" data-action="cash-request" data-payer="${p.id}">จ่ายด้วยเงินสด</button>` : ''}
@@ -748,6 +766,11 @@
       lines.push(linkToBill(id).href);
       return run(() => copy(lines.join('\n')));
     }
+    if (action === 'ai-recheck' && payer)
+      return run(async () => {
+        await post('slip-check', { payer: payer.id });
+        await load();
+      });
     if (action === 'slip' && payer)
       return run(async () => {
         const blob = await request('slip', {}, payer.id);

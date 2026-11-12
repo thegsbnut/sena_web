@@ -234,3 +234,16 @@ fieldset.choice input {
   height: 1.25rem;
   margin: 0;
 }
+
+.ai-check {
+  display: block;
+  font-size: 0.85rem;
+}
+.ai-check.warn {
+  color: #863815;
+  font-weight: 700;
+}
+.ai-check.ok,
+.ai-check.info {
+  color: var(--muted);
+}
