@@ -531,12 +531,12 @@ test('signed badbot command replies with the compact menu and distinct existing 
   assert.equal(buttons.length, 8);
   assert.deepEqual(buttons[0].action, {
     type: 'uri',
-    label: '🏸 จอง Sena',
+    label: '🏸 Sena',
     uri: 'https://sena-web.thegsbnut.workers.dev/court#booking',
   });
   assert.deepEqual(buttons[1].action, {
     type: 'uri',
-    label: '🏸 จอง 88',
+    label: '🏸 88',
     uri: 'https://sena-web.thegsbnut.workers.dev/court?club=88#booking',
   });
   assert.deepEqual(
