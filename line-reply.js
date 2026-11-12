@@ -161,7 +161,7 @@ function menu(urls) {
             ),
             row(
               postback('🏆 อันดับ', 'badbot:run:leaderboard', '🏆 ขออันดับ'),
-              postback('❓ คำสั่งทั้งหมด', 'badbot:run:help', '❓ ขอคำสั่งทั้งหมด'),
+              postback('❓ ช่วยเหลือ', 'badbot:run:help', '❓ ขอความช่วยเหลือ'),
             ),
           ),
         ],
