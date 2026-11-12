@@ -780,7 +780,10 @@
         message('');
       });
     if ((action === 'approve' || action === 'reject') && payer) {
-      const note = action === 'reject' ? prompt('เหตุผลที่ให้ส่งสลิปใหม่') : '';
+      const note =
+        action === 'reject'
+          ? prompt('เหตุผลที่ให้ส่งสลิปใหม่', window.SlipCheckText?.rejectNote(payer.aiCheck) || '')
+          : '';
       if (
         note === null ||
         (action === 'approve' &&
