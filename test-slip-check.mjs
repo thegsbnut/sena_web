@@ -354,3 +354,111 @@ test('pruneSlipChecks drops rows older than 180 days only', async t => {
     ['recent'],
   );
 });
+
+// ---- integration through the worker: the real upload and organizer routes ----
+async function withUpload(f) {
+  const bill = await f.newBill();
+  const path = '/api/billing?bill=' + bill.id;
+  const read = async () => (await (await f.request(path, { cookie: bill.cookie })).json()).payers;
+  const [nut, bua] = await read();
+  f.ai.answer = () => slipAnswer(nut);
+  const upload = (p = nut) =>
+    f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, {
+      method: 'POST',
+      body: jpeg,
+    });
+  return { ...bill, path, read, nut, bua, upload };
+}
+
+test('upload stays paid at once and the check appears for the organizer', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  assert.equal((await b.upload()).status, 200);
+  assert.equal((await b.read())[0].status, 'paid');
+  await f.settle();
+  const [nut] = await b.read();
+  assert.equal(nut.aiCheck.state, 'done');
+  assert.deepEqual(nut.aiCheck.reasons, [{ code: 'ok' }]);
+});
+
+test('players never receive aiCheck', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  await b.upload();
+  await f.settle();
+  for (const opts of [{}, { token: b.nut.token }, { token: b.nut.token, cookie: b.cookie }]) {
+    const text = await (await f.request(b.path, opts)).text();
+    assert.doesNotMatch(text, /aiCheck/);
+  }
+});
+
+test('AI failure leaves the payment intact', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  f.ai.answer = () => Promise.reject(new Error('down'));
+  assert.equal((await b.upload()).status, 200);
+  await f.settle();
+  const [nut] = await b.read();
+  assert.equal(nut.status, 'paid');
+  assert.equal(nut.aiCheck.state, 'error');
+});
+
+test('with the switch off the AI is never called and nothing is stored', async t => {
+  const f = fixture(t, { enabled: false });
+  const b = await withUpload(f);
+  await b.upload();
+  await f.settle();
+  assert.equal(f.ai.calls, 0);
+  assert.equal((await b.read())[0].aiCheck, undefined);
+  assert.equal(
+    f.db.prepare("SELECT 1 FROM sqlite_master WHERE name='slip_checks'").get(),
+    undefined,
+  );
+});
+
+test('slips from before the feature show no aiCheck', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  await b.upload();
+  await f.settle();
+  f.db.exec('DELETE FROM slip_checks');
+  assert.equal((await b.read())[0].aiCheck, undefined);
+});
+
+test('slip-check re-runs the check for organizers only', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  f.ai.answer = () => Promise.reject(new Error('down'));
+  await b.upload();
+  await f.settle();
+  f.ai.answer = () => slipAnswer(b.nut);
+  const recheck = (extra = {}, payer = b.nut) =>
+    f.request(b.path + '&action=slip-check', {
+      method: 'POST',
+      payload: { payer: payer.id },
+      ...extra,
+    });
+  assert.equal((await recheck()).status, 401);
+  assert.equal(
+    (await recheck({ cookie: b.cookie, originHeader: 'https://evil.example' })).status,
+    403,
+  );
+  assert.equal((await recheck({ cookie: b.cookie }, b.bua)).status, 404);
+  assert.equal((await recheck({ cookie: b.cookie })).status, 200);
+  assert.equal((await b.read())[0].aiCheck.state, 'done');
+});
+
+test('after slips are pruned there is no aiCheck and no re-check', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  await b.upload();
+  await f.settle();
+  f.db.prepare('UPDATE bills SET slips_removed=1 WHERE id=?').run(b.id);
+  assert.equal((await b.read())[0].aiCheck, undefined);
+  const response = await f.request(b.path + '&action=slip-check', {
+    method: 'POST',
+    cookie: b.cookie,
+    payload: { payer: b.nut.id },
+  });
+  assert.equal(response.status, 404);
+});

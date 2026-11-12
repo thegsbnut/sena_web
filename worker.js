@@ -2,6 +2,7 @@ import { syncLinkedPlayers } from './roster-sync.js';
 import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
 import { memberRoute, memberFor, memberMode, memberIsAdmin } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
+import { pruneSlipChecks } from './slip-check.js';
 import { lineAdmin, lineWebhook } from './line.js';
 import { bookingRoute, scheduledBookings } from './booking.js';
 import { backupsRoute, prepareBackups } from './backups.js';
@@ -188,9 +189,10 @@ export default {
     if (event.cron === '0 18 * * *') {
       ctx.waitUntil(scheduledBookings(env).catch(error => logError('cron:bookings', error)));
       ctx.waitUntil(prunePaidSlips(env).catch(error => logError('cron:prune-slips', error)));
+      ctx.waitUntil(pruneSlipChecks(env).catch(error => logError('cron:prune-slip-checks', error)));
     }
   },
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     env = cachedEnv(env);
     const url = new URL(req.url),
       path = url.pathname;
@@ -228,7 +230,7 @@ export default {
       }
       if (path === '/api/line') return await lineAdmin(req, env, await authorized(req, env), club);
       if (path === '/api/billing')
-        return await billingRoute(req, env, await authorized(req, env), club);
+        return await billingRoute(req, env, await authorized(req, env), club, ctx);
       if (path === '/api/member' || path.startsWith('/api/member/'))
         return await memberRoute(req, env, await authorized(req, env), club);
       if (path === '/api/booking')

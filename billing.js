@@ -8,6 +8,7 @@ import {
 } from './line-mentions.js';
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
 import qrcode from 'qrcode-generator';
+import { slipAiEnabled, checkSlip, slipChecksFor } from './slip-check.js';
 
 const day = 86400000;
 const maxSlipBytes = 1024 * 1024;
@@ -408,7 +409,11 @@ function imageType(bytes) {
   return null;
 }
 
-export async function billingRoute(req, env, admin, club) {
+// Slip checks are best-effort extras: run them after the response when the
+// runtime offers waitUntil, and never let them fail the request.
+const background = (ctx, work) => (ctx?.waitUntil ? ctx.waitUntil(work) : void work);
+
+export async function billingRoute(req, env, admin, club, ctx) {
   if (!env.DB) return fail('ระบบบิลยังไม่พร้อม', 503);
   const url = new URL(req.url),
     db = env.DB;
@@ -519,10 +524,22 @@ export async function billingRoute(req, env, admin, club) {
         },
       });
     }
-    if (action !== 'slip')
-      return json(
-        bill.cancelled && !admin ? { cancelled: true } : billView(bill, admin && !payer, payer),
-      );
+    if (action !== 'slip') {
+      if (bill.cancelled && !admin) return json({ cancelled: true });
+      const view = billView(bill, admin && !payer, payer);
+      if (admin && !payer && !bill.slips_removed && slipAiEnabled(env)) {
+        try {
+          const checks = await slipChecksFor(db, bill.payers.map(p => p.slipKey).filter(Boolean));
+          for (const p of view.payers) {
+            const found = checks.get(bill.payers.find(x => x.id === p.id)?.slipKey);
+            if (found) p.aiCheck = found;
+          }
+        } catch (error) {
+          logError('billing:slip-checks', error);
+        }
+      }
+      return json(view);
+    }
     const target =
       payer || (admin ? bill.payers.find(p => p.id === url.searchParams.get('payer')) : null);
     if (!target) return fail('ไม่มีสิทธิ์ดูสลิป', 403);
@@ -612,6 +629,17 @@ export async function billingRoute(req, env, admin, club) {
       await slips.prepare('DELETE FROM bill_slips WHERE key=?').bind(key).run();
       return fail('บิลมีการเปลี่ยนแปลง กรุณาโหลดใหม่แล้วลองอีกครั้ง', 409);
     }
+    if (slipAiEnabled(env)) {
+      background(
+        ctx,
+        checkSlip(env, { bill, payer: target, slipKey: key, bytes, contentType: type }),
+      );
+      if (oldKey)
+        await env.DB.prepare('DELETE FROM slip_checks WHERE slip_key=?')
+          .bind(oldKey)
+          .run()
+          .catch(error => logError('billing:delete-old-slip-check', error));
+    }
     if (oldKey)
       await slips
         .prepare('DELETE FROM bill_slips WHERE key=?')
@@ -622,6 +650,25 @@ export async function billingRoute(req, env, admin, club) {
   }
   if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
   const input = await readLimitedJson(req);
+  if (action === 'slip-check') {
+    if (!slipAiEnabled(env)) return fail('ยังไม่เปิดใช้การตรวจสลิปด้วย AI', 503);
+    const target = payload.payers.find(p => p.id === input?.payer);
+    const stored =
+      target?.slipKey && !bill.slips_removed && env.SLIPS_DB
+        ? await env.SLIPS_DB.prepare('SELECT content_type, body FROM bill_slips WHERE key=?')
+            .bind(target.slipKey)
+            .first()
+        : null;
+    if (!stored) return fail('ไม่พบสลิป', 404);
+    await checkSlip(env, {
+      bill,
+      payer: target,
+      slipKey: target.slipKey,
+      bytes: new Uint8Array(stored.body),
+      contentType: stored.content_type,
+    });
+    return json({ ok: true });
+  }
   if (action === 'cancel' || action === 'restore') {
     if (input?.revision !== bill.revision) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     payload.cancelled = action === 'cancel';
