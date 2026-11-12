@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -9,7 +10,11 @@ import {
   readSlip,
   slipAiEnabled,
   DEFAULT_MODEL,
+  checkSlip,
+  slipChecksFor,
+  pruneSlipChecks,
 } from './slip-check.js';
+import worker from './worker.js';
 
 const now = new Date('2026-11-12T05:00:00Z');
 
@@ -162,4 +167,190 @@ test('slipAiEnabled needs the switch, the AI binding and the database', () => {
     { ...full, DB: undefined },
   ])
     assert.equal(slipAiEnabled(broken), false);
+});
+
+// ---- storage and wiring tests: in-memory D1 stand-ins, as in test-billing.mjs ----
+const origin = 'https://sena.example';
+const draft = {
+  date: '2026-10-01',
+  court: 80000,
+  shuttle: 40001,
+  transfer: '0000000000',
+  attendees: [
+    { name: 'Nut', payer: 'Nut', payerKey: 'member:1' },
+    { name: 'Bua', payer: 'Bua', payerKey: 'member:2' },
+  ],
+};
+const jpeg = Uint8Array.of(255, 216, 255, 224, 0, 0, 0, 0, 0, 0, 255, 217);
+const checkedAt = new Date('2026-11-12T05:00:00Z');
+
+function fixture(t, { enabled = true } = {}) {
+  const db = new DatabaseSync(':memory:');
+  const slips = new DatabaseSync(':memory:');
+  t.after(() => {
+    db.close();
+    slips.close();
+  });
+  db.exec('CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)');
+  const binding = database => ({
+    prepare(sql) {
+      const stmt = database.prepare(sql);
+      let args = [];
+      return {
+        bind(...values) {
+          args = values.map(v => (v instanceof ArrayBuffer ? new Uint8Array(v) : v));
+          return this;
+        },
+        first: () => stmt.get(...args),
+        all: () => ({ results: stmt.all(...args) }),
+        run: async () => ({ meta: { changes: stmt.run(...args).changes } }),
+      };
+    },
+  });
+  const f = { db, slips, pending: [], ai: { calls: 0, answer: () => ({ response: good }) } };
+  f.env = {
+    ADMIN_KEY: 'test-key',
+    DB: binding(db),
+    SLIPS_DB: binding(slips),
+    SLIP_AI_ENABLED: enabled ? 'true' : 'false',
+    AI: {
+      run: async (...args) => {
+        f.ai.calls++;
+        return f.ai.answer(...args);
+      },
+    },
+  };
+  const ctx = { waitUntil: p => f.pending.push(p) };
+  f.settle = async () => {
+    await Promise.all(f.pending.splice(0));
+  };
+  f.request = (
+    path,
+    { cookie = '', token, method = 'GET', payload, body, originHeader = origin } = {},
+  ) =>
+    worker.fetch(
+      new Request(origin + path, {
+        method,
+        headers: {
+          Origin: originHeader,
+          Cookie: cookie,
+          ...(token ? { 'X-Bill-Token': token } : {}),
+        },
+        body: body ?? (payload ? JSON.stringify(payload) : undefined),
+      }),
+      f.env,
+      ctx,
+    );
+  f.login = async () => {
+    const response = await f.request('/api/login', {
+      method: 'POST',
+      payload: { key: 'test-key' },
+    });
+    return response.headers.get('Set-Cookie').split(';')[0];
+  };
+  f.newBill = async () => {
+    const cookie = await f.login();
+    const { id } = await (
+      await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+    ).json();
+    const row = db.prepare('SELECT * FROM bills WHERE id=?').get(id);
+    return { id, cookie, row, payers: JSON.parse(row.payload).payers };
+  };
+  return f;
+}
+const slipAnswer = (payer, extra = {}) => ({
+  response: { ...good, amount: payer.amount, date_text: '02 ต.ค. 69', ...extra },
+});
+const args = (bill, payer, slipKey) => ({
+  bill: bill.row,
+  payer,
+  slipKey,
+  bytes: jpeg,
+  contentType: 'image/jpeg',
+  now: checkedAt,
+});
+
+test('checkSlip stores a done row without touching the bill', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  const [nut] = bill.payers;
+  f.ai.answer = () => slipAnswer(nut);
+  await checkSlip(f.env, args(bill, nut, 'k1'));
+  const row = f.db.prepare('SELECT * FROM slip_checks WHERE slip_key=?').get('k1');
+  assert.equal(row.state, 'done');
+  assert.deepEqual(JSON.parse(row.labels), [{ code: 'ok' }]);
+  assert.equal(row.read_amount, nut.amount * 100);
+  assert.equal(row.read_date, '2026-10-02');
+  const after = f.db.prepare('SELECT revision, payload FROM bills WHERE id=?').get(bill.id);
+  assert.equal(after.revision, bill.row.revision);
+  assert.equal(after.payload, bill.row.payload);
+});
+
+test('checkSlip records an error row and never throws when the AI fails', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  f.ai.answer = () => Promise.reject(new Error('quota'));
+  await checkSlip(f.env, args(bill, bill.payers[0], 'k1'));
+  assert.equal(f.db.prepare('SELECT state FROM slip_checks').get().state, 'error');
+});
+
+test('duplicate refs flag other payers but never the same payer re-sending', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  const [nut, bua] = bill.payers;
+  const reasons = key =>
+    JSON.parse(f.db.prepare('SELECT labels FROM slip_checks WHERE slip_key=?').get(key).labels);
+  f.ai.answer = () => slipAnswer(nut, { ref: 'KSA00000001078339102' });
+  await checkSlip(f.env, args(bill, nut, 'k1'));
+  f.ai.answer = () => slipAnswer(nut, { ref: 'KSA00000001078339102' });
+  await checkSlip(f.env, args(bill, nut, 'k2'));
+  assert.deepEqual(reasons('k2'), [{ code: 'ok' }]);
+  f.ai.answer = () => slipAnswer(bua, { ref: 'KSA0000000I078339102' });
+  await checkSlip(f.env, args(bill, bua, 'k3'));
+  assert.deepEqual(reasons('k3'), [
+    { code: 'duplicate_ref', billDate: '2026-10-01', payerName: 'Nut' },
+  ]);
+  f.ai.answer = () => slipAnswer(nut, { ref: '987654' });
+  await checkSlip(f.env, args(bill, nut, 'k4'));
+  f.ai.answer = () => slipAnswer(bua, { ref: '987654' });
+  await checkSlip(f.env, args(bill, bua, 'k5'));
+  assert.deepEqual(reasons('k5'), [{ code: 'ok' }]);
+});
+
+test('slipChecksFor returns known keys only', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  const [nut] = bill.payers;
+  f.ai.answer = () => slipAnswer(nut);
+  await checkSlip(f.env, args(bill, nut, 'k1'));
+  const found = await slipChecksFor(f.env.DB, ['k1', 'missing']);
+  assert.deepEqual([...found.keys()], ['k1']);
+  assert.deepEqual(found.get('k1'), {
+    state: 'done',
+    reasons: [{ code: 'ok' }],
+    readAmount: nut.amount * 100,
+    readDate: '2026-10-02',
+    checkedAt: checkedAt.getTime(),
+  });
+});
+
+test('pruneSlipChecks drops rows older than 180 days only', async t => {
+  const f = fixture(t);
+  const bill = await f.newBill();
+  const [nut] = bill.payers;
+  f.ai.answer = () => slipAnswer(nut);
+  await checkSlip(f.env, args(bill, nut, 'seed'));
+  const now = Date.UTC(2027, 5, 1),
+    day = 86400000;
+  const add = f.db.prepare(
+    "INSERT INTO slip_checks (slip_key,club,bill_id,payer_id,state,checked_at) VALUES (?, 'sena', 'b', 'p', 'done', ?)",
+  );
+  add.run('old', now - 181 * day);
+  add.run('recent', now - 179 * day);
+  await pruneSlipChecks(f.env, now);
+  const keys = f.db.prepare('SELECT slip_key FROM slip_checks ORDER BY slip_key').all();
+  assert.deepEqual(
+    keys.map(r => r.slip_key),
+    ['recent'],
+  );
 });

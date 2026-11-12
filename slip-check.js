@@ -1,3 +1,5 @@
+import { logError } from './log.js';
+
 // AI-assisted slip checking. Everything here is advisory: it never changes a
 // payment status, and billing.js treats it as removable (see the design spec).
 
@@ -179,4 +181,120 @@ export async function readSlip(env, bytes, contentType) {
     temperature: 0,
   });
   return validateReading(replyOf(output));
+}
+
+// ---- storage: derived data in its own table, never in the bill payload ----
+const KEEP_DAYS = 180;
+async function ensureTable(db) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS slip_checks (
+  slip_key TEXT PRIMARY KEY, club TEXT NOT NULL, bill_id TEXT NOT NULL, payer_id TEXT NOT NULL,
+  state TEXT NOT NULL, labels TEXT, read_amount INTEGER, read_date TEXT, read_ref TEXT,
+  ref_norm TEXT, model TEXT, checked_at INTEGER)`,
+    )
+    .run();
+  await db
+    .prepare('CREATE INDEX IF NOT EXISTS slip_checks_ref_norm ON slip_checks (ref_norm)')
+    .run();
+}
+
+async function findDuplicate(db, { norm, billId, payerId, slipKey }) {
+  const hit = await db
+    .prepare(
+      'SELECT bill_id, payer_id FROM slip_checks WHERE ref_norm=? AND slip_key<>? AND NOT (bill_id=? AND payer_id=?) LIMIT 1',
+    )
+    .bind(norm, slipKey, billId, payerId)
+    .first();
+  if (!hit) return null;
+  const bill = await db
+    .prepare('SELECT session_date, payload FROM bills WHERE id=?')
+    .bind(hit.bill_id)
+    .first();
+  const name = bill && JSON.parse(bill.payload).payers?.find(p => p.id === hit.payer_id)?.name;
+  return { billDate: bill ? bill.session_date.slice(0, 10) : '', payerName: name || 'ผู้เล่นอื่น' };
+}
+
+// Never throws: a failed check must not affect the upload that triggered it.
+export async function checkSlip(
+  env,
+  { bill, payer, slipKey, bytes, contentType, now = new Date() },
+) {
+  const db = env.DB;
+  const save = (state, f = {}) =>
+    db
+      .prepare(
+        'INSERT OR REPLACE INTO slip_checks (slip_key,club,bill_id,payer_id,state,labels,read_amount,read_date,read_ref,ref_norm,model,checked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      )
+      .bind(
+        slipKey,
+        bill.club,
+        bill.id,
+        payer.id,
+        state,
+        f.labels ? JSON.stringify(f.labels) : null,
+        f.amount ?? null,
+        f.date ?? null,
+        f.ref ?? null,
+        f.norm ?? null,
+        f.model ?? null,
+        now.getTime(),
+      )
+      .run();
+  try {
+    await ensureTable(db);
+    await save('pending');
+    const reading = await readSlip(env, bytes, contentType);
+    const norm = normalizeRef(reading.ref);
+    const duplicate = isUsableRef(norm)
+      ? await findDuplicate(db, { norm, billId: bill.id, payerId: payer.id, slipKey })
+      : null;
+    const reasons = judgeSlip(reading, {
+      amountSatang: payer.amount * 100,
+      billDate: bill.session_date.slice(0, 10),
+      duplicate,
+      now,
+    });
+    await save('done', {
+      labels: reasons,
+      amount: reading.amountSatang,
+      date: parseSlipDate(reading.dateText, now),
+      ref: reading.ref,
+      norm,
+      model: env.SLIP_AI_MODEL || DEFAULT_MODEL,
+    });
+  } catch (error) {
+    logError('slip-check', error);
+    await save('error').catch(inner => logError('slip-check:save-error', inner));
+  }
+}
+
+export async function slipChecksFor(db, slipKeys) {
+  const found = new Map();
+  if (!slipKeys.length) return found;
+  await ensureTable(db);
+  for (let i = 0; i < slipKeys.length; i += 50) {
+    const keys = slipKeys.slice(i, i + 50);
+    const rows = await db
+      .prepare(`SELECT * FROM slip_checks WHERE slip_key IN (${keys.map(() => '?').join(',')})`)
+      .bind(...keys)
+      .all();
+    for (const r of rows.results)
+      found.set(r.slip_key, {
+        state: r.state,
+        reasons: r.labels ? JSON.parse(r.labels) : [],
+        readAmount: r.read_amount,
+        readDate: r.read_date,
+        checkedAt: r.checked_at,
+      });
+  }
+  return found;
+}
+
+export async function pruneSlipChecks(env, now = Date.now()) {
+  if (!env.DB) return;
+  await ensureTable(env.DB);
+  await env.DB.prepare('DELETE FROM slip_checks WHERE checked_at<?')
+    .bind(now - KEEP_DAYS * 86400000)
+    .run();
 }
