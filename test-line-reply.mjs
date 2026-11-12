@@ -494,7 +494,7 @@ test('enabled member mode sends both booking buttons through the configured LIFF
   f.env.LINE_MEMBER_AUTH_ENABLED = 'true';
   f.env.LINE_LIFF_ID = '12345-test';
   await f.hook([f.event()]);
-  const buttons = f.calls[0].messages[0].contents.footer.contents;
+  const buttons = menuButtons(f.calls[0].messages[0]);
   for (const [i, club] of [
     [0, 'sena'],
     [1, '88'],
@@ -513,32 +513,37 @@ test('enabled member mode sends both booking buttons through the configured LIFF
   assert.doesNotMatch(textOf(f.calls.at(-1)), /liff\.line\.me/);
 });
 
-test('signed badbot command replies with five buttons and distinct existing booking URLs', async t => {
+const menuButtons = m =>
+  m.contents.footer.contents.flatMap(c => (c.type === 'box' ? c.contents : [c]));
+
+test('signed badbot command replies with the compact menu and distinct existing booking URLs', async t => {
   const f = fixture(t),
     before = f.db.prepare('SELECT payload FROM club_state').get().payload;
   assert.equal((await f.hook([f.event('ＢＡＤＢＯＴ')])).status, 200);
   assert.equal(f.calls.length, 1);
   const [menu] = f.calls[0].messages;
   assert.equal(menu.type, 'flex');
-  const buttons = menu.contents.footer.contents;
-  assert.equal(buttons.length, 5);
-  assert.deepEqual(
-    buttons.slice(2).map(button => button.action.displayText),
-    ['👥 ขอรายชื่อผู้ตีทุกสนาม', '👥 ขอรายชื่อผู้ตี Sena', '👥 ขอรายชื่อผู้ตี 88'],
-  );
+  const buttons = menuButtons(menu);
+  assert.equal(buttons.length, 7);
   assert.deepEqual(buttons[0].action, {
     type: 'uri',
-    label: '🏸 จอง / ถอน Sena',
+    label: '🏸 จอง Sena',
     uri: 'https://sena-web.thegsbnut.workers.dev/court#booking',
   });
   assert.deepEqual(buttons[1].action, {
     type: 'uri',
-    label: '🏸 จอง / ถอน 88',
+    label: '🏸 จอง 88',
     uri: 'https://sena-web.thegsbnut.workers.dev/court?club=88#booking',
   });
   assert.deepEqual(
     buttons.slice(2).map(b => b.action.data),
-    ['badbot:roster:all', 'badbot:roster:sena', 'badbot:roster:88'],
+    [
+      'badbot:roster:all',
+      'badbot:run:bill',
+      'badbot:run:matchup sena',
+      'badbot:run:leaderboard',
+      'badbot:run:help',
+    ],
   );
   assert.equal(f.db.prepare('SELECT payload FROM club_state').get().payload, before);
   assert.equal(
@@ -584,41 +589,42 @@ test('roster buttons return scoped text only and old menu actions still work', a
   f.seed('sena', [session(date)]);
   f.seed('88', [session(date, { names: 1 })], true, ['Pete', 'Noon']);
   await f.hook([f.event()]);
-  const actions = f.calls[0].messages[0].contents.footer.contents.map(button => button.action);
-  for (const [index, scope] of [
-    [2, 'all'],
-    [3, 'sena'],
-    [4, '88'],
-  ]) {
-    const beforeOther = f.db
-      .prepare('SELECT payload FROM booking_clubs WHERE club=?')
-      .get(scope === 'sena' ? '88' : 'sena').payload;
-    await f.hook([f.event('', { type: 'postback', postback: { data: actions[index].data } })]);
-    const call = f.calls.at(-1),
-      text = textOf(call);
-    assert.deepEqual(
-      call.messages.map(message => message.type),
-      ['text'],
-    );
+  assert.equal(menuButtons(f.calls[0].messages[0])[2].action.data, 'badbot:roster:all');
+  const post = data => f.hook([f.event('', { type: 'postback', postback: { data } })]);
+  await post('badbot:roster:all');
+  const all = f.calls.at(-1);
+  assert.deepEqual(
+    all.messages.map(message => message.type),
+    ['text'],
+  );
+  assert.match(textOf(all), /📍 เสนา[\s\S]*📍 88/);
+  // The all-courts reply carries free Quick Reply chips for each club.
+  const chips = all.messages.at(-1).quickReply.items.map(i => i.action.data);
+  assert.deepEqual(chips, ['badbot:roster:sena', 'badbot:roster:88']);
+  for (const scope of ['sena', '88']) {
+    const other = scope === 'sena' ? '88' : 'sena',
+      beforeOther = f.db
+        .prepare('SELECT payload FROM booking_clubs WHERE club=?')
+        .get(other).payload;
+    await post('badbot:roster:' + scope);
+    const text = textOf(f.calls.at(-1));
+    assert.equal(f.calls.at(-1).messages[0].quickReply, undefined);
     assert.match(text, scope === '88' ? /1\. Pete/ : /1\. Nut/);
-    if (scope === 'all') assert.match(text, /📍 เสนา[\s\S]*📍 88/);
-    else {
-      assert.doesNotMatch(text, scope === 'sena' ? /📍 88|Pete/ : /📍 เสนา|Nut/);
-      assert.equal(
-        f.db
-          .prepare('SELECT payload FROM booking_clubs WHERE club=?')
-          .get(scope === 'sena' ? '88' : 'sena').payload,
-        beforeOther,
-      );
-    }
+    assert.doesNotMatch(text, scope === 'sena' ? /📍 88|Pete/ : /📍 เสนา|Nut/);
+    assert.equal(
+      f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(other).payload,
+      beforeOther,
+    );
   }
-  const refresh = actions[4];
-  await f.hook([f.event('', { type: 'postback', postback: { data: refresh.data } })]);
-  assert.match(textOf(f.calls.at(-1)), /1\. Pete/);
-  assert.doesNotMatch(textOf(f.calls.at(-1)), /📍 เสนา|Nut/);
+  // Menu buttons run existing shortcuts; unknown run keys are ignored.
+  const callsBefore = f.calls.length;
+  await post('badbot:run:help');
+  assert.match(textOf(f.calls.at(-1)), /badbot bill/);
+  await post('badbot:run:nope');
+  assert.equal(f.calls.length, callsBefore + 1);
   await f.hook([f.event('', { type: 'postback', postback: { data: 'badbot:menu' } })]);
   assert.equal(f.calls.at(-1).messages.length, 1);
-  assert.equal(f.calls.at(-1).messages[0].contents.footer.contents.length, 5);
+  assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 7);
 });
 
 test('typed roster shortcuts select Sena, เสนา, 88 or all courts', async t => {
@@ -737,10 +743,7 @@ test('booking URL override must be HTTPS and contains no account-link flow', asy
   const f = fixture(t);
   f.env.LINE_BOOKING_URL = 'https://booking.example/court#booking';
   await f.hook([f.event('badbot จอง')]);
-  assert.equal(
-    f.calls[0].messages[0].contents.footer.contents[0].action.uri,
-    f.env.LINE_BOOKING_URL,
-  );
+  assert.equal(menuButtons(f.calls[0].messages[0])[0].action.uri, f.env.LINE_BOOKING_URL);
   f.env.LINE_BOOKING_URL = 'javascript:alert(1)';
   assert.equal((await f.hook([f.event()])).status, 503);
   assert.equal(f.calls.length, 1);
@@ -750,7 +753,7 @@ test('court links preserve custom query and fragment while overriding a stale cl
   const f = fixture(t);
   f.env.LINE_BOOKING_URL = 'https://booking.example/court?club=88&from=line#booking';
   await f.hook([f.event()]);
-  const actions = f.calls[0].messages[0].contents.footer.contents.map(b => b.action);
+  const actions = menuButtons(f.calls[0].messages[0]).map(b => b.action);
   const sena = new URL(actions[0].uri),
     other = new URL(actions[1].uri);
   assert.equal(sena.searchParams.has('club'), false);
