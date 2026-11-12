@@ -54,4 +54,4 @@ npm run format:check
 - merge เข้า `main` เมื่อเจ้าของโปรเจกต์สั่งเท่านั้น
 
 ## เอกสารเพิ่มเติม
-`README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md`
+`README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md` (สรุปสั้น; ฉบับเต็มใน `docs/archive/` ไม่ต้องอ่านถ้าไม่ได้แก้เรื่องแท็ก)
