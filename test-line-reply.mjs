@@ -513,8 +513,12 @@ test('enabled member mode sends both booking buttons through the configured LIFF
   assert.doesNotMatch(textOf(f.calls.at(-1)), /liff\.line\.me/);
 });
 
-const menuButtons = m =>
-  m.contents.footer.contents.flatMap(c => (c.type === 'box' ? c.contents : [c]));
+const menuButtons = m => {
+  const out = [],
+    walk = n => (n.type === 'button' ? out.push(n) : (n.contents || []).forEach(walk));
+  walk(m.contents.body);
+  return out;
+};
 
 test('signed badbot command replies with the compact menu and distinct existing booking URLs', async t => {
   const f = fixture(t),
@@ -524,7 +528,7 @@ test('signed badbot command replies with the compact menu and distinct existing 
   const [menu] = f.calls[0].messages;
   assert.equal(menu.type, 'flex');
   const buttons = menuButtons(menu);
-  assert.equal(buttons.length, 7);
+  assert.equal(buttons.length, 8);
   assert.deepEqual(buttons[0].action, {
     type: 'uri',
     label: '🏸 จอง Sena',
@@ -538,7 +542,8 @@ test('signed badbot command replies with the compact menu and distinct existing 
   assert.deepEqual(
     buttons.slice(2).map(b => b.action.data),
     [
-      'badbot:roster:all',
+      'badbot:roster:sena',
+      'badbot:roster:88',
       'badbot:run:bill',
       'badbot:run:matchup sena',
       'badbot:run:leaderboard',
@@ -589,7 +594,7 @@ test('roster buttons return scoped text only and old menu actions still work', a
   f.seed('sena', [session(date)]);
   f.seed('88', [session(date, { names: 1 })], true, ['Pete', 'Noon']);
   await f.hook([f.event()]);
-  assert.equal(menuButtons(f.calls[0].messages[0])[2].action.data, 'badbot:roster:all');
+  assert.equal(menuButtons(f.calls[0].messages[0])[2].action.data, 'badbot:roster:sena');
   const post = data => f.hook([f.event('', { type: 'postback', postback: { data } })]);
   await post('badbot:roster:all');
   const all = f.calls.at(-1);
@@ -624,7 +629,7 @@ test('roster buttons return scoped text only and old menu actions still work', a
   assert.equal(f.calls.length, callsBefore + 1);
   await f.hook([f.event('', { type: 'postback', postback: { data: 'badbot:menu' } })]);
   assert.equal(f.calls.at(-1).messages.length, 1);
-  assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 7);
+  assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 8);
 });
 
 test('typed roster shortcuts select Sena, เสนา, 88 or all courts', async t => {

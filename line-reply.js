@@ -106,39 +106,67 @@ function menu(urls) {
     height: 'sm',
     action: { type: 'postback', label, data, displayText },
   });
+  const roster = club =>
+    postback(
+      '👥 ' + clubOf(club).label,
+      'badbot:roster:' + club,
+      '👥 ขอรายชื่อผู้ตี ' + clubOf(club).label,
+    );
   const row = (...contents) => ({ type: 'box', layout: 'horizontal', spacing: 'sm', contents });
-  const buttons = [
-    row(...clubs.map(link)),
-    row(
-      postback('👥 รายชื่อผู้ตี', 'badbot:roster:all', '👥 ขอรายชื่อผู้ตี'),
-      postback('💰 บิลค้างจ่าย', 'badbot:run:bill', '💰 ขอบิลค้างจ่าย'),
-    ),
-    row(
-      postback('🆚 ตารางจัดคู่', 'badbot:run:matchup sena', '🆚 ขอตารางจัดคู่'),
-      postback('🏆 อันดับ', 'badbot:run:leaderboard', '🏆 ขออันดับ'),
-    ),
-    postback('❓ คำสั่งทั้งหมด', 'badbot:run:help', '❓ ขอคำสั่งทั้งหมด'),
-  ];
+  const section = (title, ...rows) => ({
+    type: 'box',
+    layout: 'vertical',
+    spacing: 'sm',
+    contents: [
+      { type: 'text', text: title, size: 'xs', weight: 'bold', color: '#168B42' },
+      ...rows,
+    ],
+  });
   return {
     type: 'flex',
     altText: 'Badbot น้องขุนเงิน · จอง / ถอนชื่อ รายชื่อ บิล และตารางจัดคู่',
     contents: {
       type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'xs',
+        backgroundColor: '#168B42',
+        paddingAll: 'lg',
+        contents: [
+          {
+            type: 'text',
+            text: '🏸 Badbot น้องขุนเงิน',
+            weight: 'bold',
+            size: 'lg',
+            color: '#FFFFFF',
+            wrap: true,
+          },
+          { type: 'text', text: 'ก๊วน Sena และ 88', size: 'xs', color: '#D6F0DE' },
+        ],
+      },
       body: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'md',
+        spacing: 'lg',
+        paddingAll: 'lg',
         contents: [
-          { type: 'text', text: '🏸 Badbot น้องขุนเงิน', weight: 'bold', size: 'lg', wrap: true },
-          {
-            type: 'text',
-            text: 'จอง / ถอน · รายชื่อ · บิล · ตารางจัดคู่ · อันดับ',
-            size: 'sm',
-            wrap: true,
-          },
+          section('จองคิว', row(...clubs.map(link))),
+          section('รายชื่อผู้ตี', row(...clubs.map(roster))),
+          section(
+            'บิล และตาราง',
+            row(
+              postback('💰 บิลค้างจ่าย', 'badbot:run:bill', '💰 ขอบิลค้างจ่าย'),
+              postback('🆚 ตารางจัดคู่', 'badbot:run:matchup sena', '🆚 ขอตารางจัดคู่'),
+            ),
+            row(
+              postback('🏆 อันดับ', 'badbot:run:leaderboard', '🏆 ขออันดับ'),
+              postback('❓ คำสั่งทั้งหมด', 'badbot:run:help', '❓ ขอคำสั่งทั้งหมด'),
+            ),
+          ),
         ],
       },
-      footer: { type: 'box', layout: 'vertical', spacing: 'sm', contents: buttons },
     },
   };
 }
