@@ -76,3 +76,51 @@ export const normalizeRef = ref =>
     .replace(/o/g, '0');
 
 export const isUsableRef = norm => norm.length >= 10 && new Set(norm).size > 1;
+
+const MAX_AMOUNT_SATANG = 1_000_000 * 100;
+const text = (value, max) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= max ? trimmed : null;
+};
+
+// The model's JSON is untrusted input: anything that does not look right
+// becomes null, which the verdict treats as "unreadable", never as a guess.
+export function validateReading(raw) {
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const parsed =
+    typeof obj.amount === 'number'
+      ? obj.amount
+      : typeof obj.amount === 'string' && /^[\d,]+(\.\d+)?$/.test(obj.amount.trim())
+        ? Number(obj.amount.replaceAll(',', ''))
+        : NaN;
+  const satang = Math.round(parsed * 100);
+  return {
+    isSlip: obj.is_transfer_slip === true,
+    amountSatang: satang > 0 && satang <= MAX_AMOUNT_SATANG ? satang : null,
+    dateText: text(obj.date_text, 60),
+    ref: text(obj.ref, 64),
+  };
+}
+
+export function judgeSlip(reading, { amountSatang, billDate, duplicate, now = new Date() }) {
+  if (!reading.isSlip) return [{ code: 'unreadable', why: 'not_slip' }];
+  if (reading.amountSatang == null) return [{ code: 'unreadable', why: 'amount' }];
+  const reasons = [];
+  if (reading.amountSatang !== amountSatang)
+    reasons.push({
+      code: 'amount_mismatch',
+      slipSatang: reading.amountSatang,
+      billSatang: amountSatang,
+    });
+  const slipDate = parseSlipDate(reading.dateText, now);
+  if (!slipDate) reasons.push({ code: 'date_unreadable' });
+  else if (slipDate < billDate) reasons.push({ code: 'old_date', slipDate, billDate });
+  if (duplicate)
+    reasons.push({
+      code: 'duplicate_ref',
+      billDate: duplicate.billDate,
+      payerName: duplicate.payerName,
+    });
+  return reasons.length ? reasons : [{ code: 'ok' }];
+}
