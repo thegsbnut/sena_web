@@ -645,3 +645,20 @@ test('rejectNote is empty without a warning and never exceeds 240 characters', (
   });
   assert.ok(all.length > 0 && all.length <= 240, String(all.length));
 });
+
+test('an old_date check stored before the upload-date rule still reads sensibly', () => {
+  const { describe } = globalThis.SlipCheckText;
+  const legacy = { code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' };
+  assert.equal(
+    describe(legacy, {}).text,
+    'วันที่ไม่ตรง — สลิปลงวันที่ 3 พ.ย. 69 เก่าเกินไป (กด "ตรวจอีกครั้ง" เพื่อตรวจด้วยกฎใหม่)',
+  );
+});
+
+test('a legacy old_date check offers a re-check; a current one does not', () => {
+  const { stale } = globalThis.SlipCheckText;
+  const legacy = { code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' };
+  const current = { code: 'old_date', slipDate: '2026-11-03', uploadDate: '2026-11-12', days: 3 };
+  assert.equal(stale({ state: 'done', reasons: [legacy], checkedAt: 0 }, 1000), true);
+  assert.equal(stale({ state: 'done', reasons: [current], checkedAt: 0 }, 1000), false);
+});

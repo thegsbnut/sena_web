@@ -51,7 +51,10 @@
         return {
           icon: '⚠️',
           level: 'warn',
-          text: `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} ซึ่งเก่ากว่าวันที่ส่งสลิป ${fmtDate(reason.uploadDate)} เกิน ${reason.days} วัน`,
+          text: reason.uploadDate
+            ? `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} ซึ่งเก่ากว่าวันที่ส่งสลิป ${fmtDate(reason.uploadDate)} เกิน ${reason.days} วัน`
+            : // stored before the upload-date rule: no upload date to show
+              `วันที่ไม่ตรง — สลิปลงวันที่ ${fmtDate(reason.slipDate)} เก่าเกินไป (กด "ตรวจอีกครั้ง" เพื่อตรวจด้วยกฎใหม่)`,
         };
       case 'duplicate_ref':
         return {
@@ -86,10 +89,12 @@
         p.aiCheck.reasons.some(r => WARNINGS.includes(r.code)),
     ).length;
 
-  // The organizer may re-run a check that failed or has hung for 2+ minutes.
+  // The organizer may re-run a check that failed, has hung for 2+ minutes, or was
+  // stored under the earlier date rule (an old_date with no upload date).
   const stale = (check, now = Date.now()) =>
     check.state === 'error' ||
-    (check.state === 'pending' && now - check.checkedAt > STALE_PENDING_MS);
+    (check.state === 'pending' && now - check.checkedAt > STALE_PENDING_MS) ||
+    check.reasons?.some(r => r.code === 'old_date' && !r.uploadDate) === true;
 
   // Reason for "ให้ส่งใหม่", prefilled for the organizer. The player reads it, so it
   // never names another player or bill. Capped at the server's 240-character limit.
