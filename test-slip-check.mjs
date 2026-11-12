@@ -15,6 +15,7 @@ import {
   pruneSlipChecks,
 } from './slip-check.js';
 import worker from './worker.js';
+import './public/slip-check-text.js';
 
 const now = new Date('2026-11-12T05:00:00Z');
 
@@ -259,7 +260,8 @@ function fixture(t, { enabled = true } = {}) {
   return f;
 }
 const slipAnswer = (payer, extra = {}) => ({
-  response: { ...good, amount: payer.amount, date_text: '02 ต.ค. 69', ...extra },
+  // payer.amount is stored in satang; slips show baht
+  response: { ...good, amount: payer.amount / 100, date_text: '02 ต.ค. 69', ...extra },
 });
 const args = (bill, payer, slipKey) => ({
   bill: bill.row,
@@ -279,7 +281,7 @@ test('checkSlip stores a done row without touching the bill', async t => {
   const row = f.db.prepare('SELECT * FROM slip_checks WHERE slip_key=?').get('k1');
   assert.equal(row.state, 'done');
   assert.deepEqual(JSON.parse(row.labels), [{ code: 'ok' }]);
-  assert.equal(row.read_amount, nut.amount * 100);
+  assert.equal(row.read_amount, nut.amount);
   assert.equal(row.read_date, '2026-10-02');
   const after = f.db.prepare('SELECT revision, payload FROM bills WHERE id=?').get(bill.id);
   assert.equal(after.revision, bill.row.revision);
@@ -328,7 +330,7 @@ test('slipChecksFor returns known keys only', async t => {
   assert.deepEqual(found.get('k1'), {
     state: 'done',
     reasons: [{ code: 'ok' }],
-    readAmount: nut.amount * 100,
+    readAmount: nut.amount,
     readDate: '2026-10-02',
     checkedAt: checkedAt.getTime(),
   });
@@ -461,4 +463,64 @@ test('after slips are pruned there is no aiCheck and no re-check', async t => {
     payload: { payer: b.nut.id },
   });
   assert.equal(response.status, 404);
+});
+
+// ---- organizer label text (public/slip-check-text.js, shared with the browser) ----
+test('label text matches the wording agreed in the spec', () => {
+  const { describe, fmtDate, fmtBaht } = globalThis.SlipCheckText;
+  const check = { state: 'done', readAmount: 20000, readDate: '2026-11-12' };
+  const text = (reason, c = check) => describe(reason, c).text;
+  assert.equal(fmtDate('2026-11-12'), '12 พ.ย. 69');
+  assert.equal(fmtBaht(20000), '200');
+  assert.equal(fmtBaht(12050), '120.50');
+  assert.equal(fmtBaht(40000000), '400,000');
+  assert.equal(text({ code: 'ok' }), 'ตรวจผ่าน — ยอด 200 บาท · 12 พ.ย. 69');
+  assert.equal(
+    text({ code: 'amount_mismatch', slipSatang: 12000, billSatang: 20000 }),
+    'ยอดเงินไม่ตรง — สลิป 120 บาท แต่บิล 200 บาท',
+  );
+  assert.equal(
+    text({ code: 'old_date', slipDate: '2026-11-03', billDate: '2026-11-12' }),
+    'วันที่ไม่ตรง — สลิปลงวันที่ 3 พ.ย. 69 ซึ่งก่อนวันตีแบด 12 พ.ย. 69',
+  );
+  assert.equal(
+    text({ code: 'duplicate_ref', billDate: '2026-11-05', payerName: 'สมหญิง' }),
+    'สลิปซ้ำ — ใช้แล้วในบิล 5 พ.ย. 69 ของ สมหญิง',
+  );
+  assert.equal(text({ code: 'unreadable', why: 'amount' }), 'สลิปไม่ชัดเจน — อ่านยอดเงินไม่ได้');
+  assert.equal(
+    text({ code: 'unreadable', why: 'not_slip' }),
+    'สลิปไม่ชัดเจน — รูปนี้ไม่ใช่สลิปโอนเงิน',
+  );
+  assert.equal(text({ code: 'date_unreadable' }), 'อ่านวันที่ไม่ได้ (ไม่ได้ตัดสินเรื่องวันที่)');
+});
+
+test('label levels separate warnings from information', () => {
+  const { describe } = globalThis.SlipCheckText;
+  const level = code => describe({ code }, { readAmount: 1, readDate: null }).level;
+  for (const code of ['amount_mismatch', 'old_date', 'duplicate_ref', 'unreadable'])
+    assert.equal(level(code), 'warn', code);
+  assert.equal(level('ok'), 'ok');
+  assert.equal(level('date_unreadable'), 'info');
+});
+
+test('flaggedCount counts only finished checks with a warning', () => {
+  const { flaggedCount, stale } = globalThis.SlipCheckText;
+  const done = reasons => ({ aiCheck: { state: 'done', reasons } });
+  assert.equal(
+    flaggedCount([
+      done([{ code: 'ok' }]),
+      done([{ code: 'date_unreadable' }]),
+      done([{ code: 'amount_mismatch' }]),
+      done([{ code: 'ok' }, { code: 'duplicate_ref' }]),
+      { aiCheck: { state: 'error', reasons: [] } },
+      { aiCheck: { state: 'pending', reasons: [] } },
+      {},
+    ]),
+    2,
+  );
+  assert.equal(stale({ state: 'error', checkedAt: 0 }, 1000), true);
+  assert.equal(stale({ state: 'pending', checkedAt: 0 }, 119000), false);
+  assert.equal(stale({ state: 'pending', checkedAt: 0 }, 121000), true);
+  assert.equal(stale({ state: 'done', checkedAt: 0 }, 999999), false);
 });

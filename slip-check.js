@@ -250,7 +250,7 @@ export async function checkSlip(
       ? await findDuplicate(db, { norm, billId: bill.id, payerId: payer.id, slipKey })
       : null;
     const reasons = judgeSlip(reading, {
-      amountSatang: payer.amount * 100,
+      amountSatang: payer.amount, // bills store satang
       billDate: bill.session_date.slice(0, 10),
       duplicate,
       now,
