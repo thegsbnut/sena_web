@@ -603,12 +603,14 @@
       return wrap(
         '<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>',
       );
-    const unpaid = mine.bills.filter(b => ['unpaid', 'rejected'].includes(b.status));
+    const unpaid = mine.bills
+      .filter(b => ['unpaid', 'rejected'].includes(b.status))
+      .sort((a, b) => a.date.localeCompare(b.date));
     const waiting = mine.bills.filter(b => b.status === 'review');
     const paid = mine.bills.filter(b => b.status === 'paid');
     const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
     const statusBanner = unpaid.length
-      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div></div>`
+      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div>${unpaid.length > 1 ? '<small>จ่ายทีละบิล เริ่มจากบิลเก่าสุดก่อน · สลิปหนึ่งใบต่อหนึ่งบิล</small>' : ''}</div>`
       : waiting.length
         ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
         : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>';
