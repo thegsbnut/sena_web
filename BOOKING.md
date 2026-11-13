@@ -44,4 +44,5 @@
 - สาย: ตาราง `player_jobs` (แยกจากเอกสารจอง ไม่แตะ revision); ยังไม่เลือก = สุ่มคงที่จาก player id (`public/job-rules.js`); สมาชิก LINE ที่ผูกชื่อแล้วกด badge ตัวเองเพื่อเปลี่ยน, ผู้จัดกด badge ใครก็ได้ (`POST /api/booking {action:'job', line, playerId?}` — `playerId` ใช้ได้เฉพาะผู้จัด)
 - ตัวเลขครั้งที่มา: ผู้จัดเห็นทุกคน `· 🏸22`, เจ้าตัวเห็น `· 🏸22/30` (เป้าถัดไป); คนอื่นได้ `plays` ที่ปัดลงเป็นจุดเริ่มของขั้น (`levelFloor`) จาก server จึงไม่เห็นตัวเลขจริง
 - แชมป์: นับ 🥇 จาก Cup history ทุกรายการ → มงกุฎ (เรืองแสงถ้าเป็นแชมป์ Cup ล่าสุด); ในการ์ดจองมงกุฎแทน 🥇 หน้าชื่อ ส่วน 💩 ยังอยู่
+- แท็บรายชื่อ (ผู้จัด): badge + job + 🏸 ต่อหน้าชื่อ กด badge เปิดแผ่นเลือกสายเดียวกัน — `app.js` อ่านข้อมูลจาก `window.SenaBookingJobs` (booking.js) ไม่ยิง request เพิ่ม; dialog `#jobPicker` และ SVG defs อยู่ใน `<body>` นอก `#booking` เพราะ section ที่ `hidden` ทำให้ dialog/gradient ไม่แสดง
 - ภาพ: `public/job-badges.js` (+ `.css`) ยกจาก mockup `docs/superpowers/mockups/2026-11-13-badge-mockup.html` · spec `docs/superpowers/specs/2026-11-13-job-badges-design.md`

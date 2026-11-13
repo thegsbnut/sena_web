@@ -93,8 +93,11 @@
     jobTarget = playerId;
     const own = target.badge,
       mine = playerId === data?.member?.playerId;
-    q('#jobPickerTitle').textContent = mine ? 'เลือกสายของคุณ' : 'เลือกสายให้ ' + target.name;
-    q('#jobPickerGrid').innerHTML = SenaJobRules.LINES.map(line => {
+    jobPicker.querySelector('#jobPickerTitle').textContent = mine
+      ? 'เลือกสายของคุณ'
+      : 'เลือกสายให้ ' + target.name;
+    jobPicker.querySelector('#jobPickerStatus').textContent = '';
+    jobPicker.querySelector('#jobPickerGrid').innerHTML = SenaJobRules.LINES.map(line => {
       const preview = {
         ...own,
         line,
@@ -103,9 +106,9 @@
         titles: 0,
       };
       const current = own.chosen && own.line === line;
-      return `<button type="button" data-job-line="${line}" aria-pressed="${current}">${SenaJobs.badgeHtml(preview, 48)}<b>${html(SenaJobs.JOBS[line].th)}</b><small>${html(SenaJobs.jobName(preview))}</small></button>`;
+      return `<button type="button" data-job-line="${line}" aria-pressed="${current}" style="--jb-line:${SenaJobs.JOBS[line].color}">${current ? '<i class="job-picker-check" aria-hidden="true">✓</i>' : ''}${SenaJobs.badgeHtml(preview, 48)}<b>${html(SenaJobs.JOBS[line].th)}</b><small>${html(current ? 'สายปัจจุบัน' : SenaJobs.jobName(preview))}</small></button>`;
     }).join('');
-    q('#jobPicker').showModal();
+    jobPicker.showModal();
   }
   const formatLevel = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 });
   function levelBadge(id) {
@@ -159,6 +162,7 @@
     try {
       data = await request();
       render();
+      publishJobs();
       if (!silent) status('ข้อมูลล่าสุดจากออนไลน์ • เวลาไทย (UTC+7)');
     } catch (e) {
       status(e.message, true);
@@ -172,6 +176,7 @@
     root.classList.add('booking-busy');
     const isMap = body.action === 'venueMap',
       isCup = body.action === 'cupCalendar',
+      isJob = body.action === 'job',
       mapInput = q('#bookingMapUrl');
     const detailDialog = q('#bookingDetailsDialog');
     const inDetails = detailDialog.open,
@@ -182,11 +187,13 @@
         ? q('#bookingMapStatus')
         : isCup
           ? q('#bookingCupStatus')
-          : inDetails && detailDialog.open
-            ? q('#bookingDetailsStatus')
-            : isReroll
-              ? q('#bookingRerollStatus')
-              : null;
+          : isJob
+            ? jobPicker.querySelector('#jobPickerStatus')
+            : inDetails && detailDialog.open
+              ? q('#bookingDetailsStatus')
+              : isReroll
+                ? q('#bookingRerollStatus')
+                : null;
       if (output) {
         output.textContent = message;
         output.classList.toggle('is-error', error);
@@ -201,6 +208,8 @@
       data = await request(body);
       if (body.action === 'settings') dirty = false;
       if (isCup) cupDirty = false;
+      if (isJob) jobPicker.close();
+      publishJobs();
       if (isMap && mapInput.value.trim() === body.url) mapInput.value = mapInput.defaultValue;
       if (body.action === 'book') {
         selected.clear();
@@ -349,7 +358,44 @@
  <form method="dialog"><button id="bookingDetailsClose" type="submit" aria-label="ปิด" autofocus><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
  </header>
  <p id="bookingDetailsStatus" role="status"></p><div id="bookingDetailsContent"></div></dialog>
- <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog><dialog id="jobPicker" class="booking-feedback job-picker" aria-labelledby="jobPickerTitle"><h2 id="jobPickerTitle">เลือกสายของคุณ</h2><p class="hint">ขั้น job นับจากจำนวนครั้งที่มาตี เปลี่ยนสายได้ตลอดโดยไม่ต้องเริ่มใหม่</p><div class="job-picker-grid" id="jobPickerGrid"></div><form method="dialog"><button class="secondary">ปิด</button></form></dialog>${SenaJobs.defsHtml()}`;
+ <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog>`;
+  // The picker and the shared SVG gradients live outside #booking: the roster tab
+  // (app.js) opens the picker while this section is hidden, and a hidden parent
+  // would stop both the dialog and the gradients from rendering.
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    `<dialog id="jobPicker" class="booking-feedback job-picker" aria-labelledby="jobPickerTitle"><h2 id="jobPickerTitle">เลือกสายของคุณ</h2><p class="hint">ขั้น job นับจากจำนวนครั้งที่มาตี เปลี่ยนสายได้ตลอดโดยไม่ต้องเริ่มใหม่</p><div class="job-picker-grid" id="jobPickerGrid"></div><p id="jobPickerStatus" class="booking-status" role="status" aria-live="polite"></p><form method="dialog"><button class="secondary">ปิด</button></form></dialog>${SenaJobs.defsHtml()}`,
+  );
+  const jobPicker = document.getElementById('jobPicker');
+  jobPicker.addEventListener('click', e => {
+    const button = e.target.closest('[data-job-line]');
+    if (!button || busy) return;
+    button.classList.add('is-saving');
+    mutate({
+      action: 'job',
+      line: button.dataset.jobLine,
+      ...(data?.canEdit ? { playerId: jobTarget } : {}),
+    }).finally(() => button.classList.remove('is-saving'));
+  });
+  // Lets the roster tab (app.js) draw the same badges without a second request.
+  let jobsSignature = '';
+  function publishJobs() {
+    const signature = JSON.stringify([
+      data?.canEdit,
+      data?.member?.playerId,
+      data?.roster?.map(p => [p.id, p.badge]),
+    ]);
+    if (signature === jobsSignature) return;
+    jobsSignature = signature;
+    document.dispatchEvent(new CustomEvent('sena-jobs'));
+  }
+  window.SenaBookingJobs = {
+    badge: id => data?.roster?.find(p => p.id === id)?.badge || null,
+    canPick: id => Boolean(data?.canEdit || (id && id === data?.member?.playerId)),
+    pick: id => {
+      if (!busy) openJobPicker(id);
+    },
+  };
   const detailsDialog = q('#bookingDetailsDialog');
   const supportsDetailsPopup = typeof detailsDialog.showModal === 'function';
   root.classList.toggle('booking-details-popup', supportsDetailsPopup);
@@ -809,14 +855,6 @@
     const button = e.target.closest('button');
     if (!button || busy) return;
     if (button.hasAttribute('data-job-pick')) openJobPicker(button.dataset.jobPick);
-    if (button.dataset.jobLine) {
-      q('#jobPicker').close();
-      mutate({
-        action: 'job',
-        line: button.dataset.jobLine,
-        ...(data?.canEdit ? { playerId: jobTarget } : {}),
-      });
-    }
     if (button.id === 'bookingCupReload') {
       cupDirty = false;
       q('#bookingCupStatus').textContent = '';
@@ -947,6 +985,10 @@
     if (button.id === 'bookingLineCheck') lineAction(button, null, q('#bookingLineSetupStatus'));
     if (button.id === 'bookingCopyRoster')
       copy(rosterText(), q('#bookingRosterCopyStatus'), 'รายชื่อสำหรับคัดลอกลง LINE');
+  });
+  // The roster tab shows the same badges: fetch once if the booking tab was skipped.
+  document.querySelector('[data-tab="roster"]')?.addEventListener('click', () => {
+    if (!data) load(true);
   });
   document.querySelector('[data-tab="booking"]').addEventListener('click', () => {
     if (!dirty && !cupDirty) load();
