@@ -4,6 +4,7 @@ import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
+import { recordAttendance } from './job-badges.js';
 const reply = (v, status = 200) =>
   Response.json(v, { status, headers: { 'Cache-Control': 'no-store' } });
 export class BookingError extends Error {
@@ -850,6 +851,9 @@ export async function bookingRoute(req, env, admin, club, member = null) {
     throw e;
   }
 }
-export async function scheduledBookings(env) {
-  for (const club of CLUB_IDS) await mutateBooking(env, club, null);
+export async function scheduledBookings(env, now = new Date()) {
+  for (const club of CLUB_IDS) {
+    const { doc, players } = await mutateBooking(env, club, null, now);
+    await recordAttendance(env.DB, club, doc, players, bangkokDate(now));
+  }
 }
