@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import './public/job-rules.js';
 import { recordAttendance } from './job-badges.js';
-import { scheduledBookings } from './booking.js';
+import { scheduledBookings, bookingRoute } from './booking.js';
 import worker from './worker.js';
 
 const R = globalThis.SenaJobRules;
@@ -208,4 +208,40 @@ test('booking roster carries plays, chosen or default line and Cup titles', asyn
     latestChamp: false,
   });
   assert.equal(data.roster[1].badge.titles, 1);
+});
+
+test('approved members change only their own line without touching the booking revision', async () => {
+  const f = bookingEnv();
+  await f.get();
+  const revision = () =>
+    f.db.prepare("SELECT revision FROM booking_clubs WHERE club='sena'").get().revision;
+  const route = (body, member) =>
+    bookingRoute(
+      new Request('https://example.com/api/booking', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+      f.env,
+      false,
+      'sena',
+      member,
+    );
+  const approved = id => ({ link: { status: 'approved', player_id: id } });
+  const before = revision();
+  const res = await route({ action: 'job', line: 'blue' }, approved('p0'));
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.roster[0].badge.line, 'blue');
+  assert.equal(body.result.message, 'เปลี่ยนสายแล้ว');
+  assert.equal(revision(), before);
+  assert.equal((await route({ action: 'job', line: 'purple' }, approved('p0'))).status, 400);
+  assert.equal(
+    (await route({ action: 'job', line: 'red' }, { link: { status: 'pending', player_id: 'p0' } }))
+      .status,
+    401,
+  );
+  assert.equal((await route({ action: 'job', line: 'red' }, null)).status, 401);
+  assert.deepEqual(f.rows('SELECT player_id, line FROM player_jobs'), [
+    { player_id: 'p0', line: 'blue' },
+  ]);
 });

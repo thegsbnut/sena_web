@@ -4,7 +4,7 @@ import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
-import { recordAttendance, badgeData } from './job-badges.js';
+import { recordAttendance, badgeData, setJobLine } from './job-badges.js';
 const reply = (v, status = 200) =>
   Response.json(v, { status, headers: { 'Cache-Control': 'no-store' } });
 export class BookingError extends Error {
@@ -499,7 +499,8 @@ export async function bookingRoute(req, env, admin, club, member = null) {
     if (!['GET', 'POST'].includes(req.method)) return reply({ error: 'Method not allowed' }, 405);
     const owner = await ownerHash(req),
       now = new Date();
-    let input = null;
+    let input = null,
+      jobResult = null;
     if (req.method === 'POST') {
       const text = await req.text();
       if (text.length > 30000) fail('ข้อมูลยาวเกินไป');
@@ -526,9 +527,18 @@ export async function bookingRoute(req, env, admin, club, member = null) {
           'cupCalendar',
           'reroll',
           'courtNumbers',
+          'job',
         ].includes(input.action)
       )
         fail('ไม่พบคำสั่ง');
+      // A job line lives outside the booking document: write it, then answer like a GET.
+      if (input.action === 'job') {
+        if (member?.link?.status !== 'approved') fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน', 401);
+        if (!globalThis.SenaJobRules.LINES.includes(input.line)) fail('สายไม่ถูกต้อง');
+        await setJobLine(env.DB, club, member.link.player_id, input.line);
+        jobResult = { message: 'เปลี่ยนสายแล้ว' };
+        input = null;
+      }
     }
     // Cup history is independent of the booking document: fetch both at once.
     const [cupHistory, outcome] = await Promise.all([
@@ -855,7 +865,11 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                 ((r.guest?.hostId || r.invitedBy || r.playerId) === member.link.player_id ||
                   r.playerId === member.link.player_id)));
     }
-    return reply({ ...view, venueMapUrl: venueMapFor(outcome.doc, club), result: outcome.result });
+    return reply({
+      ...view,
+      venueMapUrl: venueMapFor(outcome.doc, club),
+      result: jobResult ?? outcome.result,
+    });
   } catch (e) {
     if (e instanceof BookingError) return reply({ error: e.message, ...e.details }, e.status);
     throw e;

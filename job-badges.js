@@ -78,3 +78,13 @@ export async function badgeData(db, club, players, latestAwards = new Map()) {
     }),
   );
 }
+
+export async function setJobLine(db, club, playerId, line) {
+  await prepareJobTables(db);
+  await db
+    .prepare(
+      'INSERT INTO player_jobs (club, player_id, line, updated_at) VALUES (?,?,?,?) ON CONFLICT (club, player_id) DO UPDATE SET line=excluded.line, updated_at=excluded.updated_at',
+    )
+    .bind(club, playerId, line, new Date().toISOString())
+    .run();
+}
