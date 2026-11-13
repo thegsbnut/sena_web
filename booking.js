@@ -4,6 +4,7 @@ import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
+import { recordAttendance, badgeData, setJobLine } from './job-badges.js';
 const reply = (v, status = 200) =>
   Response.json(v, { status, headers: { 'Cache-Control': 'no-store' } });
 export class BookingError extends Error {
@@ -339,6 +340,7 @@ export function publicBooking(
   now = new Date(),
   club = DEFAULT_CLUB,
   awards = new Map(),
+  badges = new Map(),
 ) {
   const cfg = doc.settings,
     cupWeek = cupWeekFor(doc, club);
@@ -379,6 +381,13 @@ export function publicBooking(
       thai,
       award:
         awards.get(cupPlayerKey(name, club)) || awards.get(cupPlayerKey(thai || '', club)) || '',
+      badge: badges.get(id) ?? {
+        plays: 0,
+        line: globalThis.SenaJobRules.defaultLine(id),
+        chosen: false,
+        titles: 0,
+        latestChamp: false,
+      },
       ...(admin ? { lv } : {}),
     })),
     serverNow: now.toISOString(),
@@ -490,7 +499,8 @@ export async function bookingRoute(req, env, admin, club, member = null) {
     if (!['GET', 'POST'].includes(req.method)) return reply({ error: 'Method not allowed' }, 405);
     const owner = await ownerHash(req),
       now = new Date();
-    let input = null;
+    let input = null,
+      jobResult = null;
     if (req.method === 'POST') {
       const text = await req.text();
       if (text.length > 30000) fail('ข้อมูลยาวเกินไป');
@@ -517,9 +527,24 @@ export async function bookingRoute(req, env, admin, club, member = null) {
           'cupCalendar',
           'reroll',
           'courtNumbers',
+          'job',
         ].includes(input.action)
       )
         fail('ไม่พบคำสั่ง');
+      // A job line lives outside the booking document: write it, then answer like a GET.
+      if (input.action === 'job') {
+        // Organizers may set anyone's line; members only their own.
+        const target = admin && input.playerId ? input.playerId : member?.link?.player_id;
+        if (!admin && member?.link?.status !== 'approved')
+          fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน', 401);
+        if (!target) fail('กรุณาเลือกผู้เล่น');
+        if (!globalThis.SenaJobRules.LINES.includes(input.line)) fail('สายไม่ถูกต้อง');
+        if (admin && !(await clubStateFor(env.DB, club)).players.some(p => p.id === target))
+          fail('ไม่พบผู้เล่นในก๊วน');
+        await setJobLine(env.DB, club, target, input.line);
+        jobResult = { message: 'เปลี่ยนสายแล้ว' };
+        input = null;
+      }
     }
     // Cup history is independent of the booking document: fetch both at once.
     const [cupHistory, outcome] = await Promise.all([
@@ -819,6 +844,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         award,
       ]),
     );
+    const badges = await badgeData(env.DB, club, outcome.players, awards);
     const view = publicBooking(
       outcome.doc,
       outcome.revision,
@@ -827,7 +853,15 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       now,
       club,
       awards,
+      badges,
     );
+    // Exact play counts go only to organizers and the badge owner; everyone else
+    // gets the lowest count with the same badge, which draws the same picture.
+    const ownId = member?.link?.status === 'approved' ? member.link.player_id : null;
+    if (!admin)
+      for (const p of view.roster)
+        if (p.id !== ownId)
+          p.badge = { ...p.badge, plays: globalThis.SenaJobRules.levelFloor(p.badge.plays) };
     if (memberMode(env)) {
       view.requireLogin = true;
       view.member = {
@@ -844,12 +878,19 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                 ((r.guest?.hostId || r.invitedBy || r.playerId) === member.link.player_id ||
                   r.playerId === member.link.player_id)));
     }
-    return reply({ ...view, venueMapUrl: venueMapFor(outcome.doc, club), result: outcome.result });
+    return reply({
+      ...view,
+      venueMapUrl: venueMapFor(outcome.doc, club),
+      result: jobResult ?? outcome.result,
+    });
   } catch (e) {
     if (e instanceof BookingError) return reply({ error: e.message, ...e.details }, e.status);
     throw e;
   }
 }
-export async function scheduledBookings(env) {
-  for (const club of CLUB_IDS) await mutateBooking(env, club, null);
+export async function scheduledBookings(env, now = new Date()) {
+  for (const club of CLUB_IDS) {
+    const { doc, players } = await mutateBooking(env, club, null, now);
+    await recordAttendance(env.DB, club, doc, players, bangkokDate(now));
+  }
 }

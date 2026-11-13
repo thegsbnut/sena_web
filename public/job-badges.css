@@ -1,0 +1,161 @@
+/* Job badges (public/job-badges.js). Every class is prefixed jb- to stay out of the way. */
+.jb-badge {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.jb-badge > svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.jb-pip {
+  position: absolute;
+  top: -18%;
+  right: -22%;
+  height: 52%;
+  min-width: 52%;
+  padding: 0 8%;
+  border-radius: 999px;
+  background: linear-gradient(160deg, #ffe68a, #e9b93a 55%, #c98a12);
+  box-shadow: 0 0 0 1.5px #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: #173f35;
+  font-weight: 900;
+  line-height: 1;
+}
+.jb-pip svg {
+  height: 62%;
+  width: auto;
+}
+.jb-pip b {
+  font-size: 0.6em;
+}
+.jb-pip.jb-fresh {
+  animation: jb-shine 2.4s ease-in-out infinite;
+}
+.jb-ready {
+  position: absolute;
+  top: -22%;
+  left: -14%;
+  width: 1.15em;
+  height: 1.15em;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffd23f;
+  color: #1b1b2f;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow:
+    0 0 0 1.5px #fff,
+    0 0 0 2.4px #1b1b2f;
+  animation: jb-hop 0.9s ease-in-out infinite;
+}
+.jb-stars {
+  position: absolute;
+  left: 50%;
+  bottom: -16%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: #ffd23f;
+  -webkit-text-stroke: 0.6px #1b1b2f;
+  font-weight: 900;
+}
+.jb-pulse {
+  animation: jb-pulse 1.2s ease-in-out infinite alternate;
+}
+.jb-bob {
+  animation: jb-bob 1.6s ease-in-out infinite alternate;
+}
+.jb-blink,
+.jb-tw {
+  animation: jb-blink 0.8s steps(1) infinite;
+}
+.jb-tw2 {
+  animation-delay: 0.4s;
+}
+.jb-beat {
+  transform-origin: 20px 21px;
+  animation: jb-beat 1.1s ease-in-out infinite;
+}
+.jb-rise {
+  animation: jb-rise 2.2s linear infinite;
+}
+.jb-rise.jb-d1 {
+  animation-delay: 0.7s;
+}
+.jb-rise.jb-d2 {
+  animation-delay: 1.4s;
+}
+@keyframes jb-shine {
+  50% {
+    box-shadow:
+      0 0 0 1.5px #fff,
+      0 0 6px 2px rgba(233, 185, 58, 0.75);
+  }
+}
+@keyframes jb-hop {
+  50% {
+    transform: translateY(-18%);
+  }
+}
+@keyframes jb-pulse {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 0.95;
+  }
+}
+@keyframes jb-bob {
+  to {
+    transform: translateY(1.6px);
+  }
+}
+@keyframes jb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes jb-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  15% {
+    transform: scale(1.12);
+  }
+  30% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.07);
+  }
+}
+@keyframes jb-rise {
+  0% {
+    transform: translateY(3px);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-9px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jb-badge *,
+  .jb-pip,
+  .jb-ready {
+    animation: none !important;
+  }
+}
