@@ -511,6 +511,28 @@
   function zone(kind, title, note, inner) {
     return `<section class="zone zone-${kind}"><div class="zone-head"><h2>${title}</h2><span>${note}</span></div>${inner}</section>`;
   }
+  function mineCall(item, action, options = {}, payer, amount) {
+    const url = new URL('/api/billing', location.origin);
+    url.searchParams.set('club', club);
+    url.searchParams.set('bill', item.id);
+    url.searchParams.set('action', action);
+    if (payer) url.searchParams.set('payer', payer);
+    if (amount !== undefined) url.searchParams.set('amount', amount);
+    const headers = new Headers(options.headers);
+    headers.set('X-Bill-Token', payTokenOf(item));
+    return fetch(url, { ...options, headers, cache: 'no-store' }).then(async response => {
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
+      }
+      return response.json();
+    });
+  }
+  const mineItem = billId => mine.bills.find(b => b.id === billId);
+  function mineChanged() {
+    mineCache.clear();
+    return load();
+  }
   function mineHtml() {
     const loginLink = '/liff.html?page=pay&club=' + club;
     const head = '';
@@ -560,14 +582,19 @@
     const body = item && root.querySelector(`[data-body="${item.id}"]`);
     if (!body) return;
     try {
-      const { detail, photoUrl } = await mineDetail(item);
-      const slip = `<a class="button" href="${escape(item.url)}">แนบสลิป</a>`;
-      if (photoUrl)
-        body.innerHTML = `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p>
-         <div class="actions"><button type="button" class="primary" data-action="save-qr" data-bill="${item.id}">บันทึกลงรูปภาพ</button></div><p id="mineSaveHint" class="muted" role="status"></p>
-         <div class="step"><span>โอนเสร็จแล้ว?</span>${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
-      else
-        body.innerHTML = `${detail.transfer ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}<div class="step">${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
+      const { detail, payer, photoUrl } = await mineDetail(item);
+      const slipButton = `<button type="button" data-action="mine-slip" data-bill="${item.id}">แนบสลิป</button>`;
+      const cashButton = payer?.hasSlip
+        ? ''
+        : `<button type="button" data-action="mine-cash" data-bill="${item.id}">จ่ายเงินสด</button>`;
+      const actions = `<div class="pay-actions">${
+        photoUrl
+          ? `<button type="button" class="primary" data-action="save-qr" data-bill="${item.id}">บันทึกลงรูปภาพ</button>`
+          : ''
+      }${slipButton}${cashButton}</div><input type="file" id="mineSlip" accept="image/*" hidden>`;
+      body.innerHTML = photoUrl
+        ? `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p><p id="mineSaveHint" class="muted" role="status"></p>${actions}`
+        : `${detail.transfer ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}${actions}`;
     } catch (error) {
       body.innerHTML = `<p class="error">${escape(error.message)}</p><a class="button" href="${escape(item.url)}">เปิดหน้าบิล</a>`;
     }
@@ -639,6 +666,36 @@
     preview();
   });
   root.addEventListener('change', e => {
+    if (e.target.id === 'mineSlip') {
+      const input = e.target,
+        item = mineItem(input.dataset.bill),
+        file = input.files[0];
+      input.value = '';
+      if (!file || !item) return;
+      return run(async () => {
+        const { payer } = await mineDetail(item);
+        if (
+          !confirm(
+            'แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ ' +
+              payer.name +
+              ' จำนวน ' +
+              money(payer.amount) +
+              ' บาท?',
+          )
+        )
+          return;
+        const blob = await compress(file);
+        await mineCall(
+          item,
+          'upload',
+          { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob },
+          payer.id,
+          payer.amount,
+        );
+        await mineChanged();
+        message('แนบสลิปแล้ว · จ่ายแล้ว');
+      });
+    }
     if (e.target.id === 'paymentSlip') {
       const input = e.target,
         payer = bill.payers.find(p => p.id === input.dataset.payer);
@@ -806,6 +863,37 @@
       const groups = window.BillingOverview.owing(adminList.bills).groups;
       const chosen = action === 'nag' ? groups.filter(g => g.name === target.dataset.name) : groups;
       return copy(window.BillingOverview.reminderText(chosen, clubName(club), money));
+    }
+    if (action === 'mine-slip') {
+      const input = root.querySelector('#mineSlip');
+      input.dataset.bill = target.dataset.bill;
+      return input.click();
+    }
+    if (action === 'mine-cash') {
+      const item = mineItem(target.dataset.bill);
+      return run(async () => {
+        const { payer } = await mineDetail(item);
+        if (
+          !confirm(
+            'แจ้งว่าจะจ่ายด้วยเงินสด ' +
+              money(payer.amount) +
+              ' บาท? ยอดจะยังไม่ถูกบันทึกว่าจ่าย จนกว่าผู้จัดจะยืนยันว่าได้รับเงินแล้ว',
+          )
+        )
+          return;
+        await mineCall(
+          item,
+          'cash-request',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          },
+          payer.id,
+        );
+        await mineChanged();
+        message('แจ้งจ่ายเงินสดแล้ว · รอผู้จัดยืนยัน');
+      });
     }
     if (action === 'open-mine') {
       openBill = target.dataset.bill;

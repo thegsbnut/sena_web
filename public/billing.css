@@ -572,3 +572,25 @@ body.nxc.embedded nav.next-tabbar {
 body.nxc.embedded main {
   padding-bottom: 1.5rem;
 }
+
+/* "ของฉัน": the payment buttons are a stack of full-width buttons. */
+body.nxc.home .pay-actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+body.nxc.home .pay-actions button {
+  width: 100%;
+  min-height: 46px;
+  border-radius: 12px;
+  border: 2px solid #9fb2a5;
+  background: transparent;
+  color: #173f35;
+  font-weight: 700;
+}
+body.nxc.home .pay-actions button.primary {
+  background: var(--lime);
+  color: #102219;
+  border-color: #445321;
+  font-weight: 800;
+}

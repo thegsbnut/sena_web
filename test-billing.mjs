@@ -460,3 +460,13 @@ test('the bills tab is an in-page tab (no full reload) and a #roster deep link s
   // the old numbered "2 โอนแล้ว" step is gone
   assert.doesNotMatch(read('billing.js'), /<b>2<\/b>/);
 });
+
+test('"ของฉัน" attaches a slip and declares cash on the home page itself, with no "โอนเสร็จแล้ว?" label', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./public/billing.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /โอนเสร็จแล้ว/);
+  assert.doesNotMatch(src, /จ่ายเงินสดแทน/);
+  for (const action of ['mine-slip', 'mine-cash'])
+    assert.match(src, new RegExp('data-action="' + action + '"'));
+  assert.match(src, /id="mineSlip"/);
+});
