@@ -212,6 +212,8 @@
       return;
     }
     const organizer = manage && Number.isInteger(bill.revision);
+    const rosterTab = document.querySelector('.next-tabbar [data-go=roster]');
+    if (rosterTab) rosterTab.hidden = !organizer;
     const memberReadOnly = memberSession?.requireLogin && !memberSession.loggedIn && !organizer;
     if (bill.cancelled && !organizer) {
       root.innerHTML = '<h1>บิลนี้ถูกยกเลิกแล้ว</h1>';
@@ -415,9 +417,9 @@
       `<a class="bill" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}"><span class="h"><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><span>จ่ายแล้ว ${b.paid}/${b.count}</span></span>
        <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
        <small>${b.cancelled ? 'ยกเลิกแล้ว' : b.outstanding ? 'ค้าง ' + money(b.outstanding) + ' บาท' : 'รวม ' + money(b.collection) + ' บาท'}</small></a>`;
-    return `
-   <h2 class="sec">ภาพรวมก๊วน</h2>
-   <div class="hero"><small>ค้างรวม</small>
+    const inner = `
+   <div class="actions"><a class="button create-bill" href="/billing.html?manage=1&new=1&club=${club}">+ สร้างบิลใหม่</a></div>
+   <div class="hero"><small>ค้างรวมทั้งก๊วน</small>
     <div class="big">${money(owe.totalCents)} <span>บาท · ${owe.people} คน</span></div>
     ${owe.reviewCount ? `<p class="flag">มีสลิปรอตรวจ ${owe.reviewCount} คน</p>` : ''}</div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
@@ -442,6 +444,7 @@
      .join('')}
    <details class="tools"><summary>⋯ ตั้งค่า</summary>
     <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button><button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button></div></details>`;
+    return zone('admin', 'ผู้จัดการ · รีวิวบิล', 'สำหรับผู้จัด', inner);
   }
   async function openDraft() {
     if (!adminList) throw Error('กรุณาเข้าสู่ระบบผู้จัด');
@@ -493,23 +496,34 @@
     mineCache.set(item.id, result);
     return result;
   }
+  function zone(kind, title, note, inner) {
+    return `<section class="zone zone-${kind}"><div class="zone-head"><h2>${title}</h2><span>${note}</span></div>${inner}</section>`;
+  }
   function mineHtml() {
     const loginLink = '/liff.html?page=pay&club=' + club;
-    const head = '<h2 class="sec">ของฉัน</h2>';
+    const head = '';
+    const wrap = inner => zone('mine', 'ของฉัน', 'บิลที่คุณต้องจ่าย', inner);
     if (mine.state === 'login')
-      return `${head}<p class="muted">เข้าสู่ระบบ LINE เพื่อดูและจ่ายบิลของคุณ</p><a class="button" href="${loginLink}">เข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</a>`;
+      return wrap(
+        `<p class="muted">กรุณาเข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</p><a class="button" href="${loginLink}">เข้าสู่ระบบ LINE</a>`,
+      );
     if (mine.state === 'error')
-      return `${head}<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>`;
+      return wrap(
+        '<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>',
+      );
     const unpaid = mine.bills.filter(b => ['unpaid', 'rejected'].includes(b.status));
     const waiting = mine.bills.filter(b => b.status === 'review');
     const paid = mine.bills.filter(b => b.status === 'paid');
-    if (!mine.bills.length)
-      return `${head}<p class="muted">ยังไม่พบบิลของคุณในสนามนี้ ถ้ายังไม่ได้ผูกชื่อผู้เล่น ให้ผูกชื่อก่อน</p><a class="button" href="${loginLink}">ผูกชื่อผู้เล่น</a>`;
+    const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
+    const statusBanner = unpaid.length
+      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div></div>`
+      : waiting.length
+        ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
+        : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>';
+    if (!mine.bills.length) return wrap(statusBanner);
     const open = unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
     const title = b => `${dateLabel(b.date)}`;
-    const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
-    return `${head}
-   ${unpaid.length ? `<div class="hero"><small>ยอดที่ต้องจ่าย</small><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div></div>` : '<p class="muted">ไม่มีบิลค้าง 🎉</p>'}
+    return wrap(`${statusBanner}
    ${unpaid
      .map(b =>
        b.id === open
@@ -519,8 +533,9 @@
      )
      .join('')}
    ${waiting.map(b => `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ส่งสลิปแล้ว · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span><a class="pill2" href="${escape(b.url)}">ดูบิล</a></div></div>`).join('')}
-   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong></div><div class="r">✓ ${money(b.amount)} บ.</div></div>`).join('')}</details>` : ''}`;
+   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong></div><div class="r">✓ ${money(b.amount)} บ.</div></div>`).join('')}</details>` : ''}`);
   }
+
   async function fillMine() {
     const item =
       mine.bills.find(b => b.id === openBill) ||
@@ -542,10 +557,9 @@
   }
   function showHome() {
     document.body.classList.add('home');
-    root.innerHTML =
-      (adminList ? '<h1>บิลค่าใช้จ่าย</h1>' : '<h1>บิลของฉัน</h1>') +
-      mineHtml() +
-      (adminList ? adminOverviewHtml() : '');
+    root.innerHTML = mineHtml() + (adminList ? adminOverviewHtml() : '');
+    const roster = document.querySelector('.next-tabbar [data-go=roster]');
+    if (roster) roster.hidden = !adminList;
     message('');
     fillMine();
   }

@@ -501,3 +501,76 @@ body.nxc.home .pill2 {
 body.nxc.home .mine a:not(.button):not(.pill2) {
   color: #50655a;
 }
+
+/* Home: two clearly separate zones, "ของฉัน" (everyone) and "ผู้จัดการ · รีวิวบิล" (organizers only). */
+body.nxc.home .zone {
+  margin: 1rem 0 1.4rem;
+  padding: 0.9rem;
+  border-radius: 1.2rem;
+  background: transparent;
+  border: 1px solid #2c5a4c;
+}
+body.nxc.home .zone-admin {
+  border-style: dashed;
+  border-color: #6f8d7c;
+}
+body.nxc.home .zone-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0 0 0.7rem;
+}
+body.nxc.home .zone-head h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+body.nxc.home .zone-head span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #b8cdbf;
+}
+body.nxc.home .zone-admin .zone-head span {
+  padding: 0.1rem 0.6rem;
+  border-radius: 99px;
+  background: #24574a;
+}
+body.nxc.home .status {
+  border-radius: 1rem;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.6rem;
+}
+body.nxc.home .status b {
+  display: block;
+  font-size: 1.05rem;
+}
+body.nxc.home .status-due {
+  background: #4a1f17;
+  border: 1px solid #b3402f;
+  color: #ffd9cf;
+}
+body.nxc.home .status-due .big {
+  color: #ffb4a6;
+}
+body.nxc.home .status-ok {
+  background: #173f35;
+  border: 1px solid #2c5a4c;
+}
+body.nxc.home .status-ok b {
+  color: var(--lime);
+}
+body.nxc.home .create-bill {
+  width: 100%;
+  min-height: 46px;
+  background: var(--lime);
+  color: #102219;
+  border: 2px solid #445321;
+  border-radius: 12px;
+  font-weight: 800;
+}
+body.nxc.home .zone {
+  padding: 0.7rem;
+}
+body.nxc.home .mine .t strong {
+  white-space: nowrap;
+}
