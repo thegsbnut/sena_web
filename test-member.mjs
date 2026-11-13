@@ -951,6 +951,7 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
   const own = await (await f.request('/api/member/bills?bill=' + id, null, member)).json();
   assert.equal(own.bills.length, 1);
   assert(own.bills[0].url.includes(mine.token));
+  assert.equal(own.bills[0].hasSlip, false);
   assert(!JSON.stringify(own).includes(theirs.token));
   const path =
     '/api/billing?bill=' + id + '&action=upload&payer=' + theirs.id + '&amount=' + theirs.amount;
@@ -979,6 +980,8 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
     ).status,
     200,
   );
+  const withSlip = await (await f.request('/api/member/bills?bill=' + id, null, member)).json();
+  assert.equal(withSlip.bills[0].hasSlip, true);
   await f.request(
     '/api/member/reassign',
     { userId: uid, playerId: 'p1', previousPlayerId: 'p0', previousStatus: 'approved' },
