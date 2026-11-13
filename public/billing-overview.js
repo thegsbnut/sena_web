@@ -14,6 +14,7 @@
     method: p.method,
     hasSlip: p.hasSlip,
     receiptId: p.receiptId,
+    aiCheck: p.aiCheck,
   });
 
   function owing(bills) {

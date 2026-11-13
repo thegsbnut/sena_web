@@ -447,13 +447,29 @@ export async function billingRoute(req, env, admin, club, ctx) {
           "SELECT * FROM bills ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200",
         )
         .all();
+      const parsed = rows.results.map(r => ({ ...r, ...JSON.parse(r.payload) }));
+      // AI slip checks for the bills still open (bounded), so the home list can flag them.
+      const checks = new Map();
+      if (slipAiEnabled(env)) {
+        try {
+          const keys = parsed
+            .filter(b => !b.cancelled && !b.closed_at && !b.slips_removed)
+            .flatMap(b => b.payers.map(p => p.slipKey).filter(Boolean))
+            .slice(0, 150);
+          for (const [key, value] of await slipChecksFor(db, keys)) checks.set(key, value);
+        } catch (error) {
+          logError('billing:slip-checks', error);
+        }
+      }
       return json({
-        bills: rows.results.map(r => {
-          const bill = { ...r, ...JSON.parse(r.payload) };
+        bills: parsed.map(bill => {
           return {
             ...summary(bill),
+            court: bill.court,
+            shuttle: bill.shuttle,
             revision: bill.revision,
             payers: bill.payers.map(p => ({
+              ...(p.slipKey && checks.has(p.slipKey) ? { aiCheck: checks.get(p.slipKey) } : {}),
               id: p.id,
               ...(p.slipKey ? { receiptId: p.slipKey.split('/').at(-1) } : {}),
               name: p.name,

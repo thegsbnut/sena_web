@@ -686,3 +686,21 @@ body.nxc.home .mine .copy-row {
   margin: 0.4rem 0;
   font-size: 0.9rem;
 }
+
+.owe-search {
+  width: 100%;
+  margin: 0.2rem 0 0.5rem;
+  min-height: 42px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0 0 0.4rem;
+  padding: 0 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+}

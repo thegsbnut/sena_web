@@ -104,6 +104,7 @@ test('owing rows carry what the organizer needs to act on one person in one bill
       method: undefined,
       hasSlip: false,
       receiptId: undefined,
+      aiCheck: undefined,
     },
   ]);
 });
