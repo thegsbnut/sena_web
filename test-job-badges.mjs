@@ -245,3 +245,27 @@ test('approved members change only their own line without touching the booking r
     { player_id: 'p0', line: 'blue' },
   ]);
 });
+
+test('badge markup reflects level, line, crown, stars and own-only ready marker', async () => {
+  await import('./public/job-badges.js');
+  const J = globalThis.SenaJobs;
+  const b = (o = {}) => ({
+    plays: 0,
+    line: 'red',
+    chosen: false,
+    titles: 0,
+    latestChamp: false,
+    ...o,
+  });
+  assert.match(J.badgeHtml(b(), 35), /aria-label="Novice"/);
+  assert.equal(J.jobName(b({ plays: 30, line: 'blue' })), 'Weapon Dealer');
+  assert.equal(J.jobName(b({ plays: 15, line: 'yellow' })), 'Drifter');
+  assert.equal(J.jobThai(b({ plays: 5, line: 'pink' })), 'นักหยอดหน้าเน็ต');
+  assert.match(J.badgeHtml(b({ plays: 95 }), 35), /★★</);
+  assert.doesNotMatch(J.badgeHtml(b({ plays: 6 }), 35), /jb-ready/);
+  assert.match(J.badgeHtml(b({ plays: 6 }), 35, { mine: true }), /jb-ready/);
+  assert.doesNotMatch(J.badgeHtml(b({ plays: 6, chosen: true }), 35, { mine: true }), /jb-ready/);
+  assert.match(J.badgeHtml(b({ titles: 3, latestChamp: true }), 35), /jb-pip jb-fresh[\s\S]*>3</);
+  assert.match(J.badgeHtml(b({ plays: 40, line: '<x>' }), 35), /aria-label="Novice"/);
+  assert.match(J.defsHtml(), /id="jb-clip"/);
+});
