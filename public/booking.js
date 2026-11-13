@@ -402,16 +402,16 @@
               tone === 'full' ? (s.canJoinWaitlist === false ? 'คิวสำรองเต็ม' : 'ยังรับสำรอง') : '';
             const personal = mine
               ? mine.status === 'confirmed'
-                ? 'คุณได้ตัวจริง'
-                : 'คุณอยู่สำรอง #' + mine.position
+                ? '<span class="booking-me booking-me-in">✓ คุณลงชื่อแล้ว</span>'
+                : `<span class="booking-me booking-me-wait">⏳ คิวสำรอง #${html(mine.position)}</span>`
               : '';
-            return `<article class="booking-date availability-${tone} ${focusId === s.id ? 'is-focus' : ''} ${closed ? 'is-closed' : ''}">
+            return `<article class="booking-date availability-${tone} ${focusId === s.id ? 'is-focus' : ''} ${closed ? 'is-closed' : ''} ${mine ? 'has-me' : ''}">
     ${s.isCup ? cupBadge : ''}
     <label class="booking-date-label">
      <input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id) ? 'checked' : ''} ${closed ? 'disabled' : ''} aria-label="เลือก ${displayDate(s.date)}${s.isCup ? ' · ' + html(cupName) : ''}">
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.${html(courtSuffix(s))}</small></span>
     </label>
-    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}${personal ? `<small>${personal}</small>` : ''}</div><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">รายละเอียด / ถอนตัว</button></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}${personal}</div><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">รายละเอียด / ถอนตัว</button></div>
     ${s.holiday ? `<p class="booking-holiday">☀ ${html(s.holiday)}</p>` : ''}
     ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
    </article>`;
