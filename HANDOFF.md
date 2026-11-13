@@ -4,7 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-12 · Claude · branch `ccr-27af7eaa-fgzk24` — งาน redesign เว็บ next (ยังไม่ merge); production `main` ไม่ถูกแตะ
+- 2026-11-13 · Claude · branch `claude/happy-goodall-x8fbjb` merge เข้า `main` แล้ว: **เว็บจริงใช้เมนูแท็บล่างสีเขียวเข้ม (แท็บที่เลือก=เขียวมะนาว) + แก้แถบปุ่ม LINE ล้น** (`public/next-nav.css`, `public/next-shell.js`, `public/court.html`) — เจ้าของโปรเจกต์ไม่เอาดีไซน์อื่นของ next ไปใช้บนเว็บจริง; โค้ด next (`next/`, `NEXT.md`) ยังเป็นเว็บทดลองแยก
 
 ## ค้างอยู่ / ขั้นต่อไป
 - **Redesign "SENA Court next" (ดู `NEXT.md`)** — Worker แยก `sena-web-next` ใช้โค้ดเดิม + overlay `next/` และ D1 ชุดเดียวกับ production ไม่มี cron · branch นี้ **ยังไม่ merge ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง**
