@@ -28,7 +28,6 @@
 - ข้อมูลส่วนใหญ่เก็บเป็น JSON payload + `revision` — ทุกการเขียนต้องเป็น optimistic concurrency (`WHERE revision=?`) แล้วตอบ 409 เมื่อชน
 - ทุก POST ใต้ `/api/` ต้องผ่านการเช็ก Origin (ยกเว้น LINE webhook)
 - ฝั่ง frontend ต้อง escape ข้อความก่อนใส่ `innerHTML` (helper `html()`)
-- dev-login ชั่วคราว (`dev-auth.js`, ก๊วนลับ `test`): ดู `DEV-LOGIN.md` — ห้ามให้ผู้ใช้ทดสอบ (`U_TEST_`) แตะก๊วนจริง
 - `LINE_MEMBER_AUTH_ENABLED=true` ใน production: ผู้เล่นต้องล็อกอิน LINE และผูกชื่อก่อนจอง/จ่ายบิล
 
 ## Config / secrets
