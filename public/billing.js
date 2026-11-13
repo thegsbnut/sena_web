@@ -377,7 +377,19 @@
    <form id="draft">
     <section>
      <h2>1. เช็กคนที่มาตีจริง</h2>
-     ${editing ? '' : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${sessions.map(s => `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`).join('')}</select></label>`}
+     ${
+       editing
+         ? ''
+         : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${[
+             ...sessions,
+           ]
+             .sort((a, b) => a.date.localeCompare(b.date))
+             .map(
+               s =>
+                 `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`,
+             )
+             .join('')}</select></label>`
+     }
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance"></div>
@@ -603,12 +615,14 @@
       return wrap(
         '<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>',
       );
-    const unpaid = mine.bills.filter(b => ['unpaid', 'rejected'].includes(b.status));
+    const unpaid = mine.bills
+      .filter(b => ['unpaid', 'rejected'].includes(b.status))
+      .sort((a, b) => a.date.localeCompare(b.date));
     const waiting = mine.bills.filter(b => b.status === 'review');
     const paid = mine.bills.filter(b => b.status === 'paid');
     const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
     const statusBanner = unpaid.length
-      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div></div>`
+      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div>${unpaid.length > 1 ? '<small>จ่ายทีละบิล เริ่มจากบิลเก่าสุดก่อน · สลิปหนึ่งใบต่อหนึ่งบิล</small>' : ''}</div>`
       : waiting.length
         ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
         : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>';
