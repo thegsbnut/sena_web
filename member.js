@@ -327,7 +327,7 @@ async function route(req, env, admin, club) {
     ).first();
     if (!exists) return json({ bills: [] });
     const rows = await env.DB.prepare(
-      'SELECT id,payload,session_date FROM bills WHERE club=? ORDER BY session_date DESC LIMIT 200',
+      'SELECT id,payload,session_date,slips_removed FROM bills WHERE club=? ORDER BY session_date DESC LIMIT 200',
     )
       .bind(club)
       .all();
@@ -348,6 +348,8 @@ async function route(req, env, admin, club) {
             name: p.name,
             amount: p.amount,
             status: p.status,
+            ...(p.method ? { method: p.method } : {}),
+            hasSlip: Boolean(p.slipKey) && !row.slips_removed,
             url: link.href,
           });
         }

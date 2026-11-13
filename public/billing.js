@@ -620,6 +620,10 @@
       );
     const open = unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
     const title = b => `${dateLabel(b.date)}`;
+    const slipButton = b =>
+      b.hasSlip
+        ? `<button type="button" class="pill2" data-action="mine-view-slip" data-bill="${b.id}">ดูสลิป</button>`
+        : '';
     return wrap(`${statusBanner}
    ${unpaid
      .map(b =>
@@ -629,8 +633,8 @@
          : `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ยังไม่จ่าย</small></div><span class="amt due">${money(b.amount)} บ.</span><button type="button" class="pill2" data-action="open-mine" data-bill="${b.id}">จ่ายด้วย QR</button></div></div>`,
      )
      .join('')}
-   ${waiting.map(b => `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ส่งสลิปแล้ว · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span><a class="pill2" href="${escape(b.url)}">ดูบิล</a></div></div>`).join('')}
-   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong></div><div class="r">✓ ${money(b.amount)} บ.</div></div>`).join('')}</details>` : ''}`);
+   ${waiting.map(b => `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>${b.hasSlip ? 'ส่งสลิปแล้ว' : 'แจ้งจ่ายเงินสดแล้ว'} · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span>${slipButton(b)}</div></div>`).join('')}
+   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong>${b.method === 'cash' ? '<small>เงินสด</small>' : ''}</div><div class="r">✓ ${money(b.amount)} บ.${slipButton(b)}</div></div>`).join('')}</details>` : ''}`);
   }
 
   async function fillMine() {
@@ -1043,6 +1047,19 @@
       return showHome();
     }
     if (action === 'mine-copy') return copy(target.dataset.value);
+    if (action === 'mine-view-slip')
+      return run(async () => {
+        const item = mineItem(target.dataset.bill);
+        const response = await fetch(
+          `/api/billing?club=${club}&bill=${encodeURIComponent(item.id)}&action=slip`,
+          { headers: { 'X-Bill-Token': payTokenOf(item) }, cache: 'no-store' },
+        );
+        if (!response.ok) throw Error('ไม่พบสลิป (อาจถูกลบหลังจ่ายครบแล้ว)');
+        slipUrl = URL.createObjectURL(await response.blob());
+        receipt.querySelector('img').src = slipUrl;
+        receipt.showModal();
+        message('');
+      });
     if (action === 'save-qr')
       return shareQrPhoto(
         mineCache.get(target.dataset.bill)?.photo,
