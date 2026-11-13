@@ -147,3 +147,19 @@ test('slipRows lists paid transfers that still have a slip, never cash, unpaid o
   );
   assert.equal(rows[0].receiptId, 'r1');
 });
+
+test('splitLines explains the split and who the amount covers', () => {
+  const { splitLines } = globalThis.BillingOverview;
+  assert.deepEqual(splitLines({ court: 60000, shuttle: 12000, people: 8 }, { shares: 1 }, money), [
+    'ค่าคอร์ต 600 + ค่าลูก 120 หาร 8 คน',
+  ]);
+  assert.deepEqual(
+    splitLines(
+      { court: 60000, shuttle: 0, people: 8 },
+      { shares: 2, names: ['นัท', 'แขก'] },
+      money,
+    ),
+    ['ค่าคอร์ต 600 หาร 8 คน', 'ยอดนี้รวม 2 คน: นัท, แขก'],
+  );
+  assert.deepEqual(splitLines({}, {}, money), []);
+});

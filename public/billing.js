@@ -640,9 +640,22 @@
           ? `<button type="button" class="primary" data-action="save-qr" data-bill="${item.id}">บันทึกลงรูปภาพ</button>`
           : ''
       }${slipButton}${cashButton}</div><input type="file" id="mineSlip" accept="image/*" hidden>`;
-      body.innerHTML = photoUrl
-        ? `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p><p id="mineSaveHint" class="muted" role="status"></p>${actions}`
-        : `${detail.transfer ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}${actions}`;
+      const note =
+        payer?.status === 'rejected' && payer.note
+          ? `<p class="reject-note"><b>ผู้จัดให้ส่งสลิปใหม่:</b> ${escape(payer.note)}</p>`
+          : '';
+      const split = window.BillingOverview.splitLines(detail, payer, money)
+        .map(line => `<small class="split">${escape(line)}</small>`)
+        .join('');
+      const copies = validPromptPay(detail.transfer)
+        ? `<div class="copy-row"><span>พร้อมเพย์ <b>${escape(detail.transfer)}</b></span><button type="button" class="pill2" data-action="mine-copy" data-value="${escape(detail.transfer)}">คัดลอกเลข</button></div>
+           <div class="copy-row"><span>ยอด <b>${money(item.amount)}</b> บาท</span><button type="button" class="pill2" data-action="mine-copy" data-value="${(item.amount / 100).toFixed(2)}">คัดลอกยอด</button></div>`
+        : '';
+      body.innerHTML = `${note}${split}${
+        photoUrl
+          ? `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p><p id="mineSaveHint" class="muted" role="status"></p>`
+          : ''
+      }${copies}${photoUrl ? '' : detail.transfer && !copies ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}${actions}`;
     } catch (error) {
       body.innerHTML = `<p class="error">${escape(error.message)}</p><a class="button" href="${escape(item.url)}">เปิดหน้าบิล</a>`;
     }
@@ -1004,6 +1017,7 @@
       openBill = target.dataset.bill;
       return showHome();
     }
+    if (action === 'mine-copy') return copy(target.dataset.value);
     if (action === 'save-qr')
       return shareQrPhoto(
         mineCache.get(target.dataset.bill)?.photo,
