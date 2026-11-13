@@ -64,10 +64,36 @@
     if (invited) return rawName(id) + ' (จองโดย ' + rawName(invited) + ' · จ่ายแทน)';
     const extra = guest(id);
     if (extra) return extra.name + ' (แขกของ ' + rawName(extra.hostId) + ')';
-    const award = player(id)?.award;
+    // The job badge crown replaces 🥇; the 💩 joke stays in front of the name.
+    const award = player(id)?.award === '🥇' ? '' : player(id)?.award;
     return award ? award + ' ' + rawName(id) : rawName(id);
   };
   const level = id => player(id)?.lv;
+  const rosterBadge = r => (!r.guest && data?.roster.find(p => p.id === r.playerId)?.badge) || null;
+  function badgeFor(r) {
+    const badge = rosterBadge(r),
+      mine = Boolean(badge) && data?.member?.playerId === r.playerId,
+      art = SenaJobs.badgeHtml(badge ?? { plays: 0 }, 35, { mine });
+    return mine
+      ? `<button type="button" class="jb-own" data-job-pick aria-label="เลือกสาย job ของฉัน">${art}</button>`
+      : art;
+  }
+  function openJobPicker() {
+    const own = data?.roster.find(p => p.id === data?.member?.playerId)?.badge;
+    if (!own) return;
+    q('#jobPickerGrid').innerHTML = SenaJobRules.LINES.map(line => {
+      const preview = {
+        ...own,
+        line,
+        chosen: true,
+        plays: Math.min(30, Math.max(5, own.plays)),
+        titles: 0,
+      };
+      const current = own.chosen && own.line === line;
+      return `<button type="button" data-job-line="${line}" aria-pressed="${current}">${SenaJobs.badgeHtml(preview, 48)}<b>${html(SenaJobs.JOBS[line].th)}</b><small>${html(SenaJobs.jobName(preview))}</small></button>`;
+    }).join('');
+    q('#jobPicker').showModal();
+  }
   const formatLevel = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 2 });
   function levelBadge(id) {
     const lv = level(id);
@@ -310,7 +336,7 @@
  <form method="dialog"><button id="bookingDetailsClose" type="submit" aria-label="ปิด" autofocus><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form>
  </header>
  <p id="bookingDetailsStatus" role="status"></p><div id="bookingDetailsContent"></div></dialog>
- <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog>`;
+ <div class="booking-action" id="bookingAction" hidden><b id="bookingSelection" aria-live="polite"></b><button type="button" class="primary" id="bookingContinue">ดำเนินการจอง</button></div><p class="booking-footnote">วันหยุดอ้างอิงปฏิทินวันหยุดหลักปี 2569–2570 รวมวันหยุดราชการและธนาคารบางประเภท ผู้จัดเพิ่มวันหยุดพิเศษ / วันปิดสนามได้ • <a href="https://www.bot.or.th/th/financial-institutions-holiday.html" target="_blank" rel="noopener">อ้างอิง ธปท.</a> / <a href="https://www.sec.or.th/EN/Pages/News_Detail.aspx?SECID=13329" target="_blank" rel="noopener">ก.ล.ต.</a></p><dialog id="bookingFeedback" class="booking-feedback" aria-labelledby="bookingFeedbackTitle"><h2 id="bookingFeedbackTitle"></h2><p id="bookingFeedbackMessage"></p><form method="dialog"><button class="primary booking-primary" autofocus>ตกลง</button></form></dialog><dialog id="jobPicker" class="booking-feedback job-picker" aria-labelledby="jobPickerTitle"><h2 id="jobPickerTitle">เลือกสายของคุณ</h2><p class="hint">ขั้น job นับจากจำนวนครั้งที่มาตี เปลี่ยนสายได้ตลอดโดยไม่ต้องเริ่มใหม่</p><div class="job-picker-grid" id="jobPickerGrid"></div><form method="dialog"><button class="secondary">ปิด</button></form></dialog>${SenaJobs.defsHtml()}`;
   const detailsDialog = q('#bookingDetailsDialog');
   const supportsDetailsPopup = typeof detailsDialog.showModal === 'function';
   root.classList.toggle('booking-details-popup', supportsDetailsPopup);
@@ -507,7 +533,7 @@
       return;
     }
     const row = r =>
-      `<div class="booking-person"><span class="booking-avatar">${html(rawName(r.playerId).slice(0, 2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
+      `<div class="booking-person">${badgeFor(r)}<div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${rosterBadge(r) ? html(SenaJobs.jobName(rosterBadge(r))) + ' · ' : ''}${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
     q('#bookingDetail').innerHTML =
       `${s.isCup ? cupBadge : ''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button><p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${
         s.registrations
@@ -769,6 +795,11 @@
   root.addEventListener('click', e => {
     const button = e.target.closest('button');
     if (!button || busy) return;
+    if (button.hasAttribute('data-job-pick')) openJobPicker();
+    if (button.dataset.jobLine) {
+      q('#jobPicker').close();
+      mutate({ action: 'job', line: button.dataset.jobLine });
+    }
     if (button.id === 'bookingCupReload') {
       cupDirty = false;
       q('#bookingCupStatus').textContent = '';

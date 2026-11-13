@@ -269,3 +269,14 @@ test('badge markup reflects level, line, crown, stars and own-only ready marker'
   assert.match(J.badgeHtml(b({ plays: 40, line: '<x>' }), 35), /aria-label="Novice"/);
   assert.match(J.defsHtml(), /id="jb-clip"/);
 });
+
+test('an unchosen champion still sees the ready marker next to the crown on their own badge', async () => {
+  await import('./public/job-badges.js');
+  const html = globalThis.SenaJobs.badgeHtml(
+    { plays: 40, line: 'red', chosen: false, titles: 1, latestChamp: false },
+    35,
+    { mine: true },
+  );
+  assert.match(html, /jb-pip/);
+  assert.match(html, /jb-ready/);
+});

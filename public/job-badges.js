@@ -319,13 +319,12 @@
       r.names[0] + (titles ? ` แชมป์ ${titles} ครั้ง` : '') + (ready ? ' ยังไม่ได้เลือกสาย' : '');
     const pip = titles
       ? `<span class="jb-pip${badge.latestChamp ? ' jb-fresh' : ''}" style="font-size:${size * 0.5}px">${PIP_CROWN}${titles > 1 ? `<b>${titles}</b>` : ''}</span>`
-      : ready
-        ? `<span class="jb-ready" style="font-size:${size * 0.42}px">!</span>`
-        : '';
+      : '';
+    const mark = ready ? `<span class="jb-ready" style="font-size:${size * 0.42}px">!</span>` : '';
     const stars = r.stars
       ? `<span class="jb-stars" style="font-size:${Math.max(7, size * 0.22)}px">${'★'.repeat(r.stars)}</span>`
       : '';
-    return `<span class="jb-badge" style="width:${size}px;height:${size}px" role="img" aria-label="${esc(label)}"><svg viewBox="0 0 40 40" aria-hidden="true">${art(r.line, r.lvl)}</svg>${pip}${stars}</span>`;
+    return `<span class="jb-badge" style="width:${size}px;height:${size}px" role="img" aria-label="${esc(label)}"><svg viewBox="0 0 40 40" aria-hidden="true">${art(r.line, r.lvl)}</svg>${pip}${mark}${stars}</span>`;
   }
   const defsHtml = () =>
     `<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>${DEFS}</defs></svg>`;

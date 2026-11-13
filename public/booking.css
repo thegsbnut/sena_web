@@ -1053,3 +1053,43 @@ main:has(#booking:not([hidden])) > .venue-picker small {
 .booking-date.has-me {
   background: #f3f9e4;
 }
+.jb-own {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  min-height: 0;
+  flex-shrink: 0;
+}
+.jb-own:focus-visible {
+  outline: 2px solid #173f35;
+  outline-offset: 2px;
+}
+.job-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.job-picker-grid button {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 12px 6px;
+  border: 1px solid #cbd0b8;
+  border-radius: 10px;
+  background: #fffef7;
+  cursor: pointer;
+}
+.job-picker-grid button[aria-pressed='true'] {
+  border-color: #173f35;
+  box-shadow: 0 0 0 2px #173f35 inset;
+}
+.job-picker-grid b {
+  font-size: 13px;
+}
+.job-picker-grid small {
+  font-size: 11px;
+  color: #72805f;
+}
