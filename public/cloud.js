@@ -76,6 +76,7 @@ async function cloudLoad(force = false) {
       d = await r.json();
     if (!r.ok) throw Error(d.error);
     state = d.state;
+    playerPictures = d.pictures || {};
     cloudRevision = d.revision;
     cloudEditable = d.canEdit;
     canManage = cloudEditable;

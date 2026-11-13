@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
+- 2026-11-13 · Claude · branch `claude/clever-cori-cosdaj` (ยังไม่ merge): **รูปโปรไฟล์ LINE แทนตัวย่อ** — เก็บแค่ URL (`member_pictures`, ได้จาก idToken ตอนล็อกอิน + LIFF รีเฟรชสัปดาห์ละครั้ง `POST /api/member/picture`), ส่งใน `roster[].pic` ของ `/api/booking` และ `pictures` ของ `/api/state` (นอก `state` ห้ามบันทึกกลับ), หน้าเว็บ `public/avatar.js` (`/small`, lazy, รูปเสีย→ตัวย่อ) · ทุกคนที่เปิดหน้าเห็นรูป (เจ้าของเลือก) · dev-login ถูก revert แล้ว
 - 2026-11-13 · Claude · merge เข้า `main` แล้ว (ขึ้น production): ลบเว็บทดลอง `sena-web-next` ออกจากโค้ด · ! แดงที่แท็บ "บิล" เมื่อมีบิลค้าง · ป้าย "✓ ลงชื่อแล้ว / ⏳ สำรอง #n" ในการ์ดจอง · แก้บั๊กบิลเก่าสุดค้าง "กำลังโหลด…" — **ทดสอบด้วยข้อมูลจำลองเท่านั้น ยังไม่ได้ลองใน LINE จริงบนมือถือ**
 
 ## ค้างอยู่ / ขั้นต่อไป
@@ -23,7 +24,7 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 183/183 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 185/185 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)

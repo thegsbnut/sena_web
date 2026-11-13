@@ -996,3 +996,61 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
     403,
   );
 });
+test('LINE picture: saved at login, only LINE CDN URLs, shown on linked rosters only', async t => {
+  const f = fixture(t),
+    pic = 'https://profile.line-scdn.net/0hAbC-123_xyz';
+  f.profile({ picture: pic });
+  const member = await f.login();
+  assert.equal(f.db.prepare('SELECT url FROM member_pictures WHERE user_id=?').get(uid).url, pic);
+  // Not linked yet: no picture on rosters.
+  let state = await (await f.request('/api/state')).json();
+  assert.deepEqual(state.pictures, {});
+  await f.request('/api/member/link', { playerId: 'p0' }, member);
+  state = await (await f.request('/api/state')).json();
+  assert.deepEqual(state.pictures, { p0: pic });
+  assert.equal(state.state.players[0].pic, undefined, 'pictures never enter the roster state');
+  const booking = await (
+    await f.request('/api/booking', null, '', { 'X-Booking-Token': 'a'.repeat(64) })
+  ).json();
+  assert.equal(booking.roster.find(p => p.id === 'p0').pic, pic);
+  assert.equal(booking.roster.find(p => p.id === 'p1').pic, undefined);
+  // Anything that is not a LINE CDN URL is stored as no picture.
+  for (const bad of ['https://evil.example/a.jpg', 'javascript:alert(1)', pic + '/../x', 42]) {
+    f.profile({ picture: bad });
+    await f.login();
+    assert.equal(
+      f.db.prepare('SELECT url FROM member_pictures WHERE user_id=?').get(uid).url,
+      null,
+    );
+  }
+});
+test('LINE picture: weekly refresh flag and refresh endpoint for the same account only', async t => {
+  const f = fixture(t),
+    pic = 'https://profile.line-scdn.net/0hNew';
+  const member = await f.login();
+  await f.request('/api/member/link', { playerId: 'p0' }, member);
+  const status = async () => {
+    const r = await f.request('/api/member', null, member);
+    return { info: await r.json(), csrf: f.cookieOf(r) };
+  };
+  assert.equal((await status()).info.refreshPicture, false, 'checked at login');
+  f.db.prepare('UPDATE member_pictures SET checked_at=?').run(Date.now() - 8 * 86400000);
+  const { info, csrf } = await status();
+  assert.equal(info.refreshPicture, true);
+  const refresh = (cookie, token = info.csrf) =>
+    f.request('/api/member/picture', { idToken: 'fresh' }, cookie, { 'X-Member-CSRF': token });
+  assert.equal((await refresh(member + '; ' + csrf, 'b'.repeat(64))).status, 403, 'csrf');
+  f.profile({ picture: pic });
+  assert.equal((await refresh(member + '; ' + csrf)).status, 200);
+  assert.equal(f.db.prepare('SELECT url FROM member_pictures WHERE user_id=?').get(uid).url, pic);
+  assert.equal((await status()).info.refreshPicture, false);
+  // A token of another LINE account cannot set this member's picture.
+  await f.login(other);
+  const again = await status();
+  assert.equal(
+    (await refresh(member + '; ' + again.csrf, again.info.csrf)).status,
+    403,
+    'account mismatch',
+  );
+  assert.equal((await f.request('/api/member/picture', { idToken: 'x' })).status, 401);
+});

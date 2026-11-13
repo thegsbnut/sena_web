@@ -1,5 +1,5 @@
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
-import { memberMode } from './member.js';
+import { memberMode, memberPictures } from './member.js';
 import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
@@ -521,9 +521,11 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       )
         fail('ไม่พบคำสั่ง');
     }
-    // Cup history is independent of the booking document: fetch both at once.
-    const [cupHistory, outcome] = await Promise.all([
+    // Cup history and LINE pictures are independent of the booking document: fetch all at once.
+    const [cupHistory, pictures, outcome] = await Promise.all([
       env.DB ? latestCup(env.DB, club) : null,
+      // A picture is decoration: never let it fail the booking page.
+      memberPictures(env.DB, club).catch(() => new Map()),
       mutateBooking(
         env,
         club,
@@ -828,6 +830,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       club,
       awards,
     );
+    for (const p of view.roster) if (pictures.has(p.id)) p.pic = pictures.get(p.id);
     if (memberMode(env)) {
       view.requireLogin = true;
       view.member = {

@@ -260,6 +260,8 @@
   border-bottom: 1px solid #e2e5d4;
 }
 .booking-avatar {
+  position: relative;
+  overflow: hidden;
   height: 35px;
   width: 35px;
   border-radius: 10px;

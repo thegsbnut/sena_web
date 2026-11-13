@@ -1,6 +1,6 @@
 import { syncLinkedPlayers } from './roster-sync.js';
 import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
-import { memberRoute, memberFor, memberMode, memberIsAdmin } from './member.js';
+import { memberRoute, memberFor, memberMode, memberIsAdmin, memberPictures } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
 import { pruneSlipChecks } from './slip-check.js';
 import { lineAdmin, lineWebhook } from './line.js';
@@ -343,10 +343,15 @@ export default {
               canEdit: false,
               setupRequired: true,
             });
-          const row = await env.DB.prepare(
-            `SELECT revision,payload,updated_at FROM ${stateTable} WHERE id=1`,
-          ).first();
+          const [row, pictures] = await Promise.all([
+            env.DB.prepare(
+              `SELECT revision,payload,updated_at FROM ${stateTable} WHERE id=1`,
+            ).first(),
+            // Kept outside `state` so an organizer save never writes pictures into the roster.
+            memberPictures(env.DB, club).catch(() => new Map()),
+          ]);
           return json({
+            pictures: Object.fromEntries(pictures),
             state: canEdit
               ? row
                 ? JSON.parse(row.payload)

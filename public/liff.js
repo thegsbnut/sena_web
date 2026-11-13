@@ -62,6 +62,18 @@
         await liff.init({ liffId });
         readTarget();
       })());
+  // Weekly LINE picture refresh (the server asks via refreshPicture). Needs the SDK,
+  // so it runs at most about once a week per member, gives up after 3 s, and never
+  // blocks or breaks the redirect.
+  const refreshPicture = session =>
+    Promise.race([
+      (async () => {
+        await ensureLiff(session.liffId);
+        const idToken = liff.isLoggedIn() && liff.getIDToken();
+        if (idToken) await api('/picture', { idToken }, session.csrf);
+      })(),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]).catch(() => {});
   try {
     readTarget();
     let session = await api();
@@ -70,6 +82,7 @@
       return;
     }
     if (session.loggedIn && session.link?.status === 'approved' && !session.mappingError && !pay) {
+      if (session.refreshPicture) await refreshPicture(session);
       location.replace('/court' + (club === '88' ? '?club=88' : '') + '#booking');
       return;
     }
