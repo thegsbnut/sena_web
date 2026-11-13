@@ -234,6 +234,7 @@
     const flagged = organizer ? window.SlipCheckText?.flaggedCount(bill.payers) || 0 : 0;
     const promptpay = validPromptPay(bill.transfer);
     root.innerHTML = `
+   ${organizer || payerToken ? `<a class="back-link" href="/billing.html?club=${escape(bill.club)}">← กลับหน้าบิลหลัก</a>` : ''}
    ${organizer ? '<button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>' : ''}
    <h1>${bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
    <p class="muted">${dateLabel(bill.date)} · ผู้ถูกเรียกเก็บ ${bill.people} คน</p>
@@ -370,6 +371,7 @@
           .filter(b => !b.cancelled && b.club === club && b.court + b.shuttle > 0)
           .sort((a, b) => b.date.localeCompare(a.date))[0];
     root.innerHTML = `
+   <a class="back-link" href="/billing.html?club=${club}">← กลับหน้าบิลหลัก</a>
    <h1>จบและคิดเงิน · ${clubName(club)}</h1>
    ${!editing && !adminList?.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม เปิดบิลได้เมื่อเชื่อมพื้นที่เก็บสลิปแล้ว</p>' : ''}
    <form id="draft">
