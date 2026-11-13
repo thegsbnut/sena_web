@@ -1,6 +1,6 @@
 # Job badge หน้าชื่อผู้เล่น — design
 
-สถานะ: รอเจ้าของโปรเจกต์อนุมัติ · mockup: `docs/superpowers/mockups/2026-11-13-badge-mockup.html` (เปิดในเบราว์เซอร์ ปุ่ม "Job ✦") · ฉบับออนไลน์ https://claude.ai/artifact/Xx5sXoQEGX13JgGAvqe9FP
+สถานะ: อนุมัติแล้ว · ทำเสร็จบน branch `claude/bold-dijkstra-s6qjbu` (ยังไม่ merge main) · mockup: `docs/superpowers/mockups/2026-11-13-badge-mockup.html` (เปิดในเบราว์เซอร์ ปุ่ม "Job ✦") · ฉบับออนไลน์ https://claude.ai/artifact/Xx5sXoQEGX13JgGAvqe9FP
 
 ## ทำไม
 ให้ผู้เล่นอยากมาตีบ่อยขึ้นและสนุกกับการไต่ระดับ: วงกลมหน้าชื่อในการ์ดจองเปลี่ยนเป็น badge แบบ RPG "เปลี่ยน job" ตามจำนวนครั้งที่มาตี บวกมงกุฎสำหรับแชมป์ Cup โทนเบียวขั้นสุด
