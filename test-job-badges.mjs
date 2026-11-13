@@ -280,3 +280,24 @@ test('an unchosen champion still sees the ready marker next to the crown on thei
   assert.match(html, /jb-pip/);
   assert.match(html, /jb-ready/);
 });
+
+test('a full month of sessions is recorded in a handful of D1 queries', async () => {
+  const { DB, rows } = fakeDb();
+  let queries = 0;
+  const counted = { prepare: sql => (queries++, DB.prepare(sql)) };
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    id: 'q' + i,
+    name: 'Q ' + i,
+    thai: '',
+    lv: 5,
+    gender: 'M',
+  }));
+  const sessions = Array.from({ length: 30 }, (_, d) => ({
+    date: `2026-10-${String(d + 1).padStart(2, '0')}`,
+    capacity: 12,
+    registrations: many.slice(0, 12).map(p => reg(p.id)),
+  }));
+  assert.equal(await recordAttendance(counted, 'sena', { sessions }, many, '2026-11-13'), 360);
+  assert.ok(queries <= 20, `used ${queries} queries`);
+  assert.equal(rows('SELECT count(*) n FROM attendance')[0].n, 360);
+});
