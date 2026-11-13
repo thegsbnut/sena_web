@@ -84,6 +84,20 @@
 
   const progress = bill => (bill.count > 0 ? bill.paid / bill.count : 0);
 
-  root.BillingOverview = { owing, reminderText, progress, reviewRows, slipRows };
+  // Plain-text explanation of one player's amount: how the bill was split, and who the amount covers.
+  // `fmt` formats cents; returns [] when the bill has no usable split info.
+  function splitLines(bill, payer, fmt) {
+    const lines = [];
+    const parts = [];
+    if (bill?.court > 0) parts.push('ค่าคอร์ต ' + fmt(bill.court));
+    if (bill?.shuttle > 0) parts.push('ค่าลูก ' + fmt(bill.shuttle));
+    if (parts.length && bill.people > 0)
+      lines.push(parts.join(' + ') + ' หาร ' + bill.people + ' คน');
+    if (payer?.shares > 1 && payer.names?.length)
+      lines.push('ยอดนี้รวม ' + payer.shares + ' คน: ' + payer.names.join(', '));
+    return lines;
+  }
+
+  root.BillingOverview = { owing, reminderText, progress, reviewRows, slipRows, splitLines };
   if (typeof module !== 'undefined') module.exports = root.BillingOverview;
 })(typeof window === 'undefined' ? globalThis : window);

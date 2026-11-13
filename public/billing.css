@@ -665,3 +665,24 @@ body.nxc.home .slip-row button {
   color: #f6f7ee;
   border-color: #6f8d7c;
 }
+
+body.nxc.home .mine .reject-note {
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  background: #fff1ee;
+  color: #8a2a1a;
+  font-size: 0.9rem;
+}
+body.nxc.home .mine .split {
+  display: block;
+  margin: 0.2rem 0;
+}
+body.nxc.home .mine .copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+  font-size: 0.9rem;
+}
