@@ -462,10 +462,13 @@
   const payTokenOf = item => new URLSearchParams(new URL(item.url).hash.slice(1)).get('pay');
   async function loadMine() {
     try {
-      const response = await fetch('/api/member?action=bills&club=' + club, { cache: 'no-store' });
+      const response = await fetch('/api/member/bills?club=' + club, { cache: 'no-store' });
       if (response.status === 401) return { state: 'login', bills: [] };
       if (!response.ok) return { state: 'error', bills: [] };
-      return { state: 'ok', bills: (await response.json()).bills || [] };
+      const data = await response.json();
+      // A reply without a bills list is an error, never "no bills".
+      if (!Array.isArray(data.bills)) return { state: 'error', bills: [] };
+      return { state: 'ok', bills: data.bills };
     } catch {
       return { state: 'error', bills: [] };
     }
@@ -520,7 +523,12 @@
       : waiting.length
         ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
         : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>';
-    if (!mine.bills.length) return wrap(statusBanner);
+    if (!mine.bills.length)
+      return wrap(
+        memberSession?.link?.status === 'approved'
+          ? statusBanner
+          : '<div class="status status-due"><b>บัญชี LINE นี้ยังไม่ได้ผูกกับชื่อผู้เล่น</b><small>กรุณาแจ้งผู้จัดให้ผูกชื่อให้</small></div>',
+      );
     const open = unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
     const title = b => `${dateLabel(b.date)}`;
     return wrap(`${statusBanner}

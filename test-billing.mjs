@@ -440,3 +440,11 @@ test('admin bill list includes per-payer rows but payers and strangers never see
   ).json();
   assert.equal(mine.payers.length, 1);
 });
+
+test('the bills page asks the member API for /api/member/bills, the route that really exists', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./public/billing.js', import.meta.url), 'utf8');
+  assert.match(src, /'\/api\/member\/bills\?club='/);
+  assert.doesNotMatch(src, /api\/member\?action=bills/);
+  // memberRoute reads its action from the last path segment: ?action=bills would silently return the session JSON.
+});
