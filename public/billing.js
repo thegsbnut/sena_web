@@ -599,6 +599,16 @@
     return action === 'slip' ? response.blob() : response.json();
   }
   const mineItem = billId => mine.bills.find(b => b.id === billId);
+  // Unpaid bills, oldest first; the open one is the chosen bill, else the oldest. Shared by the
+  // list renderer and fillMine so both always agree on which bill shows its QR.
+  const unpaidMine = () =>
+    mine.bills
+      .filter(b => ['unpaid', 'rejected'].includes(b.status))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  const openMineId = () => {
+    const unpaid = unpaidMine();
+    return unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
+  };
   function mineChanged() {
     mineCache.clear();
     return load();
@@ -615,9 +625,7 @@
       return wrap(
         '<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>',
       );
-    const unpaid = mine.bills
-      .filter(b => ['unpaid', 'rejected'].includes(b.status))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    const unpaid = unpaidMine();
     const waiting = mine.bills.filter(b => b.status === 'review');
     const paid = mine.bills.filter(b => b.status === 'paid');
     const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
@@ -632,7 +640,7 @@
           ? statusBanner
           : '<div class="status status-due"><b>บัญชี LINE นี้ยังไม่ได้ผูกกับชื่อผู้เล่น</b><small>กรุณาแจ้งผู้จัดให้ผูกชื่อให้</small></div>',
       );
-    const open = unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
+    const open = openMineId();
     const title = b => `${dateLabel(b.date)}`;
     const slipButton = b =>
       b.hasSlip
@@ -652,9 +660,7 @@
   }
 
   async function fillMine() {
-    const item =
-      mine.bills.find(b => b.id === openBill) ||
-      mine.bills.find(b => ['unpaid', 'rejected'].includes(b.status));
+    const item = mineItem(openMineId());
     const body = item && root.querySelector(`[data-body="${item.id}"]`);
     if (!body) return;
     try {
