@@ -64,3 +64,38 @@ body.nxc .booking-action {
 body.nxc #booking:has(.booking-action:not([hidden])) {
   padding-bottom: 76px;
 }
+
+/* Toolbar: the long "เข้าสู่ระบบ LINE / ผูกชื่อเพื่อจอง" pill used to squeeze the label and the
+   refresh button into wrapped text. Label + refresh stay on one row, the login pill gets a full row. */
+body.nxc .booking-toolbar {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+body.nxc .booking-club {
+  white-space: nowrap;
+  margin-right: auto;
+}
+body.nxc .booking-toolbar #bookingRefresh {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+body.nxc .booking-toolbar #bookingMemberLogin,
+body.nxc .booking-toolbar #bookingBills {
+  order: 3;
+  flex: 1 1 100%;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  padding: 11px 16px;
+  font-weight: 800;
+}
+body.nxc .booking-toolbar #bookingMemberLogin[hidden],
+body.nxc .booking-toolbar #bookingBills[hidden] {
+  display: none;
+}
+body.nxc .booking-toolbar #bookingMemberLogin {
+  background: var(--lime);
+  color: #102219;
+  border-color: #445321;
+}
