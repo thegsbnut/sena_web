@@ -1034,8 +1034,9 @@ main:has(#booking:not([hidden])) > .venue-picker small {
 
 /* My own status on a date card: clear badge instead of small print. */
 .booking-me {
-  flex-basis: 100%;
-  width: fit-content;
+  margin-inline-start: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 13px;
