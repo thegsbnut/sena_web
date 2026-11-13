@@ -5,7 +5,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/b/*", "/liff.html", "/admin", "/"]
+    "run_worker_first": ["/api/*", "/b/*", "/liff.html", "/admin", "/", "/dev-login", "/dev-logout"]
   },
   "keep_vars": true,
   "observability": { "enabled": true },

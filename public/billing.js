@@ -1,6 +1,6 @@
 (() => {
   const params = new URLSearchParams(location.search);
-  const club = params.get('club') === '88' ? '88' : 'sena';
+  const club = ['88', 'test'].includes(params.get('club')) ? params.get('club') : 'sena';
   let id = params.get('bill');
   const manage = params.get('manage') === '1';
   const payerToken = new URLSearchParams(location.hash.slice(1)).get('pay');
@@ -13,7 +13,7 @@
   const qrPhotoFallback =
     'กดค้างที่รูป QR แล้วเลือกบันทึกรูปภาพ ถ้าเปิดจาก LINE แล้วไม่มีตัวเลือกนี้ ให้เปิดหน้าบิลใน Safari หรือ Chrome';
   let qrPhoto, qrPhotoUrl;
-  const clubName = value => (value === '88' ? '88' : 'Sena');
+  const clubName = value => (value === '88' ? '88' : value === 'test' ? 'TEST' : 'Sena');
   const money = cents =>
     (cents / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const escape = value =>
@@ -58,7 +58,7 @@
     attendees = [],
     editing = false;
   const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
-  const clubQuery = club === '88' ? '?club=88' : '';
+  const clubQuery = club === 'sena' ? '' : '?club=' + club;
   let embedded = false;
   try {
     embedded = window.self !== window.top;

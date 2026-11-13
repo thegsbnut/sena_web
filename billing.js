@@ -1,4 +1,4 @@
-import { clubOf, CLUB_IDS } from './clubs.js';
+import { clubOf, CLUB_IDS, TEST_CLUB } from './clubs.js';
 import { logError } from './log.js';
 import {
   groupMentionTarget,
@@ -442,10 +442,12 @@ export async function billingRoute(req, env, admin, club, ctx) {
           promptpay,
         });
       }
+      // dev-login sandbox bills never mix with the real clubs' list (and vice versa).
       const rows = await db
         .prepare(
-          "SELECT * FROM bills ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200",
+          `SELECT * FROM bills WHERE club${club === TEST_CLUB ? '=' : '<>'}? ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200`,
         )
+        .bind(TEST_CLUB)
         .all();
       const parsed = rows.results.map(r => ({ ...r, ...JSON.parse(r.payload) }));
       // AI slip checks for the bills still open (bounded), so the home list can flag them.
@@ -527,6 +529,8 @@ export async function billingRoute(req, env, admin, club, ctx) {
   }
   const bill = await readBill(db, id);
   if (!bill) return fail('ไม่พบบิล', 404);
+  // A sandbox bill is reachable only from the sandbox club, and only it is.
+  if ((bill.club === TEST_CLUB) !== (club === TEST_CLUB)) return fail('ไม่พบบิล', 404);
   const member = memberMode(env) ? await memberFor(req, env, bill.club) : null;
   const owns = p =>
     member?.link?.status === 'approved' && p.payerKey === 'member:' + member.link.player_id;

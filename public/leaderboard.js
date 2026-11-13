@@ -53,8 +53,10 @@
             return `<article class="panel"><div class="sectionhead"><h2>${esc(c.title)}</h2><span>${esc(c.date)}</span></div><p class="hint">${c.inBaseline ? 'รวมอยู่ในยอดตั้งต้นแล้ว' : 'นับเพิ่มในสถิติสะสม'} · ${c.matches.length} เกม</p><details><summary>ดูอันดับและคะแนน</summary><ol>${standings.map(row => `<li>${esc(row.name)} · ชนะ ${row.w} · แต้ม ${row.pf}–${row.pa}</li>`).join('')}</ol>${c.matches.map((m, i) => `<p>เกม ${i + 1} · ${esc(nameOf(c.teams[m.a]))} <b>${m.sa} : ${m.sb}</b> ${esc(nameOf(c.teams[m.b]))}</p>`).join('')}</details>${data.canEdit ? `<button class="secondary" data-edit-history="${esc(c.id)}">แก้ไขรายการนี้</button>` : ''}</article>`;
           })
           .join('')
-      : activeClub === '88'
-        ? '<div class="panel">ยังไม่มีประวัติ 88 Cup • เริ่มบันทึกการแข่งขันแรกได้เลย</div>'
+      : activeClub !== 'sena'
+        ? '<div class="panel">ยังไม่มีประวัติ ' +
+          venueLabel +
+          ' Cup • เริ่มบันทึกการแข่งขันแรกได้เลย</div>'
         : '<div class="panel">ยังไม่มีผลแยกรายการ • สถิติจากภาพเก็บเป็นยอดสะสมตั้งต้นแล้ว</div>';
   }
   async function load() {
@@ -79,7 +81,7 @@
     form.elements.title.value = record?.title || cupName;
     form.elements.date.value = record?.date || today();
     form.elements.inBaseline.checked = record?.inBaseline || false;
-    form.elements.inBaseline.closest('label').hidden = activeClub === '88';
+    form.elements.inBaseline.closest('label').hidden = activeClub !== 'sena';
     form.elements.teams.value = draft ? draft.teams.map(nameOf).join('\n') : '';
     document.querySelector('#historyEditor').hidden = false;
     document.querySelector('#historyEditor').dataset.dirty = '0';

@@ -1,4 +1,9 @@
 (async () => {
+  // dev-login test users never use the real LINE SDK: back to the sandbox club.
+  if (document.cookie.split('; ').some(c => c.startsWith('__Host-sena-test='))) {
+    location.replace('/court?club=test#booking');
+    return;
+  }
   let club = 'sena',
     pay = false,
     bill = null;
