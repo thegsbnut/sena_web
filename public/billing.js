@@ -58,7 +58,17 @@
     attendees = [],
     editing = false;
   const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
-  document.querySelector('#back').href = '/court' + (club === '88' ? '?club=88' : '') + '#booking';
+  const clubQuery = club === '88' ? '?club=88' : '';
+  document.querySelector('#back').href = '/court' + clubQuery + '#booking';
+  const picker = document.querySelector('#venuePicker');
+  const clubSelect = picker.querySelector('select');
+  clubSelect.value = club;
+  clubSelect.addEventListener('change', () =>
+    location.assign('/billing.html?club=' + encodeURIComponent(clubSelect.value)),
+  );
+  for (const link of document.querySelectorAll('.next-tabbar [data-go]'))
+    link.href = '/court' + clubQuery + '#' + link.dataset.go;
+  document.querySelector('.next-tabbar .tab.active').href = '/billing.html' + clubQuery;
   receipt.addEventListener('close', () => {
     if (slipUrl) URL.revokeObjectURL(slipUrl);
     slipUrl = undefined;
@@ -405,6 +415,8 @@
     showDraft();
   }
   async function load() {
+    document.body.classList.toggle('home', !id);
+    picker.hidden = Boolean(id);
     if (id) {
       bill = await request();
       showBill();

@@ -4,6 +4,7 @@
   --paper: #f6f7ee;
   --line: #d2dbcc;
   --muted: #50655a;
+  --lime: #dcfa30;
 }
 * {
   box-sizing: border-box;
@@ -246,4 +247,48 @@ fieldset.choice input {
 .ai-check.ok,
 .ai-check.info {
   color: var(--muted);
+}
+
+/* Bottom tab bar and the dark "home" view (no ?bill=). The per-bill pages keep the light layout above. */
+body.nxc nav.next-tabbar .tab {
+  text-decoration: none;
+}
+body.nxc.home {
+  background: #0b1c15;
+  color: #f6f7ee;
+}
+body.nxc.home h1,
+body.nxc.home h2 {
+  color: #f6f7ee;
+}
+body.nxc.home .error {
+  color: #ffb4a6;
+}
+body.nxc.home .muted,
+body.nxc.home small {
+  color: #b8cdbf;
+}
+body.nxc .venue-picker {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  align-items: center;
+  gap: 8px 16px;
+  max-width: 50rem;
+  margin: 12px auto 0;
+  padding: 12px 16px;
+  background: #f6f7ee;
+  color: #203c34;
+  border-radius: 10px;
+}
+body.nxc .venue-picker label {
+  font-weight: 850;
+  display: block;
+  margin: 0;
+}
+body.nxc .venue-picker select {
+  min-height: 44px;
+  font-weight: 850;
+  font-size: 18px;
+  background: #dcfa30;
+  margin: 0;
 }

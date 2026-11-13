@@ -7,11 +7,14 @@
  <meta name="theme-color" content="#173f35">
  <title>บิลค่าใช้จ่าย · SENA COURT</title>
  <link rel="stylesheet" href="/billing.css">
+ <link rel="stylesheet" href="/next-nav.css?v=6">
  <script defer src="/slip-check-text.js?v=20261112-slip-ai"></script>
+ <script defer src="/billing-overview.js?v=20261113-bills-tab"></script>
  <script defer src="/billing.js?v=20261112-slip-ai"></script>
 </head>
-<body>
- <header><a id="back" href="/court#booking">← SENA COURT</a><span>ค่าใช้จ่ายก๊วน</span></header>
+<body class="nxc">
+ <a id="back" href="/court#booking" hidden>← SENA COURT</a>
+ <section class="venue-picker" id="venuePicker" hidden><label for="clubSelect">เลือกก๊วน / สนาม</label><select id="clubSelect" aria-label="เลือกก๊วน / สนาม"><option value="sena">Sena</option><option value="88">88</option></select></section>
  <main>
   <p id="status" role="status">กำลังโหลดบิล…</p>
   <div id="billing"></div>
@@ -25,5 +28,11 @@
   <p id="paymentQrSaveHint" class="muted" role="status"></p>
   <form method="dialog" class="actions"><button id="paymentQrSave" class="primary" type="button">บันทึกลงรูปภาพ</button><button>ปิด</button></form>
  </dialog>
+ <nav class="next-tabbar" aria-label="เมนูหลัก">
+  <a class="tab" data-go="booking" href="/court#booking"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>จองคิว</span></a>
+  <a class="tab active" href="/billing.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>บิล</span></a>
+  <a class="tab" data-go="cup" href="/court#cup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/></svg><span>Cup</span></a>
+  <a class="tab" data-go="leaderboard" href="/court#leaderboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11M10 20V5M16 20v-7M22 20H2"/></svg><span>อันดับ</span></a>
+ </nav>
 </body>
 </html>
