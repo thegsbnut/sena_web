@@ -418,3 +418,25 @@ test('a confirmed supplemental bill has a distinct link, displays the same date,
   assert.match(await billingLineText(f.env, 'sena', origin), /บิลเพิ่มเติม/);
   assert.equal((await post({ ...draft, additional }, '88')).status, 409);
 });
+
+test('admin bill list includes per-payer rows but payers and strangers never see other people', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const list = await (await f.request('/api/billing', { cookie })).json();
+  const rows = list.bills[0].payers;
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    assert.deepEqual(Object.keys(row).sort(), ['amount', 'hasSlip', 'name', 'status']);
+    assert.equal(row.hasSlip, false);
+  }
+  assert.deepEqual(rows.map(r => r.name).sort(), ['Bua', 'Nut']);
+  assert.equal((await f.request('/api/billing')).status, 401);
+  const { payers } = await (await f.request('/api/billing?bill=' + id, { cookie })).json();
+  const mine = await (
+    await f.request('/api/billing?bill=' + id, { token: payers[0].token })
+  ).json();
+  assert.equal(mine.payers.length, 1);
+});

@@ -448,7 +448,19 @@ export async function billingRoute(req, env, admin, club, ctx) {
         )
         .all();
       return json({
-        bills: rows.results.map(r => summary({ ...r, ...JSON.parse(r.payload) })),
+        bills: rows.results.map(r => {
+          const bill = { ...r, ...JSON.parse(r.payload) };
+          return {
+            ...summary(bill),
+            payers: bill.payers.map(p => ({
+              name: p.name,
+              amount: p.amount,
+              status: p.status,
+              ...(p.method ? { method: p.method } : {}),
+              hasSlip: Boolean(p.slipKey),
+            })),
+          };
+        }),
         storageReady: Boolean(env.SLIPS_DB),
         promptpay,
       });
