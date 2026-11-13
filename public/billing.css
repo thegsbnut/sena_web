@@ -594,3 +594,74 @@ body.nxc.home .pay-actions button.primary {
   border-color: #445321;
   font-weight: 800;
 }
+
+/* Organizer: cards for slips/cash waiting for review, and per-bill cash rows under a person. */
+body.nxc.home .review-card,
+body.nxc.home .owe-card {
+  background: #173f35;
+  border-radius: 0.9rem;
+  padding: 0.65rem 0.85rem;
+  margin: 0 0 0.5rem;
+}
+body.nxc.home .review-card {
+  border: 1px solid #c8b35a;
+}
+body.nxc.home .review-card .owe,
+body.nxc.home .owe-card .owe {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+body.nxc.home .review-actions {
+  margin-top: 0.5rem;
+}
+body.nxc.home .review-actions button {
+  color: #f6f7ee;
+  border-color: #6f8d7c;
+}
+body.nxc.home .review-actions button.primary {
+  color: #102219;
+  border-color: #445321;
+}
+body.nxc.home .more {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: #b8cdbf;
+}
+body.nxc.home .owe-rows {
+  margin: 0.4rem 0 0;
+}
+body.nxc.home .owe-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid #2c5a4c;
+  font-size: 0.9rem;
+}
+body.nxc.home .owe-row button {
+  min-height: 34px;
+  background: transparent;
+  color: var(--lime);
+  border: 1px solid var(--lime);
+  border-radius: 99px;
+  font-weight: 800;
+}
+body.nxc.home .slip-list {
+  background: #173f35;
+  border-radius: 0.9rem;
+  padding: 0.3rem 0.85rem 0.5rem;
+}
+body.nxc.home .slip-row {
+  flex-wrap: wrap;
+}
+body.nxc.home .slip-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+body.nxc.home .slip-row button {
+  color: #f6f7ee;
+  border-color: #6f8d7c;
+}

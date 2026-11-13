@@ -452,7 +452,10 @@ export async function billingRoute(req, env, admin, club, ctx) {
           const bill = { ...r, ...JSON.parse(r.payload) };
           return {
             ...summary(bill),
+            revision: bill.revision,
             payers: bill.payers.map(p => ({
+              id: p.id,
+              ...(p.slipKey ? { receiptId: p.slipKey.split('/').at(-1) } : {}),
               name: p.name,
               amount: p.amount,
               status: p.status,

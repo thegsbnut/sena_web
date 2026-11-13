@@ -419,9 +419,36 @@
       ['จ่ายครบ', rows.filter(b => !b.cancelled && !b.outstanding)],
       ['ยกเลิก', rows.filter(b => b.cancelled)],
     ];
-    const person = g =>
-      `<div class="owe"><div><strong>${escape(g.name)}</strong><small>ค้าง ${g.bills} บิล</small>${g.review ? '<span class="chip">รอตรวจสลิป</span>' : ''}</div>
-       <div class="r">${money(g.totalCents)} บ.<button type="button" class="nag" data-action="nag" data-name="${escape(g.name)}">ทวง</button></div></div>`;
+    const attrs = (r, name) =>
+      `data-bill="${escape(r.billId)}" data-club="${escape(r.club)}" data-payer="${escape(r.payerId)}" data-revision="${r.revision}" data-receipt="${escape(r.receiptId || '')}" data-name="${escape(name)}" data-amount="${r.amount}"`;
+    const person = g => {
+      const cashRows = g.rows.filter(r => ['unpaid', 'rejected'].includes(r.status));
+      return `<div class="owe-card"><div class="owe"><div><strong>${escape(g.name)}</strong><small>ค้าง ${g.bills} บิล</small>${g.review ? '<span class="chip">รอตรวจ</span>' : ''}</div>
+       <div class="r">${money(g.totalCents)} บ.<button type="button" class="nag" data-action="nag" data-name="${escape(g.name)}">ทวง</button></div></div>
+       ${
+         cashRows.length
+           ? `<details class="owe-rows"><summary>รับเงินสด</summary>${cashRows
+               .map(
+                 r =>
+                   `<div class="owe-row"><span>${dateLabel(r.date)} · ${money(r.amount)} บ.</span><button type="button" data-action="rv-cash" ${attrs(r, g.name)}>รับเงินสดแล้ว</button></div>`,
+               )
+               .join('')}</details>`
+           : ''
+       }</div>`;
+    };
+    const review = overview.reviewRows(rows);
+    const slips = overview.slipRows(rows);
+    const slipCard = r =>
+      `<div class="owe-row slip-row"><span><strong>${escape(r.name)}</strong> · ${dateLabel(r.date)} · ${money(r.amount)} บ.</span>
+       <span class="slip-buttons"><button type="button" data-action="rv-slip" ${attrs(r, r.name)}>ดูสลิป</button><button type="button" data-action="rv-reject" ${attrs(r, r.name)}>ให้ส่งใหม่</button></span></div>`;
+    const reviewCard = r =>
+      `<div class="review-card"><div class="owe"><div><strong>${escape(r.name)}</strong><small>${dateLabel(r.date)} · ${r.kind === 'cash' ? 'แจ้งจ่ายเงินสด' : 'ส่งสลิปแล้ว'}</small></div><div class="r">${money(r.amount)} บ.</div></div>
+       <div class="pay-actions review-actions">${
+         r.kind === 'cash'
+           ? `<button type="button" class="primary" data-action="rv-cash" ${attrs(r, r.name)}>รับเงินสดแล้ว</button><button type="button" data-action="rv-undo-cash" ${attrs(r, r.name)}>ยังไม่ได้รับเงิน</button>`
+           : `<button type="button" data-action="rv-slip" ${attrs(r, r.name)}>ดูสลิป</button><button type="button" class="primary" data-action="rv-approve" ${attrs(r, r.name)}>ยืนยันจ่าย</button><button type="button" data-action="rv-reject" ${attrs(r, r.name)}>ให้ส่งใหม่</button>`
+       }</div>
+       <a class="more" href="/billing.html?manage=1&club=${escape(r.club)}&bill=${escape(r.billId)}">รายละเอียดบิล</a></div>`;
     const billRow = b =>
       `<a class="bill" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}"><span class="h"><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><span>จ่ายแล้ว ${b.paid}/${b.count}</span></span>
        <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
@@ -430,8 +457,10 @@
    <div class="actions"><a class="button create-bill" href="/billing.html?manage=1&new=1&club=${club}">+ สร้างบิลใหม่</a></div>
    <div class="hero"><small>ค้างรวมทั้งก๊วน</small>
     <div class="big">${money(owe.totalCents)} <span>บาท · ${owe.people} คน</span></div>
-    ${owe.reviewCount ? `<p class="flag">มีสลิปรอตรวจ ${owe.reviewCount} คน</p>` : ''}</div>
+    ${review.length ? `<p class="flag">รอตรวจ ${review.length} รายการ</p>` : ''}</div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
+   ${review.length ? `<h2 class="sec">รอตรวจ (${review.length})</h2>${review.map(reviewCard).join('')}` : ''}
+   ${slips.length ? `<details class="slip-list"><summary>สลิปที่แนบแล้ว (${slips.length}) · ดูสลิป / ให้ส่งใหม่</summary>${slips.map(slipCard).join('')}</details>` : ''}
    <h2 class="sec">ใครยังค้าง</h2>
    ${
      owe.groups.length
@@ -527,6 +556,25 @@
       }
       return response.json();
     });
+  }
+  // Organizer action on one payer row from the list (cookie auth; the row carries bill id, payer id, revision).
+  async function adminCall(el, action, body) {
+    const url = new URL('/api/billing', location.origin);
+    url.searchParams.set('club', el.dataset.club);
+    url.searchParams.set('bill', el.dataset.bill);
+    url.searchParams.set('action', action);
+    if (action === 'slip') url.searchParams.set('payer', el.dataset.payer);
+    const response = await fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
+    }
+    return action === 'slip' ? response.blob() : response.json();
   }
   const mineItem = billId => mine.bills.find(b => b.id === billId);
   function mineChanged() {
@@ -893,6 +941,63 @@
         );
         await mineChanged();
         message('แจ้งจ่ายเงินสดแล้ว · รอผู้จัดยืนยัน');
+      });
+    }
+    if (action.startsWith('rv-')) {
+      const name = target.dataset.name,
+        amount = money(Number(target.dataset.amount));
+      if (action === 'rv-slip')
+        return run(async () => {
+          slipUrl = URL.createObjectURL(await adminCall(target, 'slip'));
+          receipt.querySelector('img').src = slipUrl;
+          receipt.showModal();
+          message('');
+        });
+      if (action === 'rv-approve') {
+        if (!confirm('ตรวจยอดและบัญชีรับเงินแล้ว ยืนยันว่า ' + name + ' จ่าย ' + amount + ' บาท?'))
+          return;
+        return run(async () => {
+          await adminCall(target, 'review', {
+            payer: target.dataset.payer,
+            receiptId: target.dataset.receipt,
+            status: 'paid',
+            note: '',
+          });
+          await load();
+          message('ยืนยันแล้ว · ' + name + ' จ่ายแล้ว');
+        });
+      }
+      if (action === 'rv-reject') {
+        const note = prompt('เหตุผลที่ให้ส่งสลิปใหม่', '');
+        if (note === null) return;
+        return run(async () => {
+          await adminCall(target, 'review', {
+            payer: target.dataset.payer,
+            receiptId: target.dataset.receipt,
+            status: 'rejected',
+            note: note.trim(),
+          });
+          await load();
+          message('ให้ ' + name + ' ส่งสลิปใหม่แล้ว');
+        });
+      }
+      const received = action === 'rv-cash';
+      if (
+        !confirm(
+          received
+            ? 'ยืนยันว่าได้รับเงินสดจาก ' + name + ' ' + amount + ' บาทแล้ว?'
+            : 'ยกเลิกรายการรับเงินสดของ ' + name + '?',
+        )
+      )
+        return;
+      return run(async () => {
+        await adminCall(target, 'cash', {
+          payer: target.dataset.payer,
+          received,
+          revision: Number(target.dataset.revision),
+        });
+        await load();
+        message(received ? 'บันทึกรับเงินสดแล้ว' : 'ยกเลิกรายการรับเงินสดแล้ว');
       });
     }
     if (action === 'open-mine') {

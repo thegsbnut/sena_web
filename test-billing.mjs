@@ -429,10 +429,13 @@ test('admin bill list includes per-payer rows but payers and strangers never see
   const rows = list.bills[0].payers;
   assert.equal(rows.length, 2);
   for (const row of rows) {
-    assert.deepEqual(Object.keys(row).sort(), ['amount', 'hasSlip', 'name', 'status']);
+    // id (and receiptId once a slip exists) let the organizer act on a row from the list
+    assert.deepEqual(Object.keys(row).sort(), ['amount', 'hasSlip', 'id', 'name', 'status']);
+    assert.match(row.id, /^[a-f0-9]+$/);
     assert.equal(row.hasSlip, false);
   }
   assert.deepEqual(rows.map(r => r.name).sort(), ['Bua', 'Nut']);
+  assert.equal(list.bills[0].revision, 0);
   assert.equal((await f.request('/api/billing')).status, 401);
   const { payers } = await (await f.request('/api/billing?bill=' + id, { cookie })).json();
   const mine = await (

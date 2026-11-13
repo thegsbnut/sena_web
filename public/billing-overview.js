@@ -2,6 +2,20 @@
 // No DOM and no API calls, so node tests and the browser share the same code.
 // Amounts are cents. Callers must escape() any name before putting it in innerHTML.
 (function (root) {
+  // One payer row of one bill, with everything needed to act on it from the list.
+  const rowOf = (bill, p) => ({
+    billId: bill.id,
+    club: bill.club,
+    date: bill.date,
+    revision: bill.revision,
+    payerId: p.id,
+    amount: p.amount,
+    status: p.status,
+    method: p.method,
+    hasSlip: p.hasSlip,
+    receiptId: p.receiptId,
+  });
+
   function owing(bills) {
     const byName = new Map();
     let totalCents = 0,
@@ -16,7 +30,9 @@
           totalCents: 0,
           bills: 0,
           review: false,
+          rows: [],
         };
+        group.rows.push(rowOf(bill, p));
         group.totalCents += p.amount;
         group.bills += 1;
         if (p.status === 'review') group.review = true;
@@ -38,8 +54,36 @@
     ].join('\n');
   }
 
+  // Slips and cash declarations waiting for the organizer, oldest bill first.
+  function reviewRows(bills) {
+    const rows = [];
+    for (const bill of bills) {
+      if (bill.cancelled) continue;
+      for (const p of bill.payers || [])
+        if (p.status === 'review')
+          rows.push({
+            ...rowOf(bill, p),
+            name: p.name,
+            kind: p.method === 'cash' ? 'cash' : 'slip',
+          });
+    }
+    return rows.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name, 'th'));
+  }
+
+  // Slips that were attached (they mark the row paid at once): the organizer can look and ask for a new one.
+  function slipRows(bills) {
+    const rows = [];
+    for (const bill of bills) {
+      if (bill.cancelled) continue;
+      for (const p of bill.payers || [])
+        if (p.status === 'paid' && p.hasSlip && p.method !== 'cash')
+          rows.push({ ...rowOf(bill, p), name: p.name, kind: 'slip' });
+    }
+    return rows.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name, 'th'));
+  }
+
   const progress = bill => (bill.count > 0 ? bill.paid / bill.count : 0);
 
-  root.BillingOverview = { owing, reminderText, progress };
+  root.BillingOverview = { owing, reminderText, progress, reviewRows, slipRows };
   if (typeof module !== 'undefined') module.exports = root.BillingOverview;
 })(typeof window === 'undefined' ? globalThis : window);

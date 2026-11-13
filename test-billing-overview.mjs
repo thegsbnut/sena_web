@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import './public/billing-overview.js';
 
-const { owing, reminderText, progress } = globalThis.BillingOverview;
+const { owing, reminderText, progress, reviewRows, slipRows } = globalThis.BillingOverview;
 const row = (name, amount, status = 'unpaid') => ({ name, amount, status, hasSlip: false });
 const bill = (payers, extra = {}) => ({
   cancelled: false,
@@ -15,7 +15,11 @@ const money = cents => String(cents / 100);
 
 test('owing merges the same name across two bills', () => {
   const r = owing([bill([row('นัท', 16000)]), bill([row('นัท', 16000), row('บัว', 8000)])]);
-  assert.deepEqual(r.groups[0], { name: 'นัท', totalCents: 32000, bills: 2, review: false });
+  assert.deepEqual(
+    { ...r.groups[0], rows: undefined },
+    { name: 'นัท', totalCents: 32000, bills: 2, review: false, rows: undefined },
+  );
+  assert.equal(r.groups[0].rows.length, 2);
   assert.equal(r.totalCents, 40000);
   assert.equal(r.people, 2);
 });
@@ -64,4 +68,82 @@ test('reminderText names the club and every person, and is empty when nobody owe
 test('progress is 0 when a bill has no payers', () => {
   assert.equal(progress({ count: 0, paid: 0 }), 0);
   assert.equal(progress({ count: 4, paid: 3 }), 0.75);
+});
+
+const full = (name, amount, status, extra = {}) => ({
+  id: 'p-' + name,
+  name,
+  amount,
+  status,
+  hasSlip: false,
+  ...extra,
+});
+const withMeta = (payers, extra = {}) => ({
+  id: 'b1',
+  club: 'sena',
+  date: '2026-11-10',
+  revision: 3,
+  cancelled: false,
+  count: payers.length,
+  paid: 0,
+  payers,
+  ...extra,
+});
+
+test('owing rows carry what the organizer needs to act on one person in one bill', () => {
+  const r = owing([withMeta([full('นัท', 16000, 'unpaid')])]);
+  assert.deepEqual(r.groups[0].rows, [
+    {
+      billId: 'b1',
+      club: 'sena',
+      date: '2026-11-10',
+      revision: 3,
+      payerId: 'p-นัท',
+      amount: 16000,
+      status: 'unpaid',
+      method: undefined,
+      hasSlip: false,
+      receiptId: undefined,
+    },
+  ]);
+});
+
+test('reviewRows lists slips and cash waiting for the organizer, oldest bill first, never paid or cancelled', () => {
+  const rows = reviewRows([
+    withMeta(
+      [full('ต้อม', 100, 'review', { hasSlip: true, receiptId: 'r1' }), full('เจ', 100, 'paid')],
+      { id: 'b2', date: '2026-11-17' },
+    ),
+    withMeta([full('บัว', 200, 'review', { method: 'cash' })], { id: 'b1', date: '2026-11-10' }),
+    withMeta([full('ปอ', 300, 'review', { hasSlip: true })], { id: 'b3', cancelled: true }),
+  ]);
+  assert.deepEqual(
+    rows.map(r => [r.name, r.kind]),
+    [
+      ['บัว', 'cash'],
+      ['ต้อม', 'slip'],
+    ],
+  );
+  assert.equal(rows[1].receiptId, 'r1');
+  assert.equal(rows[1].billId, 'b2');
+});
+
+test('slipRows lists paid transfers that still have a slip, never cash, unpaid or cancelled bills', () => {
+  const rows = slipRows([
+    withMeta([
+      full('นัท', 100, 'paid', { hasSlip: true, receiptId: 'r1', method: 'transfer' }),
+      full('บัว', 100, 'paid', { method: 'cash' }),
+      full('ต้อม', 100, 'unpaid'),
+      full('เจ', 100, 'paid', { hasSlip: false, method: 'transfer' }),
+    ]),
+    withMeta([full('ปอ', 100, 'paid', { hasSlip: true, method: 'transfer' })], {
+      id: 'b9',
+      cancelled: true,
+    }),
+  ]);
+  assert.deepEqual(
+    rows.map(r => r.name),
+    ['นัท'],
+  );
+  assert.equal(rows[0].receiptId, 'r1');
 });
