@@ -4,7 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-13 · Claude · branch `claude/happy-goodall-x8fbjb` merge เข้า `main` แล้ว: **เว็บจริงใช้เมนูแท็บล่างสีเขียวเข้ม (แท็บที่เลือก=เขียวมะนาว) + แก้แถบปุ่ม LINE ล้น** (`public/next-nav.css`, `public/next-shell.js`, `public/court.html`) — เจ้าของโปรเจกต์ไม่เอาดีไซน์อื่นของ next ไปใช้บนเว็บจริง; โค้ด next (`next/`, `NEXT.md`) ยังเป็นเว็บทดลองแยก
+- 2026-11-13 · Claude · branch `claude/happy-goodall-x8fbjb`: **แท็บ "บิล" แทน "จัดก๊วน" ทำเสร็จ รอเจ้าของโปรเจกต์สั่ง merge เข้า `main`** (spec/plan: `docs/superpowers/specs|plans/2026-11-13-bills-tab*`) — เว็บจริงที่ merge ไปแล้ว: เมนูล่างเขียวเข้ม + แก้แถบ LINE ล้น + ปุ่มบิลค้างเต็มแถว
 
 ## ค้างอยู่ / ขั้นต่อไป
 - **Redesign "SENA Court next" (ดู `NEXT.md`)** — Worker แยก `sena-web-next` ใช้โค้ดเดิม + overlay `next/` และ D1 ชุดเดียวกับ production ไม่มี cron · branch นี้ **ยังไม่ merge ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง**
