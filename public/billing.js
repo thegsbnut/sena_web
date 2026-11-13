@@ -377,7 +377,19 @@
    <form id="draft">
     <section>
      <h2>1. เช็กคนที่มาตีจริง</h2>
-     ${editing ? '' : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${sessions.map(s => `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`).join('')}</select></label>`}
+     ${
+       editing
+         ? ''
+         : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${[
+             ...sessions,
+           ]
+             .sort((a, b) => a.date.localeCompare(b.date))
+             .map(
+               s =>
+                 `<option value="${s.date}" ${s.date === date ? 'selected' : ''}>${dateLabel(s.date)} · ${escape(s.time)}</option>`,
+             )
+             .join('')}</select></label>`
+     }
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance"></div>
