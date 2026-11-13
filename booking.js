@@ -533,9 +533,15 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         fail('ไม่พบคำสั่ง');
       // A job line lives outside the booking document: write it, then answer like a GET.
       if (input.action === 'job') {
-        if (member?.link?.status !== 'approved') fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน', 401);
+        // Organizers may set anyone's line; members only their own.
+        const target = admin && input.playerId ? input.playerId : member?.link?.player_id;
+        if (!admin && member?.link?.status !== 'approved')
+          fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน', 401);
+        if (!target) fail('กรุณาเลือกผู้เล่น');
         if (!globalThis.SenaJobRules.LINES.includes(input.line)) fail('สายไม่ถูกต้อง');
-        await setJobLine(env.DB, club, member.link.player_id, input.line);
+        if (admin && !(await clubStateFor(env.DB, club)).players.some(p => p.id === target))
+          fail('ไม่พบผู้เล่นในก๊วน');
+        await setJobLine(env.DB, club, target, input.line);
         jobResult = { message: 'เปลี่ยนสายแล้ว' };
         input = null;
       }
@@ -849,6 +855,13 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       awards,
       badges,
     );
+    // Exact play counts go only to organizers and the badge owner; everyone else
+    // gets the lowest count with the same badge, which draws the same picture.
+    const ownId = member?.link?.status === 'approved' ? member.link.player_id : null;
+    if (!admin)
+      for (const p of view.roster)
+        if (p.id !== ownId)
+          p.badge = { ...p.badge, plays: globalThis.SenaJobRules.levelFloor(p.badge.plays) };
     if (memberMode(env)) {
       view.requireLogin = true;
       view.member = {

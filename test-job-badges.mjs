@@ -194,7 +194,7 @@ test('booking roster carries plays, chosen or default line and Cup titles', asyn
   const data = await f.get();
   assert.equal(data.roster.length, roster.length);
   assert.deepEqual(data.roster[0].badge, {
-    plays: 6,
+    plays: 5, // public view: exact 6 is hidden behind the level floor
     line: 'pink',
     chosen: true,
     titles: 2,
@@ -300,4 +300,72 @@ test('a full month of sessions is recorded in a handful of D1 queries', async ()
   assert.equal(await recordAttendance(counted, 'sena', { sessions }, many, '2026-11-13'), 360);
   assert.ok(queries <= 20, `used ${queries} queries`);
   assert.equal(rows('SELECT count(*) n FROM attendance')[0].n, 360);
+});
+
+test('nextGoal and levelFloor follow the ladder', () => {
+  assert.deepEqual([0, 4, 5, 22, 30, 61, 179, 180, 400].map(R.nextGoal), [
+    5,
+    5,
+    15,
+    30,
+    60,
+    90,
+    180,
+    null,
+    null,
+  ]);
+  assert.deepEqual([0, 4, 7, 22, 59, 95, 400].map(R.levelFloor), [0, 0, 5, 15, 30, 90, 180]);
+});
+
+test('exact play counts reach only admins and the badge owner', async () => {
+  const f = bookingEnv();
+  await f.get();
+  const add = f.db.prepare("INSERT INTO attendance VALUES ('sena', ?, ?)");
+  for (let d = 0; d < 22; d++) add.run('2026-09-' + String(d + 1).padStart(2, '0'), 'p1');
+  const route = member =>
+    bookingRoute(new Request('https://example.com/api/booking'), f.env, false, 'sena', member);
+  const publicView = await (await route(null)).json();
+  assert.equal(publicView.roster[1].badge.plays, 15);
+  const own = await (await route({ link: { status: 'approved', player_id: 'p1' } })).json();
+  assert.equal(own.roster[1].badge.plays, 22);
+  const admin = await (
+    await bookingRoute(new Request('https://example.com/api/booking'), f.env, true, 'sena', null)
+  ).json();
+  assert.equal(admin.roster[1].badge.plays, 22);
+});
+
+test('admins set any roster player line; players cannot target someone else', async () => {
+  const f = bookingEnv();
+  await f.get();
+  const post = (body, admin, member) =>
+    bookingRoute(
+      new Request('https://example.com/api/booking', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+      f.env,
+      admin,
+      'sena',
+      member,
+    );
+  assert.equal(
+    (await post({ action: 'job', line: 'yellow', playerId: 'p2' }, true, null)).status,
+    200,
+  );
+  assert.equal(
+    (await post({ action: 'job', line: 'yellow', playerId: 'nobody' }, true, null)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await post({ action: 'job', line: 'red', playerId: 'p2' }, false, {
+        link: { status: 'approved', player_id: 'p0' },
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(f.rows('SELECT player_id, line FROM player_jobs ORDER BY player_id'), [
+    { player_id: 'p0', line: 'red' },
+    { player_id: 'p2', line: 'yellow' },
+  ]);
 });

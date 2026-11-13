@@ -41,6 +41,7 @@
 ## Job badge หน้าชื่อ
 - วงหน้าชื่อในการ์ดจองเป็น job badge: Novice 0–4 ครั้ง → Job 1 (5) → Job 2 (15) → Job สุดท้าย (30, ขยับ) → ดาว ★ ทุก 30 ครั้ง สูงสุด 5 · ไม่ลดขั้น · 5 สาย (ตบ/ตัด/เลี้ยว/หยอด/สะสมไม้)
 - นับครั้ง: cron 01:00 (`scheduledBookings` → `recordAttendance` ใน `job-badges.js`) บันทึกตัวจริงของ session ที่ผ่านไปแล้วลงตาราง `attendance` (ไม่นับแขก/สำรอง/วัน skip; รันซ้ำไม่นับซ้ำ) — ผู้จัดถอนชื่อคนไม่มาก่อนตี 1 จะไม่ถูกนับ
-- สาย: ตาราง `player_jobs` (แยกจากเอกสารจอง ไม่แตะ revision); ยังไม่เลือก = สุ่มคงที่จาก player id (`public/job-rules.js`); สมาชิก LINE ที่ผูกชื่อแล้วกด badge ตัวเองเพื่อเปลี่ยน (`POST /api/booking {action:'job', line}`)
+- สาย: ตาราง `player_jobs` (แยกจากเอกสารจอง ไม่แตะ revision); ยังไม่เลือก = สุ่มคงที่จาก player id (`public/job-rules.js`); สมาชิก LINE ที่ผูกชื่อแล้วกด badge ตัวเองเพื่อเปลี่ยน, ผู้จัดกด badge ใครก็ได้ (`POST /api/booking {action:'job', line, playerId?}` — `playerId` ใช้ได้เฉพาะผู้จัด)
+- ตัวเลขครั้งที่มา: ผู้จัดเห็นทุกคน `· 🏸22`, เจ้าตัวเห็น `· 🏸22/30` (เป้าถัดไป); คนอื่นได้ `plays` ที่ปัดลงเป็นจุดเริ่มของขั้น (`levelFloor`) จาก server จึงไม่เห็นตัวเลขจริง
 - แชมป์: นับ 🥇 จาก Cup history ทุกรายการ → มงกุฎ (เรืองแสงถ้าเป็นแชมป์ Cup ล่าสุด); ในการ์ดจองมงกุฎแทน 🥇 หน้าชื่อ ส่วน 💩 ยังอยู่
 - ภาพ: `public/job-badges.js` (+ `.css`) ยกจาก mockup `docs/superpowers/mockups/2026-11-13-badge-mockup.html` · spec `docs/superpowers/specs/2026-11-13-job-badges-design.md`

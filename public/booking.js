@@ -70,17 +70,30 @@
   };
   const level = id => player(id)?.lv;
   const rosterBadge = r => (!r.guest && data?.roster.find(p => p.id === r.playerId)?.badge) || null;
+  let jobTarget = null;
   function badgeFor(r) {
     const badge = rosterBadge(r),
       mine = Boolean(badge) && data?.member?.playerId === r.playerId,
       art = SenaJobs.badgeHtml(badge ?? { plays: 0 }, 35, { mine });
-    return mine
-      ? `<button type="button" class="jb-own" data-job-pick aria-label="เลือกสาย job ของฉัน">${art}</button>`
-      : art;
+    if (!badge || !(mine || data?.canEdit)) return art;
+    const label = mine ? 'เลือกสาย job ของฉัน' : 'เลือกสาย job ให้ ' + rawName(r.playerId);
+    return `<button type="button" class="jb-own" data-job-pick="${html(r.playerId)}" aria-label="${html(label)}">${art}</button>`;
   }
-  function openJobPicker() {
-    const own = data?.roster.find(p => p.id === data?.member?.playerId)?.badge;
-    if (!own) return;
+  // Short play count: organizers see everyone's, players see their own with the next goal.
+  function playCount(r) {
+    const badge = rosterBadge(r),
+      mine = Boolean(badge) && data?.member?.playerId === r.playerId;
+    if (!badge || !(mine || data?.canEdit)) return '';
+    const goal = mine ? SenaJobRules.nextGoal(badge.plays) : null;
+    return ' · 🏸' + badge.plays + (goal ? '/' + goal : '');
+  }
+  function openJobPicker(playerId) {
+    const target = data?.roster.find(p => p.id === playerId);
+    if (!target?.badge) return;
+    jobTarget = playerId;
+    const own = target.badge,
+      mine = playerId === data?.member?.playerId;
+    q('#jobPickerTitle').textContent = mine ? 'เลือกสายของคุณ' : 'เลือกสายให้ ' + target.name;
     q('#jobPickerGrid').innerHTML = SenaJobRules.LINES.map(line => {
       const preview = {
         ...own,
@@ -533,7 +546,7 @@
       return;
     }
     const row = r =>
-      `<div class="booking-person">${badgeFor(r)}<div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${rosterBadge(r) ? html(SenaJobs.jobName(rosterBadge(r))) + ' · ' : ''}${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
+      `<div class="booking-person">${badgeFor(r)}<div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${rosterBadge(r) ? html(SenaJobs.jobName(rosterBadge(r)) + playCount(r)) + ' · ' : ''}${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
     q('#bookingDetail').innerHTML =
       `${s.isCup ? cupBadge : ''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button><p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${
         s.registrations
@@ -795,10 +808,14 @@
   root.addEventListener('click', e => {
     const button = e.target.closest('button');
     if (!button || busy) return;
-    if (button.hasAttribute('data-job-pick')) openJobPicker();
+    if (button.hasAttribute('data-job-pick')) openJobPicker(button.dataset.jobPick);
     if (button.dataset.jobLine) {
       q('#jobPicker').close();
-      mutate({ action: 'job', line: button.dataset.jobLine });
+      mutate({
+        action: 'job',
+        line: button.dataset.jobLine,
+        ...(data?.canEdit ? { playerId: jobTarget } : {}),
+      });
     }
     if (button.id === 'bookingCupReload') {
       cupDirty = false;
