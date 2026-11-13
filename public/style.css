@@ -689,3 +689,19 @@ dialog::backdrop {
 .member-collapse[open] > summary {
   margin-bottom: 0.75rem;
 }
+
+/* Job badge in the roster tab (data comes from booking.js). */
+.rosterrow > .jb-own,
+.rosterrow > .jb-badge {
+  flex-shrink: 0;
+}
+.roster-job {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 12px;
+  color: #72805f;
+}
+.roster-job span {
+  white-space: nowrap;
+}

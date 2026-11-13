@@ -176,6 +176,26 @@ async function loadMemberAccounts() {
   }
   if (canManage) renderRoster();
 }
+// Job badge from the booking data (booking.js); tapping it opens the same line picker.
+function rosterJob(id) {
+  const jobs = window.SenaBookingJobs,
+    badge = jobs?.badge(id);
+  if (!badge || !window.SenaJobs) return '';
+  const art = SenaJobs.badgeHtml(badge, 32);
+  return jobs.canPick(id)
+    ? `<button type="button" class="jb-own" data-job-pick="${esc(id)}" aria-label="เลือกสาย job ให้ ${esc(person(id)?.name || '')}">${art}</button>`
+    : art;
+}
+function rosterJobInfo(id) {
+  const badge = window.SenaBookingJobs?.badge(id);
+  if (!badge || !window.SenaJobs) return '';
+  const plays = Number(badge.plays) || 0,
+    unpicked = !badge.chosen && SenaJobRules.jobLevel(plays).lvl > 0;
+  return `<small class="roster-job"><span>${esc(SenaJobs.jobName(badge))}</span> <span>· 🏸${plays}</span>${unpicked ? ' <span>· ยังไม่เลือกสาย</span>' : ''}</small>`;
+}
+document.addEventListener('sena-jobs', () => {
+  if (canManage) renderRoster();
+});
 function renderRoster() {
   if (!canManage) {
     $('#rosterRows').innerHTML = '';
@@ -185,7 +205,7 @@ function renderRoster() {
   $('#rosterRows').innerHTML = state.players
     .map(
       p =>
-        `<div class="rosterrow"><strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span>${memberAccounts.get(p.id)?.admin ? '<span class="adminbadge" title="ผู้ดูแลระบบผ่าน LINE">🛡 ผู้ดูแล</span>' : ''}${p.selfSignup ? `<span class="newbadge" title="สมัครเองผ่าน LINE ยังไม่ได้ตรวจ LV">🆕 สมัครเอง</span><small class="newbadge-line">LINE: ${esc(p.selfSignup.lineName || '-')} · กดแก้ไขเพื่อตรวจ LV</small>` : ''}</strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
+        `<div class="rosterrow">${rosterJob(p.id)}<strong>${esc(decoratedName(p.name))} <span class="muted">${esc(p.thai)}</span>${rosterJobInfo(p.id)}${memberAccounts.get(p.id)?.admin ? '<span class="adminbadge" title="ผู้ดูแลระบบผ่าน LINE">🛡 ผู้ดูแล</span>' : ''}${p.selfSignup ? `<span class="newbadge" title="สมัครเองผ่าน LINE ยังไม่ได้ตรวจ LV">🆕 สมัครเอง</span><small class="newbadge-line">LINE: ${esc(p.selfSignup.lineName || '-')} · กดแก้ไขเพื่อตรวจ LV</small>` : ''}</strong><span>Lv ${p.lv} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</span><button class="textbtn" data-edit="${esc(p.id)}">แก้ไข</button><button class="textbtn" data-delete="${esc(p.id)}">ลบ</button></div>`,
     )
     .join('');
 }
@@ -457,6 +477,8 @@ $('#playerForm').onsubmit = e => {
 };
 let editId;
 $('#rosterRows').onclick = e => {
+  const jobButton = e.target.closest('[data-job-pick]');
+  if (jobButton) return window.SenaBookingJobs?.pick(jobButton.dataset.jobPick);
   if (e.target.dataset.edit) {
     editId = e.target.dataset.edit;
     let p = person(editId),
