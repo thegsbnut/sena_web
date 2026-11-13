@@ -79,18 +79,40 @@
     qrPhoto = qrPhotoUrl = undefined;
     qrImage.removeAttribute('src');
   });
-  paymentQr.querySelector('#paymentQrSave').addEventListener('click', async () => {
-    const data = { files: [qrPhoto] };
-    if (!qrPhoto || !navigator.share || !navigator.canShare?.(data)) {
-      qrSaveHint.textContent = qrPhotoFallback;
+  // Share/save the QR image: the system share sheet offers "Save Image"; otherwise show the hint.
+  async function shareQrPhoto(photo, hint) {
+    const data = { files: [photo] };
+    if (!photo || !navigator.share || !navigator.canShare?.(data)) {
+      hint.textContent = qrPhotoFallback;
       return;
     }
     try {
       await navigator.share(data);
     } catch (error) {
-      if (error.name !== 'AbortError') qrSaveHint.textContent = qrPhotoFallback;
+      if (error.name !== 'AbortError') hint.textContent = qrPhotoFallback;
     }
-  });
+  }
+  // The server draws the QR as SVG; turn it into a PNG File so it can be saved to Photos.
+  async function qrPng(svgBlob) {
+    const url = URL.createObjectURL(svgBlob);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!png) throw Error('เตรียมรูป QR ไม่สำเร็จ กรุณาลองอีกครั้ง');
+      return new File([png], 'promptpay.png', { type: 'image/png' });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  paymentQr
+    .querySelector('#paymentQrSave')
+    .addEventListener('click', () => shareQrPhoto(qrPhoto, qrSaveHint));
 
   function endpoint(action, payer) {
     const url = new URL('/api/billing', location.origin);
@@ -323,6 +345,7 @@
    ${payers.map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · ' + p.seats + ' คน' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
   }
   function showDraft() {
+    document.body.classList.remove('home');
     const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
     const suppliedDate = params.get('date');
     const date = editing
@@ -420,11 +443,8 @@
    <details class="tools"><summary>⋯ ตั้งค่า</summary>
     <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button><button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button></div></details>`;
   }
-  function showAdminList() {
-    root.innerHTML = '<h1>บิลค่าใช้จ่าย</h1>' + adminOverviewHtml();
-    message('');
-  }
   async function openDraft() {
+    if (!adminList) throw Error('กรุณาเข้าสู่ระบบผู้จัด');
     const draft = await request('sessions');
     originalBillId = draft.existing;
     sessions = draft.sessions;
@@ -432,16 +452,116 @@
     adminList.promptpay = draft.promptpay;
     showDraft();
   }
+  // Home page (no ?bill=): "ของฉัน" for any logged-in player, plus the overview for organizers.
+  let mine = { state: 'login', bills: [] },
+    openBill;
+  const mineCache = new Map();
+  const payTokenOf = item => new URLSearchParams(new URL(item.url).hash.slice(1)).get('pay');
+  async function loadMine() {
+    try {
+      const response = await fetch('/api/member?action=bills&club=' + club, { cache: 'no-store' });
+      if (response.status === 401) return { state: 'login', bills: [] };
+      if (!response.ok) return { state: 'error', bills: [] };
+      return { state: 'ok', bills: (await response.json()).bills || [] };
+    } catch {
+      return { state: 'error', bills: [] };
+    }
+  }
+  // Detail + QR for one of my bills. Only the expanded bill asks for a QR.
+  async function mineDetail(item) {
+    if (mineCache.has(item.id)) return mineCache.get(item.id);
+    const headers = { 'X-Bill-Token': payTokenOf(item) };
+    const url = new URL('/api/billing', location.origin);
+    url.searchParams.set('club', club);
+    url.searchParams.set('bill', item.id);
+    const response = await fetch(url, { headers, cache: 'no-store' });
+    if (!response.ok) throw Error('โหลดบิลไม่สำเร็จ');
+    const detail = await response.json();
+    const payer = detail.payers[0];
+    let photo, photoUrl;
+    if (payer && validPromptPay(detail.transfer) && ['unpaid', 'rejected'].includes(payer.status)) {
+      url.searchParams.set('action', 'qr');
+      url.searchParams.set('payer', payer.id);
+      url.searchParams.set('amount', payer.amount);
+      const qr = await fetch(url, { headers, cache: 'no-store' });
+      if (qr.ok) {
+        photo = await qrPng(await qr.blob());
+        photoUrl = URL.createObjectURL(photo);
+      }
+    }
+    const result = { detail, payer, photo, photoUrl };
+    mineCache.set(item.id, result);
+    return result;
+  }
+  function mineHtml() {
+    const loginLink = '/liff.html?page=pay&club=' + club;
+    const head = '<h2 class="sec">ของฉัน</h2>';
+    if (mine.state === 'login')
+      return `${head}<p class="muted">เข้าสู่ระบบ LINE เพื่อดูและจ่ายบิลของคุณ</p><a class="button" href="${loginLink}">เข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</a>`;
+    if (mine.state === 'error')
+      return `${head}<p class="error">โหลดบิลของคุณไม่สำเร็จ</p><div class="actions"><button type="button" data-action="reload">ลองอีกครั้ง</button></div>`;
+    const unpaid = mine.bills.filter(b => ['unpaid', 'rejected'].includes(b.status));
+    const waiting = mine.bills.filter(b => b.status === 'review');
+    const paid = mine.bills.filter(b => b.status === 'paid');
+    if (!mine.bills.length)
+      return `${head}<p class="muted">ยังไม่พบบิลของคุณในสนามนี้ ถ้ายังไม่ได้ผูกชื่อผู้เล่น ให้ผูกชื่อก่อน</p><a class="button" href="${loginLink}">ผูกชื่อผู้เล่น</a>`;
+    const open = unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
+    const title = b => `${dateLabel(b.date)}`;
+    const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
+    return `${head}
+   ${unpaid.length ? `<div class="hero"><small>ยอดที่ต้องจ่าย</small><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div></div>` : '<p class="muted">ไม่มีบิลค้าง 🎉</p>'}
+   ${unpaid
+     .map(b =>
+       b.id === open
+         ? `<div class="mine" data-bill="${b.id}"><div class="t"><strong>${title(b)}</strong><span class="amt due">${money(b.amount)} บ.</span></div>
+            ${b.status === 'rejected' ? '<small class="error">ผู้จัดให้ส่งสลิปใหม่</small>' : ''}<div class="mine-body" data-body="${b.id}"><small>กำลังโหลด…</small></div></div>`
+         : `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ยังไม่จ่าย</small></div><span class="amt due">${money(b.amount)} บ.</span><button type="button" class="pill2" data-action="open-mine" data-bill="${b.id}">จ่ายด้วย QR</button></div></div>`,
+     )
+     .join('')}
+   ${waiting.map(b => `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ส่งสลิปแล้ว · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span><a class="pill2" href="${escape(b.url)}">ดูบิล</a></div></div>`).join('')}
+   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong></div><div class="r">✓ ${money(b.amount)} บ.</div></div>`).join('')}</details>` : ''}`;
+  }
+  async function fillMine() {
+    const item =
+      mine.bills.find(b => b.id === openBill) ||
+      mine.bills.find(b => ['unpaid', 'rejected'].includes(b.status));
+    const body = item && root.querySelector(`[data-body="${item.id}"]`);
+    if (!body) return;
+    try {
+      const { detail, photoUrl } = await mineDetail(item);
+      const slip = `<a class="button" href="${escape(item.url)}">แนบสลิป</a>`;
+      if (photoUrl)
+        body.innerHTML = `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p>
+         <div class="actions"><button type="button" class="primary" data-action="save-qr" data-bill="${item.id}">บันทึกลงรูปภาพ</button></div><p id="mineSaveHint" class="muted" role="status"></p>
+         <div class="step"><b>2</b><span>โอนแล้ว</span>${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
+      else
+        body.innerHTML = `${detail.transfer ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}<div class="step">${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
+    } catch (error) {
+      body.innerHTML = `<p class="error">${escape(error.message)}</p><a class="button" href="${escape(item.url)}">เปิดหน้าบิล</a>`;
+    }
+  }
+  function showHome() {
+    document.body.classList.add('home');
+    root.innerHTML =
+      (adminList ? '<h1>บิลค่าใช้จ่าย</h1>' : '<h1>บิลของฉัน</h1>') +
+      mineHtml() +
+      (adminList ? adminOverviewHtml() : '');
+    message('');
+    fillMine();
+  }
   async function load() {
-    document.body.classList.toggle('home', !id);
+    document.body.classList.remove('home');
     picker.hidden = Boolean(id);
     if (id) {
       bill = await request();
       showBill();
-    } else {
-      adminList = await request();
-      showAdminList();
+      return;
     }
+    mineCache.clear();
+    const [list, memberBills] = await Promise.all([request().catch(() => null), loadMine()]);
+    adminList = list;
+    mine = memberBills;
+    showHome();
   }
   async function compress(file) {
     if (!file || file.size > 20 * 1024 * 1024) throw Error('เลือกรูปสลิปขนาดไม่เกิน 20 MB');
@@ -652,6 +772,15 @@
       const chosen = action === 'nag' ? groups.filter(g => g.name === target.dataset.name) : groups;
       return copy(window.BillingOverview.reminderText(chosen, clubName(club), money));
     }
+    if (action === 'open-mine') {
+      openBill = target.dataset.bill;
+      return showHome();
+    }
+    if (action === 'save-qr')
+      return shareQrPhoto(
+        mineCache.get(target.dataset.bill)?.photo,
+        root.querySelector('#mineSaveHint'),
+      );
     if (action === 'reload') return run(load);
     if (action === 'set-promptpay') {
       const promptpay = prompt('เลขพร้อมเพย์เริ่มต้น 10 หรือ 13 หลัก', adminList.promptpay)?.trim();
@@ -697,7 +826,7 @@
     }
     if (action === 'cancel-draft') {
       editing = false;
-      return bill ? showBill() : showAdminList();
+      return bill ? showBill() : showHome();
     }
     if (action === 'add-attendee') {
       const nameInput = root.querySelector('#addName'),
@@ -729,30 +858,15 @@
     if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
     if (action === 'qr' && payer)
       return run(async () => {
-        const blob = await request('qr', {}, payer.id, payer.amount);
-        const url = URL.createObjectURL(blob);
-        try {
-          const image = new Image();
-          image.src = url;
-          await image.decode();
-          const canvas = document.createElement('canvas');
-          canvas.width = image.naturalWidth;
-          canvas.height = image.naturalHeight;
-          canvas.getContext('2d').drawImage(image, 0, 0);
-          const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-          if (!png) throw Error('เตรียมรูป QR ไม่สำเร็จ กรุณาลองอีกครั้ง');
-          qrPhoto = new File([png], 'promptpay.png', { type: 'image/png' });
-          qrImage.src = qrPhotoUrl = URL.createObjectURL(qrPhoto);
-          qrSaveHint.textContent = navigator.canShare?.({ files: [qrPhoto] })
-            ? 'ในเมนูแชร์ เลือกบันทึกรูปภาพ (Save Image)'
-            : qrPhotoFallback;
-          paymentQr.querySelector('#paymentQrAmount').textContent =
-            payer.name + ' · ' + money(payer.amount) + ' บาท';
-          paymentQr.showModal();
-          message('');
-        } finally {
-          URL.revokeObjectURL(url);
-        }
+        qrPhoto = await qrPng(await request('qr', {}, payer.id, payer.amount));
+        qrImage.src = qrPhotoUrl = URL.createObjectURL(qrPhoto);
+        qrSaveHint.textContent = navigator.canShare?.({ files: [qrPhoto] })
+          ? 'ในเมนูแชร์ เลือกบันทึกรูปภาพ (Save Image)'
+          : qrPhotoFallback;
+        paymentQr.querySelector('#paymentQrAmount').textContent =
+          payer.name + ' · ' + money(payer.amount) + ' บาท';
+        paymentQr.showModal();
+        message('');
       });
     if ((action === 'cash-request' || action === 'cash-cancel') && payer) {
       if (

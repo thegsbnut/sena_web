@@ -397,3 +397,107 @@ body.nxc.home summary {
   cursor: pointer;
   padding: 0.4rem 0.1rem;
 }
+
+/* Home: "ของฉัน" cards (light card on the dark ground, lime outline for the bill to pay now). */
+body.nxc.home .mine {
+  background: #f6f7ee;
+  color: #173f35;
+  border: 2px solid var(--lime);
+  border-radius: 1.1rem;
+  padding: 0.9rem;
+  margin: 0.6rem 0;
+}
+body.nxc.home .mine.collapsed {
+  border-color: #cfd8c4;
+  padding: 0.7rem 0.9rem;
+}
+body.nxc.home .mine .t {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+body.nxc.home .mine .amt {
+  font-size: 1.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+body.nxc.home .mine small,
+body.nxc.home .mine .muted {
+  color: #50655a;
+}
+body.nxc.home .mine .due {
+  color: #b3402f;
+}
+body.nxc.home .mine .error {
+  color: #9f2424;
+}
+body.nxc.home .pill2 {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 0.8rem;
+  border-radius: 99px;
+  background: var(--lime);
+  color: #102219;
+  border: 2px solid #445321;
+  font-weight: 800;
+  text-decoration: none;
+}
+body.nxc.home .qr {
+  display: block;
+  width: min(13rem, 100%);
+  margin: 0.6rem auto 0.2rem;
+  border: 6px solid #fff;
+  border-radius: 6px;
+  outline: 1px solid #cfd8c4;
+}
+body.nxc.home .qrnote {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #50655a;
+  margin: 0 0 0.4rem;
+}
+body.nxc.home .mine .actions {
+  justify-content: center;
+}
+body.nxc.home .mine .actions .primary {
+  width: 100%;
+  min-height: 46px;
+  background: var(--lime);
+  color: #102219;
+  border: 2px solid #445321;
+  border-radius: 12px;
+  font-weight: 800;
+}
+body.nxc.home .step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  font-weight: 800;
+  color: #50655a;
+}
+body.nxc.home .step b {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: #102219;
+  color: var(--lime);
+  font-size: 0.75rem;
+}
+body.nxc.home .step .button {
+  flex: 1;
+}
+body.nxc.home .mine.collapsed .amt {
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+body.nxc.home .pill2 {
+  white-space: nowrap;
+}
+body.nxc.home .mine a:not(.button):not(.pill2) {
+  color: #50655a;
+}
