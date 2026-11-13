@@ -6,8 +6,6 @@ const $ = s => document.querySelector(s),
     );
 let state = { players: [], selected: [], rounds: 10, locks: [], result: null, cup: null };
 let canManage = false;
-// player id -> LINE picture URL, from /api/state (kept outside `state`, never saved back).
-let playerPictures = {};
 function save() {
   try {
     localStorage.setItem(clubStorage('sena-v1'), JSON.stringify(state));
@@ -157,7 +155,7 @@ function renderPlayers() {
     .filter(p => (p.name + p.thai).toLowerCase().includes(q))
     .map(
       p =>
-        `<label class="player"><input type="checkbox" data-id="${esc(p.id)}" ${state.selected.includes(p.id) ? 'checked' : ''}><span class="avatar">${esc(p.name.slice(0, 2).toUpperCase())}${typeof avatarImg === 'function' ? avatarImg(playerPictures[p.id]) : ''}</span><span class="info">${esc(decoratedName(p.name))}<small>${esc(p.thai)} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</small></span>${canManage ? `<span class="level">${p.lv}</span>` : ''}</label>`,
+        `<label class="player"><input type="checkbox" data-id="${esc(p.id)}" ${state.selected.includes(p.id) ? 'checked' : ''}><span class="avatar">${esc(p.name.slice(0, 2).toUpperCase())}</span><span class="info">${esc(decoratedName(p.name))}<small>${esc(p.thai)} · ${p.gender === 'F' ? 'หญิง' : 'ชาย'}</small></span>${canManage ? `<span class="level">${p.lv}</span>` : ''}</label>`,
     )
     .join('');
 }

@@ -300,9 +300,6 @@ h2 span {
   cursor: pointer;
 }
 .avatar {
-  position: relative;
-  overflow: hidden;
-  flex-shrink: 0;
   background: #edf0e5;
   border-radius: 50%;
   width: 36px;
@@ -691,17 +688,4 @@ dialog::backdrop {
 }
 .member-collapse[open] > summary {
   margin-bottom: 0.75rem;
-}
-/* LINE picture over the initials (avatar.js): fades in once loaded, initials stay underneath. */
-.avatar-pic {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-.avatar-pic.loaded {
-  opacity: 1;
 }

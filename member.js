@@ -61,13 +61,6 @@ export async function prepareMembers(db) {
       "CREATE UNIQUE INDEX IF NOT EXISTS member_player_unique ON member_links(club,player_id) WHERE status='approved'",
     )
     .run();
-  // LINE profile picture URL (from the verified ID token). Only the URL is kept;
-  // browsers load the image straight from LINE's CDN. checked_at drives the weekly refresh.
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_pictures (user_id TEXT PRIMARY KEY,url TEXT,checked_at INTEGER NOT NULL)',
-    )
-    .run();
   // LINE accounts the organizer marked as admins: same rights as the ADMIN_KEY login.
   await db
     .prepare(
@@ -75,69 +68,6 @@ export async function prepareMembers(db) {
     )
     .run();
 }
-
-const PICTURE_PATTERN = /^https:\/\/profile\.line-scdn\.net\/[A-Za-z0-9_\-./]{1,300}$/;
-const PICTURE_REFRESH_MS = 7 * 86400000;
-// Anything that is not a LINE CDN picture URL is stored as "no picture".
-export const linePicture = url =>
-  typeof url === 'string' && PICTURE_PATTERN.test(url) && !url.includes('..') ? url : null;
-async function savePicture(db, userId, url) {
-  await db
-    .prepare(
-      'INSERT INTO member_pictures VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET url=excluded.url,checked_at=excluded.checked_at',
-    )
-    .bind(userId, linePicture(url), Date.now())
-    .run();
-}
-// player id -> picture URL for the club's linked members (for rosters).
-export async function memberPictures(db, club) {
-  if (!db) return new Map();
-  await prepareMembers(db);
-  const { results } = await db
-    .prepare(
-      "SELECT l.player_id,p.url FROM member_links l JOIN member_pictures p ON p.user_id=l.user_id WHERE l.club=? AND l.status='approved' AND p.url IS NOT NULL",
-    )
-    .bind(club)
-    .all();
-  return new Map(results.map(r => [r.player_id, r.url]));
-}
-// LINE checks the ID token; we only accept one issued for our channel and still valid.
-async function verifyIdToken(env, idToken) {
-  const verified = await fetch('https://api.line.me/oauth2/v2.1/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ id_token: idToken, client_id: env.LINE_LOGIN_CHANNEL_ID }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!verified.ok) return { error: 'LINE Login หมดอายุหรือไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' };
-  const profile = await verified.json();
-  if (
-    profile.iss !== 'https://access.line.me' ||
-    String(profile.aud) !== String(env.LINE_LOGIN_CHANNEL_ID) ||
-    !Number.isFinite(profile.exp) ||
-    profile.exp * 1000 <= Date.now() ||
-    !/^U[a-f0-9]{32}$/.test(profile.sub)
-  )
-    return { error: 'LINE Login ไม่ถูกต้อง' };
-  return { profile };
-}
-async function readJsonBody(req, max) {
-  const raw = await req.text();
-  if (raw.length > max) return { error: json({ error: 'ข้อมูลยาวเกินไป' }, 413) };
-  let input;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    return { error: json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400) };
-  }
-  if (!input || typeof input !== 'object' || Array.isArray(input))
-    return { error: json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400) };
-  return { input };
-}
-const csrfOK = req => {
-  const csrf = cookie(req, '__Host-sena-member-csrf');
-  return /^[a-f0-9]{64}$/.test(csrf) && req.headers.get('X-Member-CSRF') === csrf;
-};
 
 // True when the request carries a live LINE member session whose account is
 // marked admin and is still linked to a player. Checked on every request, so
@@ -252,18 +182,9 @@ async function route(req, env, admin, club) {
       if (renewed.meta.changes === 1)
         headers.append('Set-Cookie', sessionCookie(cookie(req, '__Host-sena-member')));
     }
-    // Ask the LIFF page for a fresh ID token when the picture is missing or a week old.
-    let refreshPicture = false;
-    if (member?.link?.status === 'approved') {
-      const pic = await env.DB.prepare('SELECT checked_at FROM member_pictures WHERE user_id=?')
-        .bind(member.userId)
-        .first();
-      refreshPicture = !pic || pic.checked_at < Date.now() - PICTURE_REFRESH_MS;
-    }
     return Response.json(
       {
         enabled: loginEnabled(env),
-        refreshPicture,
         requireLogin: memberMode(env),
         configured: Boolean(env.LINE_LIFF_ID && env.LINE_LOGIN_CHANNEL_ID),
         liffId: env.LINE_LIFF_ID || null,
@@ -342,15 +263,38 @@ async function route(req, env, admin, club) {
   if (req.method === 'POST' && action === 'login') {
     if (!loginEnabled(env) || !env.LINE_LIFF_ID || !env.LINE_LOGIN_CHANNEL_ID)
       return json({ error: 'ยังไม่ได้เปิด LINE Login' }, 503);
-    if (!csrfOK(req)) return json({ error: 'กรุณาโหลดหน้าเข้าสู่ระบบใหม่' }, 403);
-    const body = await readJsonBody(req, 12000);
-    if (body.error) return body.error;
-    const { input } = body;
+    const csrf = cookie(req, '__Host-sena-member-csrf');
+    if (!/^[a-f0-9]{64}$/.test(csrf) || req.headers.get('X-Member-CSRF') !== csrf)
+      return json({ error: 'กรุณาโหลดหน้าเข้าสู่ระบบใหม่' }, 403);
+    const raw = await req.text();
+    if (raw.length > 12000) return json({ error: 'ข้อมูลยาวเกินไป' }, 413);
+    let input;
+    try {
+      input = JSON.parse(raw);
+    } catch {
+      return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      return json({ error: 'ข้อมูลไม่ถูกต้อง' }, 400);
     if (typeof input.idToken !== 'string' || input.idToken.length > 10000)
       return json({ error: 'ไม่พบหลักฐาน LINE Login' }, 400);
-    const { profile, error } = await verifyIdToken(env, input.idToken);
-    if (error) return json({ error }, 401);
-    await savePicture(env.DB, profile.sub, profile.picture);
+    const verified = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ id_token: input.idToken, client_id: env.LINE_LOGIN_CHANNEL_ID }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!verified.ok)
+      return json({ error: 'LINE Login หมดอายุหรือไม่ถูกต้อง กรุณาเข้าสู่ระบบใหม่' }, 401);
+    const profile = await verified.json();
+    if (
+      profile.iss !== 'https://access.line.me' ||
+      String(profile.aud) !== String(env.LINE_LOGIN_CHANNEL_ID) ||
+      !Number.isFinite(profile.exp) ||
+      profile.exp * 1000 <= Date.now() ||
+      !/^U[a-f0-9]{32}$/.test(profile.sub)
+    )
+      return json({ error: 'LINE Login ไม่ถูกต้อง' }, 401);
     await env.DB.prepare(
       'INSERT INTO member_profiles VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET line_name=excluded.line_name',
     )
@@ -369,21 +313,6 @@ async function route(req, env, admin, club) {
     return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(token) });
   }
   const member = await memberFor(req, env, club);
-  // Weekly picture refresh from the LIFF page: a fresh, LINE-verified ID token of
-  // the same account that owns this session.
-  if (req.method === 'POST' && action === 'picture') {
-    if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
-    if (!csrfOK(req)) return json({ error: 'กรุณาโหลดหน้าใหม่' }, 403);
-    const body = await readJsonBody(req, 12000);
-    if (body.error) return body.error;
-    if (typeof body.input.idToken !== 'string' || body.input.idToken.length > 10000)
-      return json({ error: 'ไม่พบหลักฐาน LINE Login' }, 400);
-    const { profile, error } = await verifyIdToken(env, body.input.idToken);
-    if (error) return json({ error }, 401);
-    if (profile.sub !== member.userId) return json({ error: 'บัญชี LINE ไม่ตรงกัน' }, 403);
-    await savePicture(env.DB, member.userId, profile.picture);
-    return json({ ok: true });
-  }
   if (req.method === 'POST' && action === 'logout') {
     await env.DB.prepare('DELETE FROM member_sessions WHERE token_hash=?')
       .bind(await hash(cookie(req, '__Host-sena-member')))

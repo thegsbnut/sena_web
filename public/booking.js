@@ -57,8 +57,6 @@
     data?.sessions.find(s => s.id === focusId)?.registrations.find(r => r.playerId === id)?.guest;
   const player = id => data?.roster.find(p => p.id === id) ?? guest(id);
   const rawName = id => player(id)?.name || 'ผู้เล่นที่นำออกจากก๊วน';
-  // LINE picture over the initials (avatar.js); guests and unlinked players have none.
-  const picture = id => (typeof avatarImg === 'function' ? avatarImg(player(id)?.pic) : '');
   const name = id => {
     const invited = data?.sessions
       .find(s => s.id === focusId)
@@ -509,7 +507,7 @@
       return;
     }
     const row = r =>
-      `<div class="booking-person"><span class="booking-avatar">${html(rawName(r.playerId).slice(0, 2))}${picture(r.playerId)}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
+      `<div class="booking-person"><span class="booking-avatar">${html(rawName(r.playerId).slice(0, 2))}</span><div><strong>${html(name(r.playerId))}</strong> ${levelBadge(r.playerId)}<small>${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
     q('#bookingDetail').innerHTML =
       `${s.isCup ? cupBadge : ''}<h3 class="booking-session-date">${displayDate(s.date)}</h3><p class="hint booking-session-time">${html(sessionTime)}</p><button type="button" class="secondary" id="bookingCopyRoster">📋 คัดลอกรายชื่อส่ง LINE</button><p id="bookingRosterCopyStatus" role="status" class="hint"></p><h4>ตัวจริง <span>${s.confirmedCount} คน</span></h4>${
         s.registrations
