@@ -27,6 +27,38 @@
     else frame.contentWindow?.postMessage('bills-refresh', location.origin);
   }
 
+  // Red "!" on the bills tab while the player has an unpaid (or re-send) bill. Quiet on any error.
+  function markDue(count) {
+    const tab = document.querySelector('.next-tabbar .tab[data-tab="bills"]');
+    if (!tab) return;
+    if (count > 0) {
+      tab.dataset.due = '1';
+      tab.setAttribute('aria-label', 'บิล มีบิลค้างจ่าย');
+    } else {
+      delete tab.dataset.due;
+      tab.removeAttribute('aria-label');
+    }
+  }
+  async function checkDue() {
+    try {
+      const club = typeof activeClub !== 'undefined' ? activeClub : 'sena';
+      const response = await fetch('/api/member/bills?club=' + club, { cache: 'no-store' });
+      if (!response.ok) return markDue(0);
+      const data = await response.json();
+      if (!Array.isArray(data.bills)) return markDue(0);
+      markDue(data.bills.filter(b => ['unpaid', 'rejected'].includes(b.status)).length);
+    } catch {
+      markDue(0);
+    }
+  }
+  window.addEventListener('message', event => {
+    if (event.origin === location.origin && event.data?.type === 'bills-due')
+      markDue(Number(event.data.count) || 0);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkDue();
+  });
+
   function tabs() {
     document.querySelectorAll('.next-tabbar .tab').forEach(tab => {
       const id = tab.dataset.tab;
@@ -49,4 +81,5 @@
   }
 
   tabs();
+  checkDue();
 })();

@@ -56,6 +56,23 @@ body.nxc nav.next-tabbar .tab.active {
   color: #102219;
   opacity: 1;
 }
+/* Unpaid bills: red "!" on the bills tab (no animation). */
+body.nxc nav.next-tabbar .tab[data-due]::after {
+  content: '!';
+  position: absolute;
+  top: 1px;
+  left: calc(50% + 6px);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e5321f;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #102219;
+}
 /* booking's "continue" bar sits above the menu */
 body.nxc .booking-action {
   bottom: calc(60px + env(safe-area-inset-bottom, 0px));

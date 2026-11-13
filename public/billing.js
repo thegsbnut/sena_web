@@ -721,6 +721,15 @@
     const [list, memberBills] = await Promise.all([request().catch(() => null), loadMine()]);
     adminList = list;
     mine = memberBills;
+    // Tell the menu around this page (court.html) whether to show the red "!" on the bills tab.
+    if (window.parent !== window && mine.state === 'ok')
+      parent.postMessage(
+        {
+          type: 'bills-due',
+          count: mine.bills.filter(b => ['unpaid', 'rejected'].includes(b.status)).length,
+        },
+        location.origin,
+      );
     showHome();
   }
   async function compress(file) {
