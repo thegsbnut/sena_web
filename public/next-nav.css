@@ -1,0 +1,66 @@
+/* Tab menu as a bottom bar (dark green; active tab = lime). Scoped to body.nxc. */
+body.nxc main {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+body.nxc nav.next-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 6px max(6px, env(safe-area-inset-right, 0px))
+    calc(8px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+  background: #102219;
+  border: 0;
+  border-top: 2px solid var(--lime);
+  border-radius: 0;
+  overflow: visible;
+  box-shadow: 0 -8px 24px -12px #000;
+}
+body.nxc nav.next-tabbar .tab {
+  flex: 1 1 0;
+  max-width: 120px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 0;
+  padding: 6px 0;
+  position: relative;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: #cfe3d6;
+  opacity: 0.8;
+  font-size: 11px;
+  font-weight: 700;
+}
+body.nxc nav.next-tabbar .tab[hidden] {
+  display: none;
+}
+body.nxc nav.next-tabbar svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body.nxc nav.next-tabbar .tab.active {
+  background: var(--lime);
+  color: #102219;
+  opacity: 1;
+}
+/* booking's "continue" bar sits above the menu */
+body.nxc .booking-action {
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  z-index: 99;
+}
+body.nxc #booking:has(.booking-action:not([hidden])) {
+  padding-bottom: 76px;
+}
