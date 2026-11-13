@@ -292,3 +292,108 @@ body.nxc .venue-picker select {
   background: #dcfa30;
   margin: 0;
 }
+
+/* Home (organizer overview): cards on the dark ground. */
+body.nxc.home .sec {
+  margin: 1.2rem 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: #b8cdbf;
+}
+body.nxc.home .hero {
+  background: #173f35;
+  border: 1px solid #2c5a4c;
+  border-radius: 1.1rem;
+  padding: 1rem;
+}
+body.nxc.home .big {
+  font-size: 2.3rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--lime);
+  font-variant-numeric: tabular-nums;
+}
+body.nxc.home .big span {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f6f7ee;
+}
+body.nxc.home .flag {
+  margin: 0.6rem 0 0;
+  padding: 0.45rem 0.75rem;
+  background: #0f2a21;
+  border-radius: 0.7rem;
+  font-size: 0.85rem;
+}
+body.nxc.home .owe,
+body.nxc.home a.bill {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  background: #173f35;
+  color: #f6f7ee;
+  border-radius: 0.9rem;
+  padding: 0.65rem 0.85rem;
+  margin: 0 0 0.5rem;
+  text-decoration: none;
+}
+body.nxc.home a.bill {
+  display: block;
+}
+body.nxc.home .bill .h {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+body.nxc.home .bar {
+  display: block;
+  height: 7px;
+  margin: 0.45rem 0;
+  border-radius: 9px;
+  background: #0f2a21;
+  overflow: hidden;
+}
+body.nxc.home .bar i {
+  display: block;
+  height: 100%;
+  background: var(--lime);
+}
+body.nxc.home .owe small {
+  display: block;
+}
+body.nxc.home .owe .r {
+  text-align: right;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+body.nxc.home .chip {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0 0.5rem;
+  border-radius: 99px;
+  background: #3a2f12;
+  color: #f2c96b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+body.nxc.home button.nag,
+body.nxc.home .actions button {
+  min-height: 34px;
+  background: transparent;
+  color: var(--lime);
+  border: 1px solid var(--lime);
+  border-radius: 99px;
+  font-weight: 800;
+}
+body.nxc.home details {
+  margin: 0.6rem 0;
+}
+body.nxc.home summary {
+  color: #b8cdbf;
+  cursor: pointer;
+  padding: 0.4rem 0.1rem;
+}

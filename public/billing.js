@@ -376,34 +376,52 @@
     } else fillAttendees(date);
     message('');
   }
-  function showAdminList() {
+  function adminOverviewHtml() {
+    const overview = window.BillingOverview;
     const rows = adminList.bills;
-    root.innerHTML = `
-   <h1>บิลค่าใช้จ่าย</h1>
-   <button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>
-   <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button>
-   <a class="button" href="/billing.html?manage=1&club=${club === '88' ? 'sena' : '88'}">เปิดบิลสนาม ${club === '88' ? 'Sena' : '88'}</a></div>
+    const owe = overview.owing(rows);
+    const open = rows.filter(b => !b.cancelled && b.outstanding);
+    const finished = [
+      ['จ่ายครบ', rows.filter(b => !b.cancelled && !b.outstanding)],
+      ['ยกเลิก', rows.filter(b => b.cancelled)],
+    ];
+    const person = g =>
+      `<div class="owe"><div><strong>${escape(g.name)}</strong><small>ค้าง ${g.bills} บิล</small>${g.review ? '<span class="chip">รอตรวจสลิป</span>' : ''}</div>
+       <div class="r">${money(g.totalCents)} บ.<button type="button" class="nag" data-action="nag" data-name="${escape(g.name)}">ทวง</button></div></div>`;
+    const billRow = b =>
+      `<a class="bill" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}"><span class="h"><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><span>จ่ายแล้ว ${b.paid}/${b.count}</span></span>
+       <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
+       <small>${b.cancelled ? 'ยกเลิกแล้ว' : b.outstanding ? 'ค้าง ' + money(b.outstanding) + ' บาท' : 'รวม ' + money(b.collection) + ' บาท'}</small></a>`;
+    return `
+   <h2 class="sec">ภาพรวมก๊วน</h2>
+   <div class="hero"><small>ค้างรวม</small>
+    <div class="big">${money(owe.totalCents)} <span>บาท · ${owe.people} คน</span></div>
+    ${owe.reviewCount ? `<p class="flag">มีสลิปรอตรวจ ${owe.reviewCount} คน</p>` : ''}</div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
-   ${[
-     ['บิลค้าง', rows.filter(b => !b.cancelled && b.outstanding)],
-     ['ประวัติบิลที่จ่ายครบ', rows.filter(b => !b.cancelled && !b.outstanding)],
-     ['บิลที่ยกเลิก', rows.filter(b => b.cancelled)],
-   ]
+   <h2 class="sec">ใครยังค้าง</h2>
+   ${
+     owe.groups.length
+       ? owe.groups.slice(0, 5).map(person).join('') +
+         (owe.groups.length > 5
+           ? `<details><summary>ดูทั้งหมด ${owe.groups.length} คน</summary>${owe.groups.slice(5).map(person).join('')}</details>`
+           : '') +
+         '<div class="actions"><button type="button" data-action="nag-all">ทวงทั้งหมด (คัดลอกรายชื่อ)</button></div>'
+       : '<p class="muted">ไม่มีบิลค้าง 🎉</p>'
+   }
+   <h2 class="sec">บิลค้างแยกตามวัน</h2>
+   ${open.length ? open.map(billRow).join('') : '<p class="muted">ยังไม่มีรายการ</p>'}
+   ${finished
+     .filter(([, list]) => list.length)
      .map(
        ([title, list]) =>
-         `<section><h2>${title}</h2>${
-           list.length
-             ? list
-                 .map(
-                   b =>
-                     `<div class="row"><div><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><div>จ่ายแล้ว ${b.paid}/${b.count} · ${b.outstanding ? 'ค้าง ' + money(b.outstanding) : 'รวม ' + money(b.collection)} บาท</div></div>
-     <a class="button" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}">เปิดบิล</a></div>`,
-                 )
-                 .join('')
-             : '<p class="muted">ยังไม่มีรายการ</p>'
-         }</section>`,
+         `<details><summary>${title} (${list.length})</summary>${list.map(billRow).join('')}</details>`,
      )
-     .join('')}`;
+     .join('')}
+   <details class="tools"><summary>⋯ ตั้งค่า</summary>
+    <div class="actions"><button type="button" data-action="reload">อัปเดต</button><button type="button" data-action="set-promptpay">ตั้งค่าเลขพร้อมเพย์เริ่มต้น</button><button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button></div></details>`;
+  }
+  function showAdminList() {
+    root.innerHTML = '<h1>บิลค่าใช้จ่าย</h1>' + adminOverviewHtml();
     message('');
   }
   async function openDraft() {
@@ -629,6 +647,11 @@
         report.value = lines.join('\n');
         message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้');
       });
+    if (action === 'nag' || action === 'nag-all') {
+      const groups = window.BillingOverview.owing(adminList.bills).groups;
+      const chosen = action === 'nag' ? groups.filter(g => g.name === target.dataset.name) : groups;
+      return copy(window.BillingOverview.reminderText(chosen, clubName(club), money));
+    }
     if (action === 'reload') return run(load);
     if (action === 'set-promptpay') {
       const promptpay = prompt('เลขพร้อมเพย์เริ่มต้น 10 หรือ 13 หลัก', adminList.promptpay)?.trim();
