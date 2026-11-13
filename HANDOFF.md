@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
+- 2026-11-13 · Claude · branch `claude/clever-cori-cosdaj` (ยังไม่ merge): **dev-login ชั่วคราว** ทดสอบ production ไม่ต้อง LINE — ผู้ใช้ทดสอบอยู่ในก๊วนลับ `?club=test` เท่านั้น ดู `DEV-LOGIN.md` (เปิด/ปิด/ล้างข้อมูล) · Playwright ผ่านบน wrangler dev local · **อย่าลืมปิดและรัน cleanup หลังทดสอบ**
 - 2026-11-13 · Claude · merge เข้า `main` แล้ว (ขึ้น production): ลบเว็บทดลอง `sena-web-next` ออกจากโค้ด · ! แดงที่แท็บ "บิล" เมื่อมีบิลค้าง · ป้าย "✓ ลงชื่อแล้ว / ⏳ สำรอง #n" ในการ์ดจอง · แก้บั๊กบิลเก่าสุดค้าง "กำลังโหลด…" — **ทดสอบด้วยข้อมูลจำลองเท่านั้น ยังไม่ได้ลองใน LINE จริงบนมือถือ**
 
 ## ค้างอยู่ / ขั้นต่อไป
@@ -23,7 +24,7 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 183/183 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 192/192 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)
