@@ -364,6 +364,11 @@
       : /^\d{4}-\d{2}-\d{2}$/.test(suppliedDate || '')
         ? suppliedDate
         : sessions.find(s => s.date <= today)?.date || today;
+    const last = editing
+      ? null
+      : adminList.bills
+          .filter(b => !b.cancelled && b.club === club && b.court + b.shuttle > 0)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
     root.innerHTML = `
    <h1>จบและคิดเงิน · ${clubName(club)}</h1>
    ${!editing && !adminList?.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม เปิดบิลได้เมื่อเชื่อมพื้นที่เก็บสลิปแล้ว</p>' : ''}
@@ -379,8 +384,9 @@
     </section>
     <section>
      <h2>2. ใส่ค่าใช้จ่ายและบัญชีรับเงิน</h2>
-     <div class="grid"><label>ค่าคอร์ตรวม (บาท)<input name="court" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.court / 100 : 0}"></label>
-     <label id="shuttleLabel">ค่าลูกรวม (บาท)<input name="shuttle" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.shuttle / 100 : 0}"></label></div>
+     <div class="grid"><label>ค่าคอร์ตรวม (บาท)<input name="court" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.court / 100 : (last?.court ?? 0) / 100}"></label>
+     <label id="shuttleLabel">ค่าลูกรวม (บาท)<input name="shuttle" type="number" min="0" max="1000000" step="0.01" value="${editing ? bill.shuttle / 100 : (last?.shuttle ?? 0) / 100}"></label></div>
+     ${!editing && last ? `<p class="muted">เติมค่าจากบิลล่าสุด (${dateLabel(last.date)}) ให้แล้ว — แก้ได้</p>` : ''}
      <label class="attendee"><input type="checkbox" name="perShuttle"> คิดจากจำนวนลูก × ราคาต่อลูก</label>
      <label id="countLabel" hidden>จำนวนลูก<input name="shuttleCount" type="number" min="1" max="999" step="1" value="1"></label>
      <label>เลขพร้อมเพย์<input name="transfer" required inputmode="numeric" pattern="[0-9]{10}|[0-9]{13}" maxlength="13" value="${escape(editing ? bill.transfer : adminList.promptpay)}"></label>
@@ -438,11 +444,12 @@
     };
     const review = overview.reviewRows(rows);
     const slips = overview.slipRows(rows);
+    const flagged = window.SlipCheckText?.flaggedCount(slips) || 0;
     const slipCard = r =>
-      `<div class="owe-row slip-row"><span><strong>${escape(r.name)}</strong> · ${dateLabel(r.date)} · ${money(r.amount)} บ.</span>
+      `<div class="owe-row slip-row"><span><strong>${escape(r.name)}</strong> · ${dateLabel(r.date)} · ${money(r.amount)} บ.${aiLines(r)}</span>
        <span class="slip-buttons"><button type="button" data-action="rv-slip" ${attrs(r, r.name)}>ดูสลิป</button><button type="button" data-action="rv-reject" ${attrs(r, r.name)}>ให้ส่งใหม่</button></span></div>`;
     const reviewCard = r =>
-      `<div class="review-card"><div class="owe"><div><strong>${escape(r.name)}</strong><small>${dateLabel(r.date)} · ${r.kind === 'cash' ? 'แจ้งจ่ายเงินสด' : 'ส่งสลิปแล้ว'}</small></div><div class="r">${money(r.amount)} บ.</div></div>
+      `<div class="review-card"><div class="owe"><div><strong>${escape(r.name)}</strong><small>${dateLabel(r.date)} · ${r.kind === 'cash' ? 'แจ้งจ่ายเงินสด' : 'ส่งสลิปแล้ว'}</small>${aiLines(r)}</div><div class="r">${money(r.amount)} บ.</div></div>
        <div class="pay-actions review-actions">${
          r.kind === 'cash'
            ? `<button type="button" class="primary" data-action="rv-cash" ${attrs(r, r.name)}>รับเงินสดแล้ว</button><button type="button" data-action="rv-undo-cash" ${attrs(r, r.name)}>ยังไม่ได้รับเงิน</button>`
@@ -460,15 +467,16 @@
     ${review.length ? `<p class="flag">รอตรวจ ${review.length} รายการ</p>` : ''}</div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
    ${review.length ? `<h2 class="sec">รอตรวจ (${review.length})</h2>${review.map(reviewCard).join('')}` : ''}
-   ${slips.length ? `<details class="slip-list"><summary>สลิปที่แนบแล้ว (${slips.length}) · ดูสลิป / ให้ส่งใหม่</summary>${slips.map(slipCard).join('')}</details>` : ''}
+   ${slips.length ? `<details class="slip-list"${flagged ? ' open' : ''}><summary>สลิปที่แนบแล้ว (${slips.length})${flagged ? ` · ⚠️ ควรเปิดดู ${flagged}` : ''} · ดูสลิป / ให้ส่งใหม่</summary>${slips.map(slipCard).join('')}</details>` : ''}
    <h2 class="sec">ใครยังค้าง</h2>
+   ${owe.groups.length > 5 ? '<input type="search" id="oweSearch" class="owe-search" placeholder="ค้นหาชื่อ" aria-label="ค้นหาชื่อคนค้าง" autocomplete="off">' : ''}
    ${
      owe.groups.length
        ? owe.groups.slice(0, 5).map(person).join('') +
          (owe.groups.length > 5
            ? `<details><summary>ดูทั้งหมด ${owe.groups.length} คน</summary>${owe.groups.slice(5).map(person).join('')}</details>`
            : '') +
-         '<div class="actions"><button type="button" data-action="nag-all">ทวงทั้งหมด (คัดลอกรายชื่อ)</button></div>'
+         `<div class="actions"><button type="button" data-action="nag-all">ทวงทั้งหมด (คัดลอกรายชื่อ)</button><a class="button" target="_top" href="https://line.me/R/share?text=${encodeURIComponent(overview.reminderText(owe.groups, clubName(club), money))}">ส่งต่อใน LINE</a></div>`
        : '<p class="muted">ไม่มีบิลค้าง 🎉</p>'
    }
    <h2 class="sec">บิลค้างแยกตามวัน</h2>
@@ -668,6 +676,15 @@
     message('');
     fillMine();
   }
+  root.addEventListener('input', event => {
+    if (event.target.id !== 'oweSearch') return;
+    const q = event.target.value.trim().toLowerCase();
+    for (const card of root.querySelectorAll('.owe-card')) {
+      card.hidden =
+        Boolean(q) && !card.querySelector('strong').textContent.toLowerCase().includes(q);
+      if (q && !card.hidden) card.closest('details')?.setAttribute('open', '');
+    }
+  });
   window.addEventListener('message', event => {
     if (event.origin === location.origin && event.data === 'bills-refresh' && !id && !editing)
       run(load);
@@ -981,7 +998,13 @@
         });
       }
       if (action === 'rv-reject') {
-        const note = prompt('เหตุผลที่ให้ส่งสลิปใหม่', '');
+        const aiCheck = adminList.bills
+          .find(b => b.id === target.dataset.bill)
+          ?.payers.find(p => p.id === target.dataset.payer)?.aiCheck;
+        const note = prompt(
+          'เหตุผลที่ให้ส่งสลิปใหม่',
+          window.SlipCheckText?.rejectNote(aiCheck) || '',
+        );
         if (note === null) return;
         return run(async () => {
           await adminCall(target, 'review', {

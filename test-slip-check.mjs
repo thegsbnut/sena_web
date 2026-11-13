@@ -404,6 +404,19 @@ test('upload stays paid at once and the check appears for the organizer', async 
   assert.deepEqual(nut.aiCheck.reasons, [{ code: 'ok' }]);
 });
 
+test('the organizer bill list carries the check and last court/shuttle amounts', async t => {
+  const f = fixture(t);
+  const b = await withUpload(f);
+  await b.upload();
+  await f.settle();
+  const list = await (await f.request('/api/billing?club=sena', { cookie: b.cookie })).json();
+  const row = list.bills[0];
+  assert.equal(typeof row.court, 'number');
+  assert.equal(typeof row.shuttle, 'number');
+  assert.equal(row.payers.find(p => p.id === b.nut.id).aiCheck.state, 'done');
+  assert.equal(row.payers.find(p => p.id === b.bua.id).aiCheck, undefined);
+});
+
 test('players never receive aiCheck', async t => {
   const f = fixture(t);
   const b = await withUpload(f);
