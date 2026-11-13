@@ -4,7 +4,7 @@ import { once } from './schema-cache.js';
 import './public/engine.js';
 import { latestCup, cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
-import { recordAttendance } from './job-badges.js';
+import { recordAttendance, badgeData } from './job-badges.js';
 const reply = (v, status = 200) =>
   Response.json(v, { status, headers: { 'Cache-Control': 'no-store' } });
 export class BookingError extends Error {
@@ -340,6 +340,7 @@ export function publicBooking(
   now = new Date(),
   club = DEFAULT_CLUB,
   awards = new Map(),
+  badges = new Map(),
 ) {
   const cfg = doc.settings,
     cupWeek = cupWeekFor(doc, club);
@@ -380,6 +381,13 @@ export function publicBooking(
       thai,
       award:
         awards.get(cupPlayerKey(name, club)) || awards.get(cupPlayerKey(thai || '', club)) || '',
+      badge: badges.get(id) ?? {
+        plays: 0,
+        line: globalThis.SenaJobRules.defaultLine(id),
+        chosen: false,
+        titles: 0,
+        latestChamp: false,
+      },
       ...(admin ? { lv } : {}),
     })),
     serverNow: now.toISOString(),
@@ -820,6 +828,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         award,
       ]),
     );
+    const badges = await badgeData(env.DB, club, outcome.players, awards);
     const view = publicBooking(
       outcome.doc,
       outcome.revision,
@@ -828,6 +837,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       now,
       club,
       awards,
+      badges,
     );
     if (memberMode(env)) {
       view.requireLogin = true;

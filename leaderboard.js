@@ -12,7 +12,7 @@ const canonicalName = (name, club = DEFAULT_CLUB) =>
   aliasesByClub[club]?.get(name.trim().toLowerCase()) || name.trim();
 const key = (name, club = DEFAULT_CLUB) => canonicalName(name, club).toLowerCase();
 export { key as cupPlayerKey };
-async function cupHistoryTable(db, club) {
+export async function cupHistoryTable(db, club) {
   const table = clubOf(club).cupTable;
   await db
     .prepare(

@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import './public/job-rules.js';
 import { recordAttendance } from './job-badges.js';
 import { scheduledBookings } from './booking.js';
+import worker from './worker.js';
 
 const R = globalThis.SenaJobRules;
 
@@ -134,4 +135,77 @@ test('scheduledBookings records attendance for each club separately', async () =
   assert.deepEqual(rows('SELECT club, player_id, session_date FROM attendance'), [
     { club: 'sena', player_id: 'p0', session_date: '2026-11-13' },
   ]);
+});
+
+function bookingEnv() {
+  const f = fakeDb();
+  f.db.exec(
+    'CREATE TABLE club_state(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT); CREATE TABLE login_attempts(ip TEXT PRIMARY KEY,window INTEGER,attempts INTEGER)',
+  );
+  f.db
+    .prepare('INSERT INTO club_state VALUES(1,1,?,?)')
+    .run(JSON.stringify({ players: roster, cup: null }), 'x');
+  const env = { ADMIN_KEY: 'abcdef7', DB: f.DB };
+  const get = async () =>
+    (
+      await worker.fetch(
+        new Request('https://example.com/api/booking', {
+          headers: { Origin: 'https://example.com' },
+        }),
+        env,
+      )
+    ).json();
+  return { ...f, env, get };
+}
+
+test('booking roster carries plays, chosen or default line and Cup titles', async () => {
+  const f = bookingEnv();
+  await f.get();
+  const add = f.db.prepare("INSERT INTO attendance VALUES ('sena', ?, ?)");
+  for (let d = 1; d <= 6; d++) add.run('2026-10-0' + d, 'p0');
+  add.run('2026-10-01', 'gone');
+  f.db.prepare("INSERT INTO player_jobs VALUES ('sena','p0','pink','x')").run();
+  const cup = f.db.prepare('INSERT INTO cup_history VALUES (?,1,?,?)');
+  const match = [{ a: 0, b: 1, sa: 21, sb: 12 }];
+  cup.run(
+    'old',
+    1,
+    JSON.stringify({
+      date: '2026-10-01',
+      teams: [
+        ['Player 0', 'Player 1'],
+        ['Player 2', 'Player 3'],
+      ],
+      matches: match,
+    }),
+  );
+  cup.run(
+    'latest',
+    2,
+    JSON.stringify({
+      date: '2026-11-01',
+      teams: [
+        ['player 0', 'Player 4'],
+        ['Player 2', 'Player 5'],
+      ],
+      matches: match,
+    }),
+  );
+  const data = await f.get();
+  assert.equal(data.roster.length, roster.length);
+  assert.deepEqual(data.roster[0].badge, {
+    plays: 6,
+    line: 'pink',
+    chosen: true,
+    titles: 2,
+    latestChamp: true,
+  });
+  assert.deepEqual(data.roster[3].badge, {
+    plays: 0,
+    line: R.defaultLine('p3'),
+    chosen: false,
+    titles: 0,
+    latestChamp: false,
+  });
+  assert.equal(data.roster[1].badge.titles, 1);
 });
