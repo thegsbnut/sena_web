@@ -23,8 +23,7 @@
       document.querySelector('.next-tabbar').offsetHeight + 'px',
     );
     const club = typeof activeClub !== 'undefined' ? activeClub : '';
-    if (!frame.getAttribute('src'))
-      frame.src = '/billing.html' + (club === '88' || club === 'test' ? '?club=' + club : '');
+    if (!frame.getAttribute('src')) frame.src = '/billing.html' + (club === '88' ? '?club=88' : '');
     else frame.contentWindow?.postMessage('bills-refresh', location.origin);
   }
 

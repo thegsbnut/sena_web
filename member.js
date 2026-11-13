@@ -1,6 +1,5 @@
-import { clubOf, counterpartClub, CLUB_IDS, DEFAULT_CLUB, isClub, TEST_CLUB } from './clubs.js';
+import { clubOf, counterpartClub, CLUB_IDS, DEFAULT_CLUB, isClub } from './clubs.js';
 import { mapBoth, MappingError } from './member-shared.js';
-import { isTestUserId, testMemberFor } from './dev-auth.js';
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
     status,
@@ -97,9 +96,6 @@ export async function memberFor(req, env, club) {
     .bind(tokenHash, Date.now())
     .first();
   if (!session) return null;
-  // dev-login test users exist only on the sandbox club, and only they do.
-  if (isTestUserId(session.user_id) || club === TEST_CLUB)
-    return testMemberFor(env, session, club, tokenHash);
   const otherClub = counterpartClub(club);
   const linkFor = c =>
     env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?')
@@ -164,12 +160,6 @@ async function route(req, env, admin, club) {
   await prepareMembers(env.DB);
   const url = new URL(req.url),
     action = url.pathname.split('/').at(-1);
-  // The sandbox club has no LINE Login or name mapping (mapBoth writes the real clubs).
-  if (
-    club === TEST_CLUB &&
-    ['login', 'link', 'choices', 'admin', 'reassign', 'revoke', 'unlink'].includes(action)
-  )
-    return json({ error: 'ก๊วนทดสอบใช้ /dev-login แทน LINE Login' }, 403);
   if (req.method === 'GET' && action === 'member') {
     const member = await memberFor(req, env, club),
       csrf = random(),
@@ -183,11 +173,7 @@ async function route(req, env, admin, club) {
         csrf +
         '; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=600',
     );
-    if (
-      member &&
-      !member.test &&
-      member.session.expiresAt - Date.now() < SESSION_MS - RENEW_AFTER_MS
-    ) {
+    if (member && member.session.expiresAt - Date.now() < SESSION_MS - RENEW_AFTER_MS) {
       const renewed = await env.DB.prepare(
         'UPDATE member_sessions SET expires_at=? WHERE token_hash=? AND expires_at>?',
       )
@@ -204,7 +190,6 @@ async function route(req, env, admin, club) {
         liffId: env.LINE_LIFF_ID || null,
         csrf,
         loggedIn: Boolean(member),
-        ...(member?.test ? { test: true } : {}),
         mappingError: member?.mappingError || null,
         link: member?.link || null,
       },

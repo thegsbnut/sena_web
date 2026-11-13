@@ -1,12 +1,5 @@
 import { syncLinkedPlayers } from './roster-sync.js';
-import { clubOf, isClub, DEFAULT_CLUB, TEST_CLUB } from './clubs.js';
-import {
-  devAuthEnabled,
-  devLoginRoute,
-  devLogoutRoute,
-  ensureTestBooking,
-  testIsAdmin,
-} from './dev-auth.js';
+import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
 import { memberRoute, memberFor, memberMode, memberIsAdmin } from './member.js';
 import { billingRoute, prunePaidSlips, billIdFromCode } from './billing.js';
 import { pruneSlipChecks } from './slip-check.js';
@@ -69,10 +62,7 @@ export function authorized(req, env) {
   if (!authCache.has(req))
     authCache.set(
       req,
-      (async () =>
-        (await keySession(req, env)) ||
-        (await memberIsAdmin(req, env)) ||
-        (await testIsAdmin(req, env)))(),
+      (async () => (await keySession(req, env)) || (await memberIsAdmin(req, env)))(),
     );
   return authCache.get(req);
 }
@@ -220,12 +210,8 @@ export default {
         if (!id) return json({ error: 'ไม่พบลิงก์บิล' }, 404);
         return Response.redirect(new URL('/billing.html?bill=' + id, url.origin).href, 302);
       }
-      // TEMPORARY dev-login (dev-auth.js): 404 unless DEV_AUTH is on and the key matches.
-      if (path === '/dev-login') return await devLoginRoute(req, env);
-      if (path === '/dev-logout') return await devLogoutRoute(req, env);
       const club = url.searchParams.get('club') || DEFAULT_CLUB;
-      if (!isClub(club) && !(club === TEST_CLUB && devAuthEnabled(env)))
-        return json({ error: 'ไม่พบก๊วนที่เลือก' }, 400);
+      if (!isClub(club)) return json({ error: 'ไม่พบก๊วนที่เลือก' }, 400);
       const stateTable = clubOf(club).stateTable;
       // The default club's table comes from schema.sql; every other club's is created on demand.
       if (club !== DEFAULT_CLUB && env.DB && ['/api/state', '/api/generate'].includes(path))
@@ -239,22 +225,14 @@ export default {
       if (path === '/api/session') {
         if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
         const key = await keySession(req, env),
-          line = !key && (await memberIsAdmin(req, env)),
-          test = !key && !line && (await testIsAdmin(req, env));
-        return json({
-          canEdit: key || line || test,
-          via: key ? 'key' : line ? 'line' : test ? 'test' : null,
-        });
+          line = !key && (await memberIsAdmin(req, env));
+        return json({ canEdit: key || line, via: key ? 'key' : line ? 'line' : null });
       }
-      // The sandbox club is never paired with a LINE group.
-      if (path === '/api/line' && club === TEST_CLUB)
-        return json({ error: 'ก๊วนทดสอบไม่เชื่อมกลุ่ม LINE' }, 403);
       if (path === '/api/line') return await lineAdmin(req, env, await authorized(req, env), club);
       if (path === '/api/billing')
         return await billingRoute(req, env, await authorized(req, env), club, ctx);
       if (path === '/api/member' || path.startsWith('/api/member/'))
         return await memberRoute(req, env, await authorized(req, env), club);
-      if (path === '/api/booking' && club === TEST_CLUB && env.DB) await ensureTestBooking(env.DB);
       if (path === '/api/booking')
         return await bookingRoute(
           req,
@@ -414,7 +392,7 @@ export default {
           );
         // Copy edits of LINE-linked players to their entry in the other club.
         let sync = { synced: 0, skipped: [] };
-        if (previous && club !== TEST_CLUB)
+        if (previous)
           try {
             sync = await syncLinkedPlayers(
               env.DB,

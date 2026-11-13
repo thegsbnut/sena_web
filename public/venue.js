@@ -1,13 +1,10 @@
-// 'test' = hidden sandbox club for dev-login test users (only works while DEV_AUTH is on).
-const activeClub = (club => (club === '88' || club === 'test' ? club : 'sena'))(
-  new URL(location.href).searchParams.get('club'),
-);
-const venueLabel = activeClub === '88' ? '88' : activeClub === 'test' ? 'TEST' : 'Sena';
+const activeClub = new URL(location.href).searchParams.get('club') === '88' ? '88' : 'sena';
+const venueLabel = activeClub === '88' ? '88' : 'Sena';
 const cupName = venueLabel + ' Cup';
 const clubStorage = key => key + ':' + activeClub;
 function venueUrl(path, club = activeClub) {
   const url = new URL(path, location.origin);
-  if (club === '88' || club === 'test') url.searchParams.set('club', club);
+  if (club === '88') url.searchParams.set('club', '88');
   else url.searchParams.delete('club');
   return url.pathname + url.search + url.hash;
 }
@@ -15,14 +12,13 @@ function venueFetch(path, options) {
   return fetch(venueUrl(path), options);
 }
 function venueText(text) {
-  const label = venueLabel.toUpperCase();
-  return activeClub !== 'sena'
+  return activeClub === '88'
     ? text
-        .replaceAll('Sena Cup', venueLabel + ' Cup')
-        .replaceAll('SENA CUP', label + ' CUP')
-        .replaceAll('SENA COURT', label + ' COURT')
-        .replaceAll('SENA Court', label + ' Court')
-        .replaceAll('SENA BADMINTON CLUB', label + ' BADMINTON CLUB')
+        .replaceAll('Sena Cup', '88 Cup')
+        .replaceAll('SENA CUP', '88 CUP')
+        .replaceAll('SENA COURT', '88 COURT')
+        .replaceAll('SENA Court', '88 Court')
+        .replaceAll('SENA BADMINTON CLUB', '88 BADMINTON CLUB')
     : text;
 }
 let leavingClub = false;
@@ -33,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.querySelector('#clubBrand'))
       document.querySelector('#clubBrand').textContent = venueLabel.toUpperCase();
     for (const id of ['baselineNote', 'aliasNote'])
-      if (document.getElementById(id)) document.getElementById(id).hidden = activeClub !== 'sena';
+      if (document.getElementById(id)) document.getElementById(id).hidden = activeClub === '88';
     select.onchange = () => {
       const next = select.value;
       if (next === activeClub) return;

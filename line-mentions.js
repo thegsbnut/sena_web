@@ -1,12 +1,7 @@
-import { isTestUserId, mockLineCall } from './dev-auth.js';
 export const validLineUserId = id => /^U[a-f0-9]{32}$/.test(id || '');
 
 // A successful validate/reply checks syntax, not destination membership.
 export async function groupMentionTarget(env, groupId, userId) {
-  if (isTestUserId(userId)) {
-    mockLineCall('GET /v2/bot/group/{groupId}/member/{userId}', { userId });
-    return { reason: 'test_user_mocked' };
-  }
   if (!validLineUserId(userId)) return { reason: 'invalid_line_user_id' };
   try {
     const response = await fetch(
