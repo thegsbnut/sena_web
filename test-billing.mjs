@@ -448,3 +448,15 @@ test('the bills page asks the member API for /api/member/bills, the route that r
   assert.doesNotMatch(src, /api\/member\?action=bills/);
   // memberRoute reads its action from the last path segment: ?action=bills would silently return the session JSON.
 });
+
+test('the bills tab is an in-page tab (no full reload) and a #roster deep link survives the late admin check', async () => {
+  const { readFileSync } = await import('node:fs');
+  const read = name => readFileSync(new URL('./public/' + name, import.meta.url), 'utf8');
+  const court = read('court.html');
+  assert.match(court, /<section id="bills" class="page" hidden>\s*<iframe id="billsFrame"/);
+  assert.doesNotMatch(court, /data-href=/);
+  // cloud.js reveals the roster tab after the admin check; it must then honour #roster
+  assert.match(read('cloud.js'), /location\.hash === '#roster'/);
+  // the old numbered "2 โอนแล้ว" step is gone
+  assert.doesNotMatch(read('billing.js'), /<b>2<\/b>/);
+});

@@ -15,11 +15,15 @@ document.querySelector('footer').before(bar);
 const cloudStatus = s => ($('#cloudStatus').textContent = s);
 function cloudLock() {
   canManage = cloudEditable;
-  document.querySelector('[data-tab="roster"]').hidden = !cloudEditable;
+  const rosterTab = document.querySelector('[data-tab="roster"]');
+  rosterTab.hidden = !cloudEditable;
   if (!cloudEditable) {
     $('#roster').hidden = true;
-    if (document.querySelector('[data-tab="roster"]').classList.contains('active'))
-      document.querySelector('[data-tab="session"]').click();
+    if (rosterTab.classList.contains('active'))
+      document.querySelector('[data-tab="booking"]').click();
+  } else if (location.hash === '#roster' && !rosterTab.classList.contains('active')) {
+    // The tab is revealed only after the admin check, which is later than the first tab pick.
+    rosterTab.click();
   }
 
   document.querySelectorAll('main button, main input, main select, main textarea').forEach(el => {

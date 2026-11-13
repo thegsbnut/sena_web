@@ -59,6 +59,13 @@
     editing = false;
   const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
   const clubQuery = club === '88' ? '?club=88' : '';
+  let embedded = false;
+  try {
+    embedded = window.self !== window.top;
+  } catch {
+    embedded = true;
+  }
+  document.body.classList.toggle('embedded', embedded);
   document.querySelector('#back').href = '/court' + clubQuery + '#booking';
   const picker = document.querySelector('#venuePicker');
   const clubSelect = picker.querySelector('select');
@@ -208,7 +215,9 @@
   let additionalKey, additionalDate, originalBillId;
   function showBill() {
     if (memberSession?.requireLogin && !manage && !payerToken) {
-      location.replace('/liff.html?page=pay&club=' + bill.club + '&bill=' + bill.id);
+      (embedded ? window.top : window).location.replace(
+        '/liff.html?page=pay&club=' + bill.club + '&bill=' + bill.id,
+      );
       return;
     }
     const organizer = manage && Number.isInteger(bill.revision);
@@ -508,7 +517,7 @@
     const wrap = inner => zone('mine', 'ของฉัน', 'บิลที่คุณต้องจ่าย', inner);
     if (mine.state === 'login')
       return wrap(
-        `<p class="muted">กรุณาเข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</p><a class="button" href="${loginLink}">เข้าสู่ระบบ LINE</a>`,
+        `<p class="muted">กรุณาเข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</p><a class="button" target="_top" href="${loginLink}">เข้าสู่ระบบ LINE</a>`,
       );
     if (mine.state === 'error')
       return wrap(
@@ -556,7 +565,7 @@
       if (photoUrl)
         body.innerHTML = `<img class="qr" src="${photoUrl}" alt="QR พร้อมเพย์สำหรับยอดของคุณ"><p class="qrnote">ตรวจชื่อผู้รับและยอดก่อนยืนยัน</p>
          <div class="actions"><button type="button" class="primary" data-action="save-qr" data-bill="${item.id}">บันทึกลงรูปภาพ</button></div><p id="mineSaveHint" class="muted" role="status"></p>
-         <div class="step"><b>2</b><span>โอนแล้ว</span>${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
+         <div class="step"><span>โอนเสร็จแล้ว?</span>${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
       else
         body.innerHTML = `${detail.transfer ? `<p>ช่องทางโอนเงิน</p><div class="transfer">${escape(detail.transfer)}</div>` : ''}<div class="step">${slip}</div><p class="muted"><a href="${escape(item.url)}">จ่ายเงินสดแทน</a></p>`;
     } catch (error) {
@@ -571,6 +580,10 @@
     message('');
     fillMine();
   }
+  window.addEventListener('message', event => {
+    if (event.origin === location.origin && event.data === 'bills-refresh' && !id && !editing)
+      run(load);
+  });
   async function load() {
     document.body.classList.remove('home');
     picker.hidden = Boolean(id);
@@ -988,7 +1001,9 @@
         id &&
         (!memberSession.loggedIn || !payerToken)
       ) {
-        location.replace('/liff.html?page=pay&club=' + club + '&bill=' + encodeURIComponent(id));
+        (embedded ? window.top : window).location.replace(
+          '/liff.html?page=pay&club=' + club + '&bill=' + encodeURIComponent(id),
+        );
         return;
       }
       await load();

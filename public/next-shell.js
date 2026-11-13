@@ -14,6 +14,19 @@
   };
   const svg = d => '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + d + '</svg>';
 
+  // Bills live in an iframe inside the page, so switching tabs never reloads the page.
+  function billsFrame() {
+    const frame = document.querySelector('#billsFrame');
+    if (!frame) return;
+    document.documentElement.style.setProperty(
+      '--nav-h',
+      document.querySelector('.next-tabbar').offsetHeight + 'px',
+    );
+    const club = typeof activeClub !== 'undefined' ? activeClub : '';
+    if (!frame.getAttribute('src')) frame.src = '/billing.html' + (club === '88' ? '?club=88' : '');
+    else frame.contentWindow?.postMessage('bills-refresh', location.origin);
+  }
+
   function tabs() {
     document.querySelectorAll('.next-tabbar .tab').forEach(tab => {
       const id = tab.dataset.tab;
@@ -25,17 +38,14 @@
         tab.append(label);
       }
       tab.addEventListener('click', () => {
-        if (tab.dataset.href) {
-          const club = typeof activeClub !== 'undefined' ? activeClub : '';
-          location.assign(tab.dataset.href + (club === '88' ? '?club=88' : ''));
-          return;
-        }
+        if (id === 'bills') billsFrame();
         document.body.dataset.tab = id;
         window.scrollTo({ top: 0 });
       });
     });
     const active = document.querySelector('.next-tabbar .tab.active');
     document.body.dataset.tab = active ? active.dataset.tab : 'booking';
+    if (active?.dataset.tab === 'bills') billsFrame();
   }
 
   tabs();

@@ -97,3 +97,19 @@ body.nxc .booking-toolbar #bookingMemberLogin {
   color: #102219;
   border-color: #445321;
 }
+
+/* Bills tab: the bills page runs in a frame that fills the screen above the bottom menu. */
+body.nxc #bills:not([hidden]) {
+  position: fixed;
+  inset: 0 0 var(--nav-h, 66px) 0;
+  z-index: 101;
+  margin: 0;
+  padding: 0;
+  background: #0b1c15;
+}
+body.nxc #bills iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}

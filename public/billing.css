@@ -478,16 +478,6 @@ body.nxc.home .step {
   font-weight: 800;
   color: #50655a;
 }
-body.nxc.home .step b {
-  display: inline-grid;
-  place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  border-radius: 50%;
-  background: #102219;
-  color: var(--lime);
-  font-size: 0.75rem;
-}
 body.nxc.home .step .button {
   flex: 1;
 }
@@ -573,4 +563,12 @@ body.nxc.home .zone {
 }
 body.nxc.home .mine .t strong {
   white-space: nowrap;
+}
+
+/* Inside the court page's bills tab: the court page already shows the bottom menu. */
+body.nxc.embedded nav.next-tabbar {
+  display: none;
+}
+body.nxc.embedded main {
+  padding-bottom: 1.5rem;
 }
