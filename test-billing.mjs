@@ -473,3 +473,10 @@ test('"ของฉัน" attaches a slip and declares cash on the home page it
     assert.match(src, new RegExp('data-action="' + action + '"'));
   assert.match(src, /id="mineSlip"/);
 });
+
+test('LIFF pay links land on the new bills tab instead of the old per-bill page', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./public/liff.js', import.meta.url), 'utf8');
+  assert.match(src, /'\/court' \+ \(club === '88' \? '\?club=88' : ''\) \+ '#bills'/);
+  assert.doesNotMatch(src, /bills\[0\]\.url/);
+});

@@ -165,33 +165,9 @@
       location.replace('/court' + (club === '88' ? '?club=88' : '') + '#booking');
       return;
     }
-    q('title').textContent = 'บิลของคุณ · ' + (club === '88' ? '88' : 'Sena');
-    const { bills } = await api('/bills');
-    if (bill && bills.length === 1) {
-      location.replace(bills[0].url);
-      return;
-    }
-    message(
-      bills.length
-        ? 'เลือกบิลที่ต้องการชำระ'
-        : 'ไม่พบบิลของคุณในสนามนี้ หากเป็นบิลเก่าที่ไม่ผูกสมาชิกให้ติดต่อผู้จัด',
-    );
-    for (const item of bills) {
-      const section = document.createElement('section'),
-        link = document.createElement('a');
-      link.className = 'button';
-      link.href = item.url;
-      link.textContent =
-        item.date +
-        ' · ' +
-        item.name +
-        ' · ' +
-        (item.amount / 100).toLocaleString('th-TH') +
-        ' บ. · ' +
-        (item.status === 'paid' ? 'จ่ายแล้ว' : 'เปิดบิล');
-      section.append(link);
-      q('actions').append(section);
-    }
+    // Bills now live in the court page's bills tab (own bills, QR and slip upload all in one place).
+    location.replace('/court' + (club === '88' ? '?club=88' : '') + '#bills');
+    return;
   } catch (error) {
     message(error.message || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่');
   }
