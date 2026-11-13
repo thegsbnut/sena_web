@@ -4,21 +4,24 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-13 · Claude · branch `claude/happy-goodall-x8fbjb`: **แท็บ "บิล" แทน "จัดก๊วน" ทำเสร็จ รอเจ้าของโปรเจกต์สั่ง merge เข้า `main`** (spec/plan: `docs/superpowers/specs|plans/2026-11-13-bills-tab*`) — เว็บจริงที่ merge ไปแล้ว: เมนูล่างเขียวเข้ม + แก้แถบ LINE ล้น + ปุ่มบิลค้างเต็มแถว
+- 2026-11-13 · Claude · branch `claude/happy-goodall-x8fbjb` merge เข้า `main` แล้วทั้งหมด (production ขึ้นแล้ว): เมนูล่างเว็บจริง + แท็บ "บิล" แทน "จัดก๊วน"
 
 ## ค้างอยู่ / ขั้นต่อไป
-- **Redesign "SENA Court next" (ดู `NEXT.md`)** — Worker แยก `sena-web-next` ใช้โค้ดเดิม + overlay `next/` และ D1 ชุดเดียวกับ production ไม่มี cron · branch นี้ **ยังไม่ merge ห้าม merge จนกว่าเจ้าของโปรเจกต์สั่ง**
-  - URL: https://sena-web-next.thegsbnut.workers.dev · deploy ด้วย `CLOUDFLARE_API_TOKEN=proxy-injected CLOUDFLARE_ACCOUNT_ID=807aa489f9e84863cc0dc67625b674f3 npm run deploy:next` (ไม่ใช้ Workers Assets เพราะ proxy ของ session ทำให้อัปโหลดได้ 401 → `worker-next.js` รวมไฟล์หน้าเว็บเข้าสคริปต์)
-  - `/court` = **หน้าตาเดิมทั้งหมด + เมนูล่างสีเขียวมะนาว** (`next/court.html` + `next-nav.css`, แก้แถบปุ่มเข้าสู่ระบบ LINE ที่ล้นแล้ว) ← แบบที่เจ้าของโปรเจกต์ขอดูล่าสุด
-  - `/court-full` = ดีไซน์ใหม่เต็ม (hero รอบถัดไป, การ์ดวันที่, รายชื่อวงกลม, แท่นรางวัล) · ชุดเต็มรวมหน้าบิล/LINE/admin อยู่ใน commit ก่อนหน้า (tag `redesign-full-v2` push ไม่ผ่าน ใช้ `git log` หา commit "จัดโครงหน้าใหม่ให้ใกล้เดโม")
-  - รอเจ้าของโปรเจกต์: ใส่ secret `ADMIN_KEY` ใน dashboard ของ `sena-web-next`; ถ้าจะลองจอง/จ่ายบิลผ่าน LINE ต้องสร้าง LIFF ตัวที่สองชี้ `/liff.html` ของเว็บ next แล้วแก้ `LINE_LIFF_ID` ใน `wrangler.next.jsonc`
-  - ยังไม่ได้ตัดสินใจ: จะเลือก `/court` (เดิม+เมนูล่าง) หรือ `/court-full` หรือผสม (เช่น เดิม + เมนูล่าง + การ์ดวันที่ใหม่); เมนูล่างของ `/court-full` ยังเป็นสีเข้ม
-  - session ไม่เปิดโดเมน next ได้ (proxy 403) → ตรวจหน้าจริงจาก session ไม่ได้ ใช้ `wrangler dev --local --compatibility-date 2026-05-22` + playwright แทน (ดู `NEXT.md`)
-  - ปัญหาแถบปุ่ม LINE ล้น (`#bookingMemberLogin`) มีใน production ด้วย (`public/booking.css`) — แก้เฉพาะ next, แก้ production เมื่อเจ้าของโปรเจกต์สั่ง
-  - สลับเป็นเว็บหลัก: คัดไฟล์ `next/` ที่เลือกทับ `public/` ใน commit เดียวแล้ว merge เมื่อสั่งเท่านั้น
-  - เดโม mood & tone (ข้อมูลปลอม): https://claude.ai/artifact/JqtzfvCBDWd8SuCGksdiYj
-- (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริงช่วงแรก โดยเฉพาะภาพถ่ายหน้าจอเอียง/เบลอ และดู neurons ที่ใช้ในหน้า Workers AI
-- (ไม่บังคับ) แสดงยอด/วันที่ที่ AI อ่านได้ทุกครั้ง; ถอด QR บนสลิปเพื่อได้เลขอ้างอิงที่แม่นกว่า (นอก scope เดิม)
+- **ไม่มีงานค้างบังคับ** · spec/plan แท็บบิล: `docs/superpowers/specs/2026-11-13-bills-tab-design.md`, `docs/superpowers/plans/2026-11-13-bills-tab.md`
+- ยังไม่ได้ลองกับ LINE จริงบนมือถือ: LIFF → แท็บบิล, บันทึกรูป QR, เลือกรูปสลิปจากแกลเลอรี — ถ้าเจอปัญหาให้ดูข้อต่อไปนี้ก่อน
+- (ไม่บังคับ) ป้าย AI ตรวจสลิปยังเห็นเฉพาะหน้ารายบิล (รายการรวมไม่โหลดผล AI) · ลิงก์ย่อ `/b/<รหัส>` ยังพาไปหน้าบิลรายใบเดิม (ไม่ได้ใช้ใน production ที่เปิด LIFF) · เว็บทดลอง `sena-web-next` (`NEXT.md`, `next/`) ยังอยู่ ไม่ได้ใช้แทนเว็บหลัก
+- (ไม่บังคับ) ดูผลป้าย AI กับสลิปจริง และ neurons ที่ใช้ในหน้า Workers AI
+
+## ต้องรู้เกี่ยวกับแท็บบิล (เว็บหลัก)
+- เมนูล่าง: จองคิว / บิล / (รายชื่อ เฉพาะผู้จัด) / Cup / อันดับ — `public/next-nav.css` + `public/next-shell.js`; แท็บ "จัดก๊วน" ซ่อนด้วย `hidden` (ไม่ลบ `#session` เพราะ `app.js` อ้าง id)
+- "บิล" เป็นแท็บในหน้าเดียว: `#billsFrame` (iframe ของ `/billing.html`) โหลดครั้งแรกที่กด, กดซ้ำ = postMessage `bills-refresh`; ในกรอบ `body.embedded` ซ่อนเมนูของหน้าบิลเอง; ลิงก์ล็อกอินใช้ `target=_top`
+- `public/billing.js` home (ไม่มี `?bill=`): โซน "ของฉัน" (`/api/member/bills` — **ต้องเป็น path นี้ ไม่ใช่ `?action=`**, เคยพังเพราะเรียกผิด) + โซน "ผู้จัดการ · รีวิวบิล" (เฉพาะผู้จัด: สร้างบิลใหม่, ค้างรวม, รอตรวจ=เงินสดที่แจ้งมา, สลิปที่แนบแล้ว ดู/ให้ส่งใหม่, ใครยังค้าง+รับเงินสด, บิลแยกวัน); การคำนวณ pure อยู่ `public/billing-overview.js` (เทส `test-billing-overview.mjs`)
+- **สลิปที่แนบ = จ่ายแล้วทันที ไม่มีขั้นอนุมัติ** (มีแต่เงินสดที่รอผู้จัดยืนยัน); ผู้จัดทำได้แค่ "ให้ส่งใหม่"
+- ผู้เล่น: QR โชว์เลยที่บิลแรกที่ต้องจ่าย; แนบสลิป/เงินสดทำในหน้าเดียว (`mineCall` ใช้ token ใน `#pay=`); API รายการบิลของผู้จัด (`GET /api/billing`) ส่ง payers รายคน + `revision` (เฉพาะผู้จัด)
+- LIFF `page=pay` (ปุ่ม "ขอบิลค้างจ่าย" ใน LINE) พาไป `/court[?club=88]#bills` (`public/liff.js`)
+- `#roster` ในลิงก์: `cloud.js` กดแท็บรายชื่อให้หลังตรวจสิทธิ์เสร็จ (แท็บโผล่ทีหลังหน้าจองเลือกแท็บ)
+- ทดสอบหน้าในเครื่อง: `.dev.vars` ใส่ `ADMIN_KEY=test-key` และ `LINE_MEMBER_AUTH_ENABLED=false` (git-ignore), `npx wrangler d1 execute DB --local --file=schema.sql`, `npx wrangler dev --local --compatibility-date 2026-05-22 --port 8799` + Playwright; ล็อกอินสมาชิก LINE จริงทดสอบไม่ได้ ต้องจำลอง `/api/member/bills`
+- ตรวจว่า deploy ขึ้นแล้วหรือยัง: `curl` ไฟล์จริงจาก https://sena-web.thegsbnut.workers.dev แล้วหา `?v=` / ข้อความใหม่
 
 ## ต้องรู้เกี่ยวกับระบบตรวจสลิปด้วย AI (spec: `docs/superpowers/specs/2026-11-12-slip-ai-check-design.md`)
 - `slip-check.js` = โค้ด AI ทั้งหมด; ผลอยู่ตาราง `slip_checks` (ไม่แตะ payload บิล); หน้าจอ: `public/slip-check-text.js` + `public/billing.js`; เทส: `test-slip-check.mjs`
@@ -37,8 +40,9 @@
 - token Cloudflare: เจ้าของโปรเจกต์สร้างใหม่ 2026-11-12 (Workers + D1 Edit) เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 173/173 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 187/187 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)
+- 2026-11-13 Claude: เมนูล่างเว็บจริง + แท็บบิลแทนจัดก๊วน (ผู้เล่นจ่ายในหน้าเดียว, ผู้จัดเคลียร์เงินสด/สลิปได้, LIFF ไปแท็บบิล) ขึ้น production แล้ว
 - 2026-11-12 Claude: ตรวจสลิปด้วย AI ขึ้น production (PR #24 ฟีเจอร์ · #25 เปิดใช้ · #26 กฎวันที่ + เติมเหตุผลให้ส่งใหม่); เจ้าของโปรเจกต์ทดสอบผ่าน — spec/plan ใน `docs/superpowers/`
