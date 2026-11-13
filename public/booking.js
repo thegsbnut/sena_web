@@ -519,7 +519,7 @@
           .filter(r => r.status === 'waitlist')
           .map(row)
           .join('') || '<p class="hint">ยังไม่มีคิวสำรอง</p>'
-      }<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${withdrawalSection(s)}${data.canEdit ? `${s.started ? '' : ` <button type="button" class="secondary" id="bookingEditCourts">แก้เลขคอร์ต</button> <button type="button" class="secondary" id="bookingClose">${s.closed ? 'เปิดรับจองรอบนี้' : 'ปิดรับจองรอบนี้'}</button>`}` : ''}`;
+      }<p class="hint">เมื่อมีคนถอน ตัวสำรองอันดับแรกจะขึ้นแทนทันที</p></div>${withdrawalSection(s)}${data.canEdit ? `<a class="booking-bill-action" href="${html(venueUrl('/billing.html?manage=1&date=' + encodeURIComponent(s.date)))}">จบและคิดเงิน ↗</a>${s.started ? '' : ` <button type="button" class="secondary" id="bookingEditCourts">แก้เลขคอร์ต</button> <button type="button" class="secondary" id="bookingClose">${s.closed ? 'เปิดรับจองรอบนี้' : 'ปิดรับจองรอบนี้'}</button>`}` : ''}`;
     const messages = {
       waiting: `รออีก ${Math.max(0, s.capacity - s.confirmedCount)} คนให้ครบก๊วน แล้วจัดคู่ทันที`,
       insufficient: 'เหลือน้อยกว่า 8 คน จึงพักตารางไว้ก่อน เพื่อให้ทุกคนได้พักอย่างน้อย 1 เกม',
