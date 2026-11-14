@@ -138,6 +138,8 @@
     } else alert(title + '\n' + message);
   }
   async function request(body) {
+    const notify = ['book', 'cancel'].includes(body?.action);
+    if (notify) window.SenaLineNotice?.preload();
     const response = await venueFetch('/api/booking', {
       method: body ? 'POST' : 'GET',
       headers: {
@@ -153,6 +155,7 @@
         ...value,
       });
     if (value.serverNow) serverClockOffset = Date.parse(value.serverNow) - Date.now();
+    if (notify && value.notice) setTimeout(() => window.SenaLineNotice?.send(value.notice));
     return value;
   }
   async function load(silent = false) {

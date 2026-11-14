@@ -10,6 +10,7 @@ import {
   refreshSchedules,
 } from './booking.js';
 import { holidayOn } from './booking-holidays.js';
+import { noticeDay, claimNotice } from './line-notices.js';
 const origin = 'https://example.com';
 const token = 'a'.repeat(64),
   otherToken = 'b'.repeat(64);
@@ -1149,4 +1150,78 @@ test('guests occupy booking seats, join the draw, and retain the inviting member
     (await read()).sessions.find(s => s.id === sessionId).registrations.some(r => r.guest),
     false,
   );
+});
+
+test('booking and withdrawing return a group notice with a one-time code for the list reply', async t => {
+  const f = fixture();
+  t.after(() => f.db.close());
+  const { data } = await f.open(['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
+  const [first, second] = data.sessions;
+  const day = s => noticeDay(s.date);
+  let r = await f.call({
+    action: 'book',
+    playerId: 'p7',
+    sessionIds: [first.id],
+    acceptHoliday: true,
+  });
+  let body = await r.json();
+  const split = text => {
+    const m = /^([\s\S]+) #([a-z0-9]{5})$/.exec(text);
+    assert.ok(m, text);
+    return [m[1], m[2]];
+  };
+  let [text, code] = split(body.notice.text);
+  assert.equal(text, `🏸 Player 7 จอง SENA ${day(first)} · ตัวจริง 8/8`);
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload, {
+    playerId: 'p7',
+    sessionIds: [first.id],
+  });
+  r = await f.call({
+    action: 'book',
+    playerId: 'p8',
+    guest: { name: 'Outside', gender: 'M' },
+    sessionIds: [first.id, second.id],
+    acceptHoliday: true,
+  });
+  body = await r.json();
+  [text, code] = split(body.notice.text);
+  assert.equal(
+    text,
+    `🏸 Player 8 จอง SENA · +แขก Outside\n• ${day(first)} · สำรองคิว 1\n• ${day(second)} · ตัวจริง 8/8`,
+  );
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload.sessionIds, [first.id, second.id]);
+  r = await f.call({ action: 'book', playerId: 'p7', sessionIds: [first.id], acceptHoliday: true });
+  assert.equal((await r.json()).notice, undefined, 'nothing new booked, nothing to announce');
+
+  const regs = body.sessions.find(s => s.id === first.id).registrations;
+  const p0 = regs.find(x => x.playerId === 'p0');
+  r = await f.call({
+    action: 'cancel',
+    sessionId: first.id,
+    registrationId: p0.id,
+    acceptLateCancellation: true,
+  });
+  body = await r.json();
+  const match = /^➖ Player 0 ถอน SENA (.+) #([a-z0-9]{5})$/.exec(body.notice.text);
+  assert.ok(match, body.notice.text);
+  assert.equal(match[1], day(first));
+  const claimed = await claimNotice(f.env.DB, match[2]);
+  assert.deepEqual(claimed, {
+    club: 'sena',
+    kind: 'withdraw',
+    payload: { sessionId: first.id, date: first.date, promotedIds: ['p8'] },
+  });
+
+  const p8 = body.sessions
+    .find(s => s.id === second.id)
+    .registrations.find(x => x.playerId === 'p8');
+  r = await f.call({
+    action: 'cancel',
+    sessionId: second.id,
+    registrationId: p8.id,
+    acceptLateCancellation: true,
+  });
+  [text, code] = split((await r.json()).notice.text);
+  assert.equal(text, `➖ Player 8 ถอน SENA ${day(second)} · พร้อมแขก/เพื่อน 1 คน`);
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload.promotedIds, []);
 });

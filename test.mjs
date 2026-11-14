@@ -423,3 +423,13 @@ test('session status exposes role only, checks signed cookies and shares login a
     via: null,
   });
 });
+test('LIFF links that land on the site root reach the LIFF page; the plain root still opens the court', async () => {
+  const env = {};
+  let r = await worker.fetch(new Request('https://x.test/?club=88&page=pay&bill=abc'), env);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('Location'), 'https://x.test/liff.html?club=88&page=pay&bill=abc');
+  r = await worker.fetch(new Request('https://x.test/?liff.state=%2F%3Fclub%3D88'), env);
+  assert.equal(r.headers.get('Location'), 'https://x.test/liff.html?liff.state=%2F%3Fclub%3D88');
+  r = await worker.fetch(new Request('https://x.test/'), env);
+  assert.equal(r.headers.get('Location'), 'https://x.test/court.html');
+});

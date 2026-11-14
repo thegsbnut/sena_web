@@ -17,7 +17,7 @@
 - `LINE_LIFF_ID`: LIFF app บน LINE Login Channel นี้
 - `LINE_MEMBER_AUTH_ENABLED`: `true` (เปิดเป็นขั้นสุดท้าย หลังเตรียมรายชื่อและทดสอบจริง)
 
-ใน LINE Developers ตั้ง Endpoint URL ของ LIFF เป็น `https://sena-web.thegsbnut.workers.dev/liff.html` ใช้ขนาด Full และ scope `openid`, `profile` เปิด LINE Login Channel ให้บัญชีผู้เล่นใช้งานได้ และเชื่อม OA ที่ถูกต้อง ไม่ต้องส่ง Channel Secret หรือ Access Token ในแชต ระบบใช้การตรวจ ID token ผ่าน LINE ด้วย Channel ID ฝั่งเซิร์ฟเวอร์ และใช้ Token/Secret ของ Badbot ที่ตั้งไว้เดิมสำหรับ Messaging API
+ใน LINE Developers ตั้ง Endpoint URL ของ LIFF เป็น `https://sena-web.thegsbnut.workers.dev/liff.html` ใช้ขนาด Full และ scope `openid`, `profile`, `chat_message.write` (ใช้แจ้งเข้ากลุ่ม ดูหัวข้อด้านล่าง) เปิด LINE Login Channel ให้บัญชีผู้เล่นใช้งานได้ และเชื่อม OA ที่ถูกต้อง ไม่ต้องส่ง Channel Secret หรือ Access Token ในแชต ระบบใช้การตรวจ ID token ผ่าน LINE ด้วย Channel ID ฝั่งเซิร์ฟเวอร์ และใช้ Token/Secret ของ Badbot ที่ตั้งไว้เดิมสำหรับ Messaging API
 
 ลิงก์เข้าจอง:
 
@@ -85,3 +85,17 @@ D1 เพิ่ม member_write_guards สำหรับตรวจ snapshot �
 ## ตรวจ mention หลายคนและแท็กตรงบรรทัดผู้จ่าย
 
 ดู [LINE-MENTION-AUDIT.md](LINE-MENTION-AUDIT.md) (สรุป; ฉบับเต็มอยู่ที่ docs/archive/LINE-MENTION-AUDIT-full.md) สำหรับหลักฐาน, payload ก่อน/หลัง, ขอบเขตสาเหตุที่ยังไม่ยืนยัน และแนวทาง mention ตรงบรรทัดผู้จ่ายแทนข้อความแยก การเปลี่ยนลำดับข้อความในรุ่นก่อนยังไม่แก้อาการตามผลทดสอบจริงของผู้จัด
+
+## แจ้งเข้ากลุ่มตอนจอง / ถอน / จ่าย (ฟรี ไม่ใช้ Push)
+
+spec: `docs/superpowers/specs/2026-11-14-line-group-notices-design.md`
+
+- หลังจอง ถอน แนบสลิป หรือผู้จัดกด "รับเงินสด" สำเร็จ API คืน `notice: { text, liffId }` (สร้างที่ Worker) แล้ว `public/line-notice.js` ส่งข้อความเข้ากลุ่ม**ในนามคนที่กด**ด้วย `liff.sendMessages` — โหลด LINE SDK ตอนกดปุ่ม (ไม่โหลดตอนเปิดหน้า) และส่งหลังขึ้นว่าสำเร็จแล้ว ส่งไม่ได้ก็เงียบ
+- ส่งได้เฉพาะเปิดใน LINE จากลิงก์ในกลุ่ม (`liff.getContext().type` = `group`/`room`) และผู้เล่นอนุญาต `chat_message.write` แล้ว (LINE ถามครั้งเดียว)
+- หน้าบิลเป็น iframe ใน `/court` → iframe ส่ง `postMessage` ให้หน้าหลักส่งแทน
+- จอง / ถอน / จ่ายจนบิลครบ → ข้อความลงท้าย ` #xxxxx` (ตาราง `line_notices`, ใช้ครั้งเดียว อายุ 24 ชม.) Badbot เห็นใน webhook แล้ว **Reply** (ฟรี) — ตอบเฉพาะกลุ่มที่ผูกกับก๊วนของรหัส:
+  - จอง: รายชื่อเต็มของวันที่จองที่ใกล้สุด + สรุปวันอื่นบรรทัดละวัน + ปุ่มต่อวัน (postback `badbot:round:<club>:<sessionId>`)
+  - ถอน: แท็กจริงคนที่ได้ขึ้นจากสำรอง (ถ้ามี) + รายชื่อรอบนั้น
+  - จ่ายครบ: สรุปบิล + รายชื่อคนจ่ายเงินสด
+- ผู้จัดยืนยันเงินสดจากเบราว์เซอร์ (ไม่ใช่ LIFF ในกลุ่ม) → ไม่มีข้อความเข้ากลุ่ม
+- **ถ้าใน LINE จริงข้อความไม่ขึ้นเลย** (LIFF อาจไม่ยอม `sendMessages` บน `/court` เพราะไม่อยู่ใต้ Endpoint `/liff.html`): เปลี่ยน Endpoint URL เป็น `https://sena-web.thegsbnut.workers.dev/` — Worker ส่ง `/?club=…&page=…` และ `/?liff.state=…` ต่อไป `/liff.html` ให้แล้ว ลิงก์เดิมในกลุ่มใช้ได้

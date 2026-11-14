@@ -1,8 +1,16 @@
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
-import { lineReplyEvidence, redactedMentionPayload } from './line-mentions.js';
-import { memberMode, liffUrl } from './member.js';
+import {
+  lineReplyEvidence,
+  redactedMentionPayload,
+  groupMentionTarget,
+  mentionGroupMessage,
+  mentionNameRisk,
+  planMentionMessages,
+} from './line-mentions.js';
+import { memberMode, liffUrl, prepareMembers } from './member.js';
+import { NOTICE_CODE, claimNotice, releaseNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
-import { billingLineText, billingLineMessages } from './billing.js';
+import { billingLineText, billingLineMessages, paidSummaryText } from './billing.js';
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 
@@ -58,10 +66,15 @@ function command(event) {
     if (tag) return { kind: 'billTag', scope: tag[1], offset: Number(tag[2]) };
     const run = /^badbot:run:([a-z0-9 ]{1,20})$/.exec(data || '');
     if (run && shortcuts.has(run[1])) return shortcuts.get(run[1]);
+    const round = /^badbot:round:(sena|88):([A-Za-z0-9:_-]{1,64})$/.exec(data || '');
+    if (round) return { kind: 'round', club: round[1], sessionId: round[2] };
     const match = /^badbot:roster:(all|sena|88)$/.exec(data || '');
     return match ? { kind: 'roster', scope: match[1] } : null;
   }
   if (event.type !== 'message' || event.message?.type !== 'text') return null;
+  // Posted by the LIFF page after a withdrawal/payment; see line-notices.js.
+  const notice = NOTICE_CODE.exec(normalizeLineText(event.message.text));
+  if (notice) return { kind: 'notice', code: notice[1] };
   const match = /^\/?(?:badbot|แบดบอต)(?:\s+(.*))?$/i.exec(normalizeLineText(event.message.text));
   if (!match) return null;
   const action = (match[1] || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -210,21 +223,27 @@ function displayNames(data, session) {
   return id => names.get(id) || 'ผู้เล่นที่นำออกจากก๊วน';
 }
 
-async function rosterSection(env, club, now) {
-  const heading = '📍 ' + clubOf(club).heading;
+async function bookingData(env, club) {
   const response = await bookingRoute(
     new Request('https://badbot.internal/api/booking'),
     env,
     false,
     club,
   );
-  if (!response.ok) return heading + '\nอ่านคิวไม่สำเร็จ กรุณากดดูข้อมูลล่าสุดอีกครั้ง';
-  const data = await response.json();
-  const session =
-    data.settings.enabled &&
-    data.sessions
-      .filter(s => !s.skipped && Date.parse(s.date + 'T' + s.start + ':00+07:00') > +now)
-      .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start))[0];
+  return response.ok ? await response.json() : null;
+}
+
+// The nearest upcoming round, or the given round (`sessionId`) when there is one.
+async function rosterSection(env, club, now, { data, sessionId } = {}) {
+  const heading = '📍 ' + clubOf(club).heading;
+  data ??= await bookingData(env, club);
+  if (!data) return heading + '\nอ่านคิวไม่สำเร็จ กรุณากดดูข้อมูลล่าสุดอีกครั้ง';
+  const session = sessionId
+    ? data.sessions.find(s => s.id === sessionId)
+    : data.settings.enabled &&
+      data.sessions
+        .filter(s => !s.skipped && Date.parse(s.date + 'T' + s.start + ':00+07:00') > +now)
+        .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start))[0];
   if (!session) return heading + '\nยังไม่มีรอบเปิดรับ';
   const name = displayNames(data, session);
   const numbered = status =>
@@ -398,6 +417,92 @@ function textMessages(text) {
   return chunks.map(text => ({ type: 'text', text }));
 }
 
+// Reply to a withdrawal notice: tag whoever moved up from the waitlist (a real
+// mention when their LINE account is linked and in this group), then the round.
+async function withdrawMessages(env, group, club, { sessionId, date, promotedIds }, now) {
+  const data = await bookingData(env, club),
+    round = data?.sessions.find(s => s.id === sessionId),
+    suffix = 'ได้สิทธิ์เล่น ' + noticeClub(club) + ' ' + noticeDay(date) + ' แล้ว';
+  const messages = [];
+  if (round) {
+    const confirmed = new Set(
+      round.registrations.filter(r => r.status === 'confirmed').map(r => r.playerId),
+    );
+    const ids = promotedIds.filter(id => confirmed.has(id)),
+      name = displayNames(data, round);
+    let links = [];
+    if (ids.length) {
+      await prepareMembers(env.DB);
+      links = (
+        await env.DB.prepare(
+          "SELECT player_id,user_id FROM member_links WHERE status='approved' AND club=? AND player_id IN (" +
+            ids.map(() => '?').join(',') +
+            ')',
+        )
+          .bind(club, ...ids)
+          .all()
+      ).results;
+    }
+    const targets = await Promise.all(
+      links.map(async link => ({
+        playerId: link.player_id,
+        ...(await groupMentionTarget(env, group, link.user_id)),
+      })),
+    );
+    const tagged = targets.filter(target => target.reason === 'mention_ready');
+    const people = tagged.map(target => ({
+      userId: target.userId,
+      risk: mentionNameRisk(target.displayName),
+    }));
+    for (const chunk of planMentionMessages(people).slice(0, 3))
+      messages.push(mentionGroupMessage(chunk, '🎉 ', suffix));
+    const plain = ids.filter(id => !tagged.some(target => target.playerId === id)).map(name);
+    if (plain.length)
+      messages.push({ type: 'text', text: '🎉 ' + plain.join(', ') + ' ' + suffix });
+  }
+  messages.push(...textMessages(await rosterSection(env, club, now, { data, sessionId })));
+  return messages.slice(0, 5);
+}
+
+// Reply to a booking notice: the nearest booked round in full, one line for each
+// other booked day, and a free quick-reply button per day for its full list.
+async function bookMessages(env, club, { playerId, sessionIds }, now) {
+  const data = await bookingData(env, club);
+  const rounds = (data?.sessions ?? [])
+    .filter(s => sessionIds.includes(s.id) && !s.started)
+    .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start));
+  if (!rounds.length) return textMessages(await rosterSection(env, club, now, { data }));
+  const [nearest, ...others] = rounds;
+  let text = await rosterSection(env, club, now, { data, sessionId: nearest.id });
+  if (others.length) {
+    const name = clean(data.roster.find(p => p.id === playerId)?.name || 'ผู้เล่น');
+    text +=
+      '\n\n📅 วันอื่นที่ ' +
+      name +
+      ' จอง\n' +
+      others
+        .map(
+          s =>
+            `• ${noticeDay(s.date)} · ตัวจริง ${s.confirmedCount}/${s.capacity} · สำรอง ${s.waitlistCount}`,
+        )
+        .join('\n');
+  }
+  const messages = textMessages(text);
+  if (others.length)
+    messages.at(-1).quickReply = {
+      items: others.slice(0, 13).map(s => ({
+        type: 'action',
+        action: {
+          type: 'postback',
+          label: noticeDay(s.date),
+          data: 'badbot:round:' + club + ':' + s.id,
+          displayText: '👥 รายชื่อ ' + clubOf(club).label + ' ' + noticeDay(s.date),
+        },
+      })),
+    };
+  return messages;
+}
+
 async function eventKey(event) {
   const value = event.source.groupId + '\n' + (event.webhookEventId || event.replyToken);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
@@ -436,10 +541,37 @@ export async function replyToGroupCommand(event, env) {
     .bind(id, +now)
     .run();
   if (!claim.meta.changes) return;
+  let notice = null;
   try {
     const messages = [],
       mentionDiagnostics = [];
-    if (action.kind === 'roster') {
+    if (action.kind === 'notice') {
+      notice = await claimNotice(db, action.code, +now);
+      if (!notice) return;
+      const sameClub = await db
+        .prepare('SELECT 1 FROM line_groups WHERE group_id=? AND club=?')
+        .bind(group, notice.club)
+        .first();
+      if (!sameClub) {
+        await releaseNotice(db, action.code);
+        return;
+      }
+      if (notice.kind === 'book')
+        messages.push(...(await bookMessages(env, notice.club, notice.payload, now)));
+      else if (notice.kind === 'withdraw')
+        messages.push(...(await withdrawMessages(env, group, notice.club, notice.payload, now)));
+      else if (notice.kind === 'paid') {
+        const text = await paidSummaryText(env, notice.payload.billId);
+        if (!text) return;
+        messages.push(...textMessages(text));
+      } else return;
+    } else if (action.kind === 'round') {
+      messages.push(
+        ...textMessages(
+          await rosterSection(env, action.club, now, { sessionId: action.sessionId }),
+        ),
+      );
+    } else if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
       const sections = await Promise.all(selected.map(club => rosterSection(env, club, now)));
       const text =
@@ -553,6 +685,7 @@ export async function replyToGroupCommand(event, env) {
     if (!response.ok && response.status !== 400) throw Error('LINE reply unavailable');
   } catch (error) {
     await db.prepare('DELETE FROM line_reply_events WHERE id=?').bind(id).run();
+    if (notice) await releaseNotice(db, action.code);
     throw error;
   }
 }

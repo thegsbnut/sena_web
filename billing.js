@@ -1,4 +1,5 @@
 import { clubOf, CLUB_IDS } from './clubs.js';
+import { createNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
 import {
   groupMentionTarget,
@@ -693,7 +694,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
         .bind(oldKey)
         .run()
         .catch(error => logError('billing:delete-old-slip', error));
-    return json({ ok: true });
+    return json({ ok: true, notice: await paymentNotice(env, bill, payload, target) });
   }
   if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
   const input = await readLimitedJson(req);
@@ -745,9 +746,11 @@ export async function billingRoute(req, env, admin, club, ctx) {
         paidAt: null,
       });
     } else return fail('สถานะการชำระเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
-    return (await updateBill(db, bill, payload))
-      ? json({ ok: true })
-      : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    return json({
+      ok: true,
+      ...(input.received ? { notice: await paymentNotice(env, bill, payload, target) } : {}),
+    });
   }
   if (action === 'edit') {
     if (bill.payers.some(p => p.submittedAt || p.status === 'paid')) {
@@ -791,6 +794,65 @@ export async function billingRoute(req, env, admin, club, ctx) {
       : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   }
   return fail('ไม่พบคำสั่ง');
+}
+
+const billLabel = bill =>
+  noticeClub(bill.club) +
+  ' ' +
+  noticeDay(billDate(bill)) +
+  (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '');
+// Text the LIFF page posts into the LINE group after a payment is recorded.
+// The payment that completes the bill gets a code so Badbot replies with a summary.
+async function paymentNotice(env, bill, payload, target) {
+  const paid = paidCount(payload),
+    count = payload.payers.length;
+  let text =
+    (target.method === 'cash' ? '💵 ' : '💸 ') +
+    target.name +
+    ' จ่ายบิล ' +
+    billLabel(bill) +
+    ' ' +
+    money(target.amount) +
+    ' บ. สำเร็จ' +
+    (target.method === 'cash' ? ' (เงินสด)' : '') +
+    ' · จ่ายแล้ว ' +
+    paid +
+    '/' +
+    count;
+  if (paid === count)
+    try {
+      text +=
+        ' #' +
+        (await createNotice(env.DB, {
+          club: bill.club,
+          kind: 'paid',
+          payload: { billId: bill.id },
+        }));
+    } catch (error) {
+      logError('billing:notice', error);
+    }
+  return { text, liffId: env.LINE_LIFF_ID || '' };
+}
+// Badbot's reply to a paid-in-full notice: read the bill as it is now.
+export async function paidSummaryText(env, billId) {
+  await prepare(env.DB);
+  const bill = await readBill(env.DB, billId);
+  if (!bill || bill.cancelled) return null;
+  const cash = bill.payers.filter(p => p.status === 'paid' && p.method === 'cash'),
+    paid = paidCount(bill),
+    full = paid === bill.payers.length;
+  return (
+    (full ? '✅ บิล ' : '💸 บิล ') +
+    billLabel(bill) +
+    (full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
+    paid +
+    '/' +
+    bill.payers.length +
+    ' · รวม ' +
+    money(bill.payers.reduce((total, p) => total + (p.status === 'paid' ? p.amount : 0), 0)) +
+    ' บ.' +
+    (cash.length ? '\n💵 เงินสด ' + cash.length + ' คน: ' + cash.map(p => p.name).join(', ') : '')
+  );
 }
 
 export async function billingLineText(env, scope, origin) {

@@ -5,6 +5,7 @@ import worker from './worker.js';
 import { defaultSettings, bangkokDate } from './booking.js';
 import { prepareMembers } from './member.js';
 import { groupMentionTarget } from './line-mentions.js';
+import { createNotice, noticeDay } from './line-notices.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -837,4 +838,161 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
     if (command === 'leaderboard 88')
       assert.doesNotMatch(textOf(reply), /Sena Leaderboard|Sena One/);
   }
+});
+
+test('a withdrawal code tags the promoted player for real and shows that round', async t => {
+  const f = fixture(t),
+    userId = 'U' + 'b'.repeat(32),
+    date = future(1);
+  await prepareMembers(f.env.DB);
+  f.db
+    .prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)")
+    .run(userId, 'sena', 'p2', 'Bomb', 'existing', new Date().toISOString());
+  const round = session(date, { names: 3, capacity: 2 });
+  round.registrations.splice(1, 1); // Bua withdrew: Bomb moved up to a confirmed spot.
+  f.seed('sena', [round]);
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (url === 'https://api.line.me/v2/bot/group/' + group + '/member/' + userId)
+      return Response.json({ userId, displayName: 'Bomb' });
+    assert.equal(url, 'https://api.line.me/v2/bot/message/reply');
+    f.calls.push(JSON.parse(options.body));
+    return Response.json({});
+  });
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'withdraw',
+    payload: { sessionId: date, date, promotedIds: ['p2'] },
+  });
+  const text = `➖ Bua ถอน SENA ${noticeDay(date)} #${code}`;
+  assert.equal((await f.hook([f.event(text)])).status, 200);
+  assert.equal(f.calls.length, 1);
+  const [tag, ...rest] = f.calls[0].messages;
+  assert.equal(tag.type, 'textV2');
+  assert.deepEqual(tag.substitution.m0, { type: 'mention', mentionee: { type: 'user', userId } });
+  assert.match(
+    tag.text,
+    new RegExp(`^🎉 \\{m0\\}\\u200b+\\nได้สิทธิ์เล่น SENA ${noticeDay(date)} แล้ว$`),
+  );
+  const roster = rest.map(m => m.text).join('\n');
+  assert.match(roster, /👥 ผู้ตี 2\/2/);
+  assert.match(roster, /2\. Bomb/);
+  // The same code again (copied, or redelivered with a new id) never replies twice.
+  await f.hook([f.event(text)]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('a paid-in-full code replies with the bill summary and who paid cash', async t => {
+  const f = fixture(t);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0, created_at INTEGER)',
+  );
+  const id = 'c'.repeat(32);
+  f.db.prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES(?,?,?,0,?)').run(
+    id,
+    'sena',
+    '2026-11-14',
+    JSON.stringify({
+      payers: [
+        { name: 'Nut', amount: 8500, status: 'paid', method: 'transfer' },
+        { name: 'Bua', amount: 9000, status: 'paid', method: 'cash' },
+      ],
+    }),
+  );
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'paid',
+    payload: { billId: id },
+  });
+  assert.equal((await f.hook([f.event('💵 Bua จ่ายบิล … #' + code)])).status, 200);
+  assert.equal(
+    textOf(f.calls[0]),
+    '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2 · รวม 175 บ.\n💵 เงินสด 1 คน: Bua',
+  );
+});
+
+test('notice codes answer only in the group linked to that club, and survive a failed reply', async t => {
+  const f = fixture(t);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0, created_at INTEGER)',
+  );
+  f.db
+    .prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES(?,?,?,0,?)')
+    .run(
+      'd'.repeat(32),
+      '88',
+      '2026-11-14',
+      JSON.stringify({ payers: [{ name: 'Nut', amount: 100, status: 'paid', method: 'cash' }] }),
+    );
+  const other = await createNotice(f.env.DB, {
+    club: '88',
+    kind: 'paid',
+    payload: { billId: 'd'.repeat(32) },
+  });
+  await f.hook([f.event('x #' + other)]);
+  assert.equal(f.calls.length, 0, 'this group is linked to Sena only');
+  f.db.prepare('INSERT INTO line_groups (club,group_id) VALUES (?,?)').run('88', group);
+  f.status(503);
+  assert.equal((await f.hook([f.event('x #' + other)])).status, 503);
+  f.status(200);
+  assert.equal((await f.hook([f.event('x #' + other)])).status, 200);
+  assert.equal(f.calls.length, 2);
+  assert.match(textOf(f.calls[1]), /^✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบ 1\/1/);
+  await f.hook([f.event('ordinary chat #zzzzz')]);
+  assert.equal(f.calls.length, 2);
+});
+
+test('a booking code lists the nearest booked round, sums up the other days and offers free buttons', async t => {
+  const f = fixture(t),
+    [d1, d2] = [future(1), future(2)];
+  const later = session(d2, { names: 3, capacity: 2 });
+  f.seed('sena', [session(d1, { names: 3 }), later]);
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'book',
+    payload: { playerId: 'p2', sessionIds: [d1, d2] },
+  });
+  assert.equal((await f.hook([f.event('🏸 Bomb จอง SENA #' + code)])).status, 200);
+  const reply = f.calls[0];
+  const text = textOf(reply);
+  assert.match(text, /👥 ผู้ตี 3\/8/);
+  assert.match(text, /3\. Bomb/);
+  assert.match(
+    text,
+    new RegExp(`📅 วันอื่นที่ Bomb จอง\\n• ${noticeDay(d2)} · ตัวจริง 2/2 · สำรอง 1`),
+  );
+  assert.doesNotMatch(
+    text.split('📅')[0],
+    /สำรอง 1 คน/,
+    'only the nearest round is listed in full',
+  );
+  const items = reply.messages.at(-1).quickReply.items;
+  assert.deepEqual(
+    items.map(i => [i.action.label, i.action.data]),
+    [[noticeDay(d2), 'badbot:round:sena:' + d2]],
+  );
+  // The button shows that day's full list (a free reply to the postback).
+  await f.hook([
+    f.event('', {
+      type: 'postback',
+      postback: { data: 'badbot:round:sena:' + d2 },
+      message: undefined,
+    }),
+  ]);
+  const second = textOf(f.calls[1]);
+  assert.match(second, /👥 ผู้ตี 2\/2/);
+  assert.match(second, /⏳ สำรอง 1 คน\n1\. Bomb/);
+});
+
+test('a withdrawal with nobody moving up still answers with that round', async t => {
+  const f = fixture(t),
+    date = future(1);
+  f.seed('sena', [session(date, { names: 2 })]);
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'withdraw',
+    payload: { sessionId: date, date, promotedIds: [] },
+  });
+  await f.hook([f.event('➖ Bomb ถอน SENA #' + code)]);
+  assert.equal(f.calls[0].messages[0].type, 'text');
+  assert.match(textOf(f.calls[0]), /👥 ผู้ตี 2\/8[\s\S]*1\. Nut\n2\. Bua/);
 });
