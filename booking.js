@@ -928,10 +928,12 @@ async function bookingNotice(env, club, input, outcome, withdrawn) {
   let text;
   if (input?.action === 'book' && outcome.result?.added > 0) {
     const skipped = new Set(outcome.result.duplicateIds),
-      lines = [];
+      lines = [],
+      booked = [];
     for (const id of input.sessionIds) {
       const s = doc.sessions.find(s => s.id === id);
       if (!s || skipped.has(id)) continue;
+      booked.push(s);
       const i = s.registrations.findIndex(r => r.playerId === input.playerId);
       const status =
         i < 0
@@ -952,22 +954,27 @@ async function bookingNotice(env, club, input, outcome, withdrawn) {
       lines.length === 1
         ? `${head} ${lines[0]}${extras}`
         : [head + extras, ...lines.map(line => '• ' + line)].join('\n');
+    text += await codeSuffix(env, club, 'book', {
+      playerId: input.playerId,
+      sessionIds: booked.sort((a, b) => a.date.localeCompare(b.date)).map(s => s.id),
+    });
   } else if (input?.action === 'cancel' && withdrawn) {
+    const { sessionId, date, promotedIds } = withdrawn;
     text =
-      `➖ ${withdrawn.name} ถอน ${tag} ${noticeDay(withdrawn.date)}` +
-      (withdrawn.extra > 0 ? ` · พร้อมแขก/เพื่อน ${withdrawn.extra} คน` : '');
-    if (withdrawn.promotedIds.length) {
-      const { sessionId, date, promotedIds } = withdrawn;
-      text +=
-        ' #' +
-        (await createNotice(env.DB, {
-          club,
-          kind: 'withdraw',
-          payload: { sessionId, date, promotedIds },
-        }));
-    }
+      `➖ ${withdrawn.name} ถอน ${tag} ${noticeDay(date)}` +
+      (withdrawn.extra > 0 ? ` · พร้อมแขก/เพื่อน ${withdrawn.extra} คน` : '') +
+      (await codeSuffix(env, club, 'withdraw', { sessionId, date, promotedIds }));
   } else return;
   return { text, liffId: env.LINE_LIFF_ID || '' };
+}
+// " #code" so Badbot answers with the round's list; without a code the text still goes out.
+async function codeSuffix(env, club, kind, payload) {
+  try {
+    return ' #' + (await createNotice(env.DB, { club, kind, payload }));
+  } catch (error) {
+    logError('booking:notice-code', error);
+    return '';
+  }
 }
 export async function scheduledBookings(env, now = new Date()) {
   for (const club of CLUB_IDS) {

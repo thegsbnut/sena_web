@@ -1152,7 +1152,7 @@ test('guests occupy booking seats, join the draw, and retain the inviting member
   );
 });
 
-test('booking and withdrawing return a group notice; a promotion carries a one-time code', async t => {
+test('booking and withdrawing return a group notice with a one-time code for the list reply', async t => {
   const f = fixture();
   t.after(() => f.db.close());
   const { data } = await f.open(['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6']);
@@ -1165,7 +1165,17 @@ test('booking and withdrawing return a group notice; a promotion carries a one-t
     acceptHoliday: true,
   });
   let body = await r.json();
-  assert.equal(body.notice.text, `🏸 Player 7 จอง SENA ${day(first)} · ตัวจริง 8/8`);
+  const split = text => {
+    const m = /^([\s\S]+) #([a-z0-9]{5})$/.exec(text);
+    assert.ok(m, text);
+    return [m[1], m[2]];
+  };
+  let [text, code] = split(body.notice.text);
+  assert.equal(text, `🏸 Player 7 จอง SENA ${day(first)} · ตัวจริง 8/8`);
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload, {
+    playerId: 'p7',
+    sessionIds: [first.id],
+  });
   r = await f.call({
     action: 'book',
     playerId: 'p8',
@@ -1174,10 +1184,12 @@ test('booking and withdrawing return a group notice; a promotion carries a one-t
     acceptHoliday: true,
   });
   body = await r.json();
+  [text, code] = split(body.notice.text);
   assert.equal(
-    body.notice.text,
+    text,
     `🏸 Player 8 จอง SENA · +แขก Outside\n• ${day(first)} · สำรองคิว 1\n• ${day(second)} · ตัวจริง 8/8`,
   );
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload.sessionIds, [first.id, second.id]);
   r = await f.call({ action: 'book', playerId: 'p7', sessionIds: [first.id], acceptHoliday: true });
   assert.equal((await r.json()).notice, undefined, 'nothing new booked, nothing to announce');
 
@@ -1209,8 +1221,7 @@ test('booking and withdrawing return a group notice; a promotion carries a one-t
     registrationId: p8.id,
     acceptLateCancellation: true,
   });
-  assert.equal(
-    (await r.json()).notice.text,
-    `➖ Player 8 ถอน SENA ${day(second)} · พร้อมแขก/เพื่อน 1 คน`,
-  );
+  [text, code] = split((await r.json()).notice.text);
+  assert.equal(text, `➖ Player 8 ถอน SENA ${day(second)} · พร้อมแขก/เพื่อน 1 คน`);
+  assert.deepEqual((await claimNotice(f.env.DB, code)).payload.promotedIds, []);
 });
