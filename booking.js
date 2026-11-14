@@ -4,6 +4,8 @@ import { once } from './schema-cache.js';
 import './public/engine.js';
 import { cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
+import { createNotice, noticeClub, noticeDay } from './line-notices.js';
+import { logError } from './log.js';
 import {
   recordAttendance,
   readBadgeSource,
@@ -814,6 +816,9 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                     x.id === r.id || x.guest?.hostId === r.playerId || x.invitedBy === r.playerId,
                 );
                 s.withdrawals ??= [];
+                const confirmedBefore = new Set(
+                  s.registrations.slice(0, s.capacity).map(x => x.playerId),
+                );
                 for (const x of removed) {
                   const host = x.guest?.hostId || x.invitedBy || x.playerId,
                     payer = players.find(p => p.id === host)?.name || 'ผู้เล่นที่นำออกจากก๊วน';
@@ -838,7 +843,20 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                   x =>
                     x.id !== r.id && x.guest?.hostId !== r.playerId && x.invitedBy !== r.playerId,
                 );
-                return { message: 'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ' };
+                return {
+                  message: 'ถอนชื่อแล้ว • คิวสำรองและตารางคู่ปรับให้อัตโนมัติ',
+                  withdrawn: {
+                    sessionId: s.id,
+                    date: s.date,
+                    name:
+                      r.guest?.name || players.find(p => p.id === r.playerId)?.name || 'ผู้เล่น',
+                    extra: removed.length - 1,
+                    promotedIds: s.registrations
+                      .slice(0, s.capacity)
+                      .map(x => x.playerId)
+                      .filter(id => !confirmedBefore.has(id)),
+                  },
+                };
               }
             }
           : null,
@@ -884,15 +902,72 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                 ((r.guest?.hostId || r.invitedBy || r.playerId) === member.link.player_id ||
                   r.playerId === member.link.player_id)));
     }
+    const { withdrawn, ...result } = outcome.result ?? {};
+    let notice;
+    try {
+      notice = await bookingNotice(env, club, input, outcome, withdrawn);
+    } catch (error) {
+      logError('booking:notice', error);
+    }
     return reply({
       ...view,
       venueMapUrl: venueMapFor(outcome.doc, club),
-      result: jobResult ?? outcome.result,
+      result: jobResult ?? (outcome.result ? result : outcome.result),
+      ...(notice ? { notice } : {}),
     });
   } catch (e) {
     if (e instanceof BookingError) return reply({ error: e.message, ...e.details }, e.status);
     throw e;
   }
+}
+// Text the LIFF page posts into the LINE group after a booking or withdrawal.
+async function bookingNotice(env, club, input, outcome, withdrawn) {
+  const tag = noticeClub(club),
+    { doc, players } = outcome,
+    nameOf = id => players.find(p => p.id === id)?.name || 'ผู้เล่น';
+  let text;
+  if (input?.action === 'book' && outcome.result?.added > 0) {
+    const skipped = new Set(outcome.result.duplicateIds),
+      lines = [];
+    for (const id of input.sessionIds) {
+      const s = doc.sessions.find(s => s.id === id);
+      if (!s || skipped.has(id)) continue;
+      const i = s.registrations.findIndex(r => r.playerId === input.playerId);
+      const status =
+        i < 0
+          ? 'ลงชื่อให้เพื่อน/แขก'
+          : i < s.capacity
+            ? `ตัวจริง ${Math.min(s.registrations.length, s.capacity)}/${s.capacity}`
+            : `สำรองคิว ${i - s.capacity + 1}`;
+      lines.push(noticeDay(s.date) + ' · ' + status);
+    }
+    if (!lines.length) return;
+    const friend =
+      input.friendId != null && outcome.result.friendsAdded ? nameOf(input.friendId) : '';
+    const extras =
+      (friend ? ' · +เพื่อน ' + friend : '') +
+      (outcome.result.guestsAdded ? ' · +แขก ' + String(input.guest?.name || '').trim() : '');
+    const head = `🏸 ${nameOf(input.playerId)} จอง ${tag}`;
+    text =
+      lines.length === 1
+        ? `${head} ${lines[0]}${extras}`
+        : [head + extras, ...lines.map(line => '• ' + line)].join('\n');
+  } else if (input?.action === 'cancel' && withdrawn) {
+    text =
+      `➖ ${withdrawn.name} ถอน ${tag} ${noticeDay(withdrawn.date)}` +
+      (withdrawn.extra > 0 ? ` · พร้อมแขก/เพื่อน ${withdrawn.extra} คน` : '');
+    if (withdrawn.promotedIds.length) {
+      const { sessionId, date, promotedIds } = withdrawn;
+      text +=
+        ' #' +
+        (await createNotice(env.DB, {
+          club,
+          kind: 'withdraw',
+          payload: { sessionId, date, promotedIds },
+        }));
+    }
+  } else return;
+  return { text, liffId: env.LINE_LIFF_ID || '' };
 }
 export async function scheduledBookings(env, now = new Date()) {
   for (const club of CLUB_IDS) {
