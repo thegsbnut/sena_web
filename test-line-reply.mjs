@@ -893,8 +893,15 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
     '2026-11-14',
     JSON.stringify({
       payers: [
-        { name: 'Nut', amount: 8500, status: 'paid', method: 'transfer' },
-        { name: 'Bua', amount: 9000, status: 'paid', method: 'cash' },
+        {
+          name: 'Nut',
+          amount: 8500,
+          status: 'paid',
+          method: 'transfer',
+          paidAt: 2000,
+          shares: [{ name: 'Nut' }, { name: 'Guest' }],
+        },
+        { name: 'Bua', amount: 9000, status: 'paid', method: 'cash', paidAt: 1000, shares: [] },
       ],
     }),
   );
@@ -906,7 +913,13 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
   assert.equal((await f.hook([f.event('💵 Bua จ่ายบิล … #' + code)])).status, 200);
   assert.equal(
     textOf(f.calls[0]),
-    '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2 · รวม 175 บ.\n💵 เงินสด 1 คน: Bua',
+    [
+      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2',
+      '💰 รวม 175 บ. · โอน 1 คน 85 บ. · เงินสด 1 คน 90 บ.',
+      '',
+      '1. Bua 90 บ. · เงินสด',
+      '2. Nut 85 บ. · โอน (รวม Guest)',
+    ].join('\n'),
   );
 });
 
@@ -995,4 +1008,41 @@ test('a withdrawal with nobody moving up still answers with that round', async t
   await f.hook([f.event('➖ Bomb ถอน SENA #' + code)]);
   assert.equal(f.calls[0].messages[0].type, 'text');
   assert.match(textOf(f.calls[0]), /👥 ผู้ตี 2\/8[\s\S]*1\. Nut\n2\. Bua/);
+});
+
+test('an opened-bill code replies with who still owes on that court, tagging linked members', async t => {
+  const f = fixture(t),
+    userId = 'U' + 'e'.repeat(32);
+  f.env.LINE_MEMBER_AUTH_ENABLED = 'true';
+  f.env.LINE_LIFF_ID = '12345-test';
+  await prepareMembers(f.env.DB);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)',
+  );
+  f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+    'f'.repeat(32),
+    'sena',
+    future(0),
+    JSON.stringify({
+      payers: [{ name: 'Nut', payerKey: 'member:p0', amount: 8500, status: 'unpaid' }],
+    }),
+  );
+  f.db
+    .prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)")
+    .run(userId, 'sena', 'p0', 'Nut', 'existing', new Date().toISOString());
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (url === 'https://api.line.me/v2/bot/group/' + group + '/member/' + userId)
+      return Response.json({ userId, displayName: 'Nut' });
+    f.calls.push(JSON.parse(options.body));
+    return Response.json({});
+  });
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'bill',
+    payload: { billId: 'f'.repeat(32) },
+  });
+  await f.hook([f.event('🧾 เปิดบิล SENA #' + code)]);
+  const [summary, tag] = f.calls[0].messages;
+  assert.match(summary.text, /💸 บิลค้าง · Sena[\s\S]*• Nut 85 บ\./);
+  assert.deepEqual(tag.substitution.m0.mentionee, { type: 'user', userId });
 });

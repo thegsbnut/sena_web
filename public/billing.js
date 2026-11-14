@@ -875,6 +875,7 @@
           await load();
         } else {
           if (savePromptPay) await post('promptpay', { promptpay: draft.transfer });
+          window.SenaLineNotice?.preload();
           let result;
           if (additionalKey && additionalDate === draft.date) {
             result = await post(null, { ...draft, additional: additionalKey });
@@ -891,6 +892,12 @@
             }
           }
           id = result.id;
+          // Post "bill opened" to the group before leaving this page (at most 4 s).
+          if (result.notice && window.SenaLineNotice)
+            await Promise.race([
+              window.SenaLineNotice.send(result.notice),
+              new Promise(resolve => setTimeout(resolve, 4000)),
+            ]);
           location.replace(linkToBill(id, true).href);
         }
       });

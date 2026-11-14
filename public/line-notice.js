@@ -68,11 +68,12 @@
     if (permission.state !== 'granted') return;
     await liff.sendMessages([{ type: 'text', text: notice.text }]);
   }
-  function send(notice) {
+  // Resolves when the message is sent or given up on; never rejects.
+  async function send(notice) {
     if (!inLine || !notice?.text || !notice.liffId) return;
     // The bills tab is an iframe; LIFF only works in the top-level page.
     if (framed) return window.parent.postMessage({ senaNotice: notice }, location.origin);
-    deliver(notice).catch(error => console.warn('line-notice', error));
+    await deliver(notice).catch(error => console.warn('line-notice', error));
   }
   if (!framed)
     window.addEventListener('message', event => {

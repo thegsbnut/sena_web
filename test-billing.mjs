@@ -522,3 +522,21 @@ test('payments return a group notice; the payment that completes the bill carrie
   });
   assert.equal((await r.json()).notice, undefined);
 });
+
+test('opening a bill returns a group notice with a code; reopening the same day does not', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  let r = await f.request('/api/billing', { method: 'POST', payload: draft, cookie });
+  const body = await r.json();
+  const match = new RegExp(
+    `^🧾 เปิดบิล SENA ${noticeDay(draft.date)} · 2 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
+  ).exec(body.notice.text);
+  assert.ok(match, body.notice.text);
+  assert.deepEqual(await claimNotice(f.env.DB, match[2]), {
+    club: 'sena',
+    kind: 'bill',
+    payload: { billId: body.id },
+  });
+  r = await f.request('/api/billing', { method: 'POST', payload: draft, cookie });
+  assert.equal((await r.json()).notice, undefined);
+});
