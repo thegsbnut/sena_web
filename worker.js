@@ -203,6 +203,10 @@ export default {
         target.pathname = '/liff';
         return env.ASSETS.fetch(new Request(target, req));
       }
+      // If the LIFF endpoint is the site root (so LIFF also works on /court for
+      // group notices), LIFF links arrive as /?club=…&page=… or /?liff.state=….
+      if (path === '/' && (url.searchParams.has('page') || url.searchParams.has('liff.state')))
+        return Response.redirect(url.origin + '/liff.html' + url.search, 302);
       if (path.startsWith('/b/')) {
         if (!['GET', 'HEAD'].includes(req.method))
           return json({ error: 'Method not allowed' }, 405);

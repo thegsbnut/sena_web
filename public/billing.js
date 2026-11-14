@@ -129,7 +129,15 @@
     if (payer) url.searchParams.set('payer', payer);
     return url;
   }
+  // Upload and cash confirmations answer with a LINE group notice (line-notice.js).
+  const notifying = action => ['upload', 'cash'].includes(action);
+  function noticeFrom(action, value) {
+    if (notifying(action) && value?.notice)
+      setTimeout(() => window.SenaLineNotice?.send(value.notice));
+    return value;
+  }
   async function request(action, options = {}, payer, amount) {
+    if (notifying(action)) window.SenaLineNotice?.preload();
     const headers = new Headers(options.headers);
     if (payerToken) headers.set('X-Bill-Token', payerToken);
     const url = endpoint(action, payer);
@@ -144,7 +152,9 @@
       const error = await response.json().catch(() => ({}));
       throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
     }
-    return ['slip', 'qr'].includes(action) ? response.blob() : response.json();
+    return ['slip', 'qr'].includes(action)
+      ? response.blob()
+      : noticeFrom(action, await response.json());
   }
   function post(action, data) {
     return request(action, {
@@ -571,12 +581,13 @@
     if (amount !== undefined) url.searchParams.set('amount', amount);
     const headers = new Headers(options.headers);
     headers.set('X-Bill-Token', payTokenOf(item));
+    if (notifying(action)) window.SenaLineNotice?.preload();
     return fetch(url, { ...options, headers, cache: 'no-store' }).then(async response => {
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
       }
-      return response.json();
+      return noticeFrom(action, await response.json());
     });
   }
   // Organizer action on one payer row from the list (cookie auth; the row carries bill id, payer id, revision).
@@ -586,6 +597,7 @@
     url.searchParams.set('bill', el.dataset.bill);
     url.searchParams.set('action', action);
     if (action === 'slip') url.searchParams.set('payer', el.dataset.payer);
+    if (notifying(action)) window.SenaLineNotice?.preload();
     const response = await fetch(url, {
       method: body ? 'POST' : 'GET',
       headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -596,7 +608,7 @@
       const error = await response.json().catch(() => ({}));
       throw Error(error.error || 'เชื่อมต่อระบบบิลไม่สำเร็จ');
     }
-    return action === 'slip' ? response.blob() : response.json();
+    return action === 'slip' ? response.blob() : noticeFrom(action, await response.json());
   }
   const mineItem = billId => mine.bills.find(b => b.id === billId);
   // Unpaid bills, oldest first; the open one is the chosen bill, else the oldest. Shared by the
