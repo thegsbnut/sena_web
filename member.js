@@ -1,5 +1,6 @@
 import { clubOf, counterpartClub, CLUB_IDS, DEFAULT_CLUB, isClub } from './clubs.js';
 import { mapBoth, MappingError } from './member-shared.js';
+import { prepareBills } from './billing.js';
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
     status,
@@ -345,38 +346,34 @@ async function route(req, env, admin, club) {
   if (req.method === 'GET' && action === 'bills') {
     if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
     if (member.link?.status !== 'approved') return json({ bills: [] });
-    const exists = await env.DB.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='bills'",
-    ).first();
-    if (!exists) return json({ bills: [] });
+    await prepareBills(env.DB);
+    // Only this member's payer entries leave the database: the filter runs in
+    // SQL instead of reading and parsing up to 200 whole bills per request.
+    const only = url.searchParams.get('bill');
     const rows = await env.DB.prepare(
-      'SELECT id,payload,session_date,slips_removed FROM bills WHERE club=? ORDER BY session_date DESC LIMIT 200',
+      "SELECT b.id,b.session_date,b.slips_removed,p.value AS payer FROM bills b, json_each(b.payload,'$.payers') p WHERE b.club=? AND COALESCE(json_extract(b.payload,'$.cancelled'),0)=0 AND json_extract(p.value,'$.payerKey')=?" +
+        (only === null ? '' : ' AND b.id=?') +
+        ' ORDER BY b.session_date DESC, p.key LIMIT 200',
     )
-      .bind(club)
+      .bind(club, 'member:' + member.link.player_id, ...(only === null ? [] : [only]))
       .all();
-    const bills = [];
-    for (const row of rows.results) {
-      if (url.searchParams.has('bill') && url.searchParams.get('bill') !== row.id) continue;
-      const bill = JSON.parse(row.payload);
-      if (bill.cancelled) continue;
-      for (const p of bill.payers)
-        if (p.payerKey === 'member:' + member.link.player_id) {
-          const link = new URL('/billing.html', req.url);
-          link.searchParams.set('bill', row.id);
-          link.searchParams.set('club', club);
-          link.hash = 'pay=' + p.token;
-          bills.push({
-            id: row.id,
-            date: row.session_date.slice(0, 10),
-            name: p.name,
-            amount: p.amount,
-            status: p.status,
-            ...(p.method ? { method: p.method } : {}),
-            hasSlip: Boolean(p.slipKey) && !row.slips_removed,
-            url: link.href,
-          });
-        }
-    }
+    const bills = rows.results.map(row => {
+      const p = JSON.parse(row.payer);
+      const link = new URL('/billing.html', req.url);
+      link.searchParams.set('bill', row.id);
+      link.searchParams.set('club', club);
+      link.hash = 'pay=' + p.token;
+      return {
+        id: row.id,
+        date: row.session_date.slice(0, 10),
+        name: p.name,
+        amount: p.amount,
+        status: p.status,
+        ...(p.method ? { method: p.method } : {}),
+        hasSlip: Boolean(p.slipKey) && !row.slips_removed,
+        url: link.href,
+      };
+    });
     return json({ bills });
   }
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);

@@ -83,7 +83,21 @@ async function prepare(db) {
  )`,
     )
     .run();
+  // Bills are never deleted, so these keep the hot reads from growing with history:
+  // the organizer list (same ORDER BY expressions, no full sort) and the open-bill
+  // lookups behind LINE replies (closed bills are skipped instead of scanned).
+  // Only a speed-up: if one cannot be built the queries still work, so log and go on.
+  for (const sql of [
+    "CREATE INDEX IF NOT EXISTS bills_list ON bills (COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC)",
+    'CREATE INDEX IF NOT EXISTS bills_open ON bills (club, session_date) WHERE closed_at IS NULL',
+  ])
+    try {
+      await db.prepare(sql).run();
+    } catch (error) {
+      logError('billing:index', error);
+    }
 }
+export { prepare as prepareBills };
 async function prepareSlips(db) {
   await db
     .prepare(
@@ -287,22 +301,24 @@ function splitBill(draft, existing = []) {
   };
 }
 async function recentSessions(db, club) {
-  if (
-    !(await db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='booking_clubs'")
-      .first())
-  )
-    return [];
-  const doc = await db.prepare('SELECT payload FROM booking_clubs WHERE club=?').bind(club).first();
-  if (!doc) return [];
   const table = clubOf(club).stateTable;
-  const exists = await db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-    .bind(table)
-    .first();
-  const roster = exists
-    ? await db.prepare(`SELECT payload FROM ${table} WHERE id=1`).first()
-    : null;
+  // Both existence checks in one read, then both documents together.
+  const tables = new Set(
+    (
+      await db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('booking_clubs', ?)",
+        )
+        .bind(table)
+        .all()
+    ).results.map(r => r.name),
+  );
+  if (!tables.has('booking_clubs')) return [];
+  const [doc, roster] = await Promise.all([
+    db.prepare('SELECT payload FROM booking_clubs WHERE club=?').bind(club).first(),
+    tables.has(table) ? db.prepare(`SELECT payload FROM ${table} WHERE id=1`).first() : null,
+  ]);
+  if (!doc) return [];
   const players = new Map(
     (roster ? JSON.parse(roster.payload).players : []).map(p => [p.id, p.name]),
   );
@@ -901,30 +917,49 @@ export async function billingLineMessages(
     text += (text ? '\n' : '') + line;
   };
   append('💸 บิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)));
-  for (const row of rows) {
+  const open = rows.map(row => {
     const bill = { ...row, ...JSON.parse(row.payload) },
-      pending = bill.payers.filter(p => p.status !== 'paid'),
-      unpaid = pending.filter(p => p.status !== 'review');
-    const entries = await Promise.all(
-      unpaid.map(async p => {
-        const link = await env.DB.prepare(
-          "SELECT user_id FROM member_links WHERE club=? AND player_id=? AND status='approved'",
-        )
-          .bind(bill.club, p.payerKey?.startsWith('member:') ? p.payerKey.slice(7) : '')
-          .first();
-        if (!link) {
-          const reason = p.payerKey?.startsWith('member:') ? 'not_linked' : 'legacy_payer_key';
-          diagnostics.push({ name: p.name, reason });
-          return { p, reason };
-        }
-        if (!membership.has(link.user_id))
-          membership.set(link.user_id, groupMentionTarget(env, groupId, link.user_id));
-        const result = await membership.get(link.user_id),
-          { userId, displayName, ...evidence } = result;
-        diagnostics.push({ name: p.name, ...evidence });
-        return { p, ...result };
-      }),
-    );
+      pending = bill.payers.filter(p => p.status !== 'paid');
+    return { bill, pending, unpaid: pending.filter(p => p.status !== 'review') };
+  });
+  // One read for every payer's LINE account (was one query per unpaid payer).
+  const billClubs = [...new Set(rows.map(r => r.club))];
+  const links = await env.DB.prepare(
+    "SELECT club,player_id,user_id FROM member_links WHERE status='approved' AND club IN (" +
+      billClubs.map(() => '?').join(',') +
+      ')',
+  )
+    .bind(...billClubs)
+    .all();
+  const linkOf = new Map(links.results.map(r => [r.club + '\n' + r.player_id, r.user_id]));
+  const userOf = (bill, p) =>
+    p.payerKey?.startsWith('member:')
+      ? linkOf.get(bill.club + '\n' + p.payerKey.slice(7))
+      : undefined;
+  // Ask LINE about every tagged account at once: the reply token is short-lived,
+  // and asking bill by bill made the reply wait for each round in turn.
+  for (const { bill, unpaid } of open)
+    for (const p of unpaid) {
+      const userId = userOf(bill, p);
+      if (userId && !membership.has(userId))
+        membership.set(userId, groupMentionTarget(env, groupId, userId));
+    }
+  const targets = new Map(
+    await Promise.all([...membership].map(async ([userId, target]) => [userId, await target])),
+  );
+  for (const { bill, pending, unpaid } of open) {
+    const entries = unpaid.map(p => {
+      const userId = userOf(bill, p);
+      if (!userId) {
+        const reason = p.payerKey?.startsWith('member:') ? 'not_linked' : 'legacy_payer_key';
+        diagnostics.push({ name: p.name, reason });
+        return { p, reason };
+      }
+      const result = targets.get(userId),
+        { userId: _id, displayName, ...evidence } = result;
+      diagnostics.push({ name: p.name, ...evidence });
+      return { p, ...result };
+    });
     append(
       '\n' +
         clubName(bill.club) +

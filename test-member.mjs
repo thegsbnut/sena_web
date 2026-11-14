@@ -910,7 +910,13 @@ test('maximum bill reminders list every payer by name, tag in groups, and stay w
         .prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)')
         .run(club + day, club, '2026-11-0' + day, JSON.stringify({ payers }));
     }
+  const seen = [],
+    prepare = f.env.DB.prepare;
+  f.env.DB.prepare = sql => (seen.push(sql), prepare.call(f.env.DB, sql));
   const messages = await billingLineMessages(f.env, 'all', origin, 'Ctest');
+  f.env.DB.prepare = prepare;
+  // 48 payers across 6 bills: their LINE accounts come from a single read.
+  assert.equal(seen.filter(sql => /FROM member_links/.test(sql)).length, 1);
   assert(messages.length <= 5);
   assert(messages.every(m => m.text.length <= 5000));
   const mentions = messages.filter(m => m.type === 'textV2'),
@@ -1010,4 +1016,45 @@ test('one booking request reads the LINE session once for both the organizer che
   assert.equal((await r.json()).member.playerId, 'p0');
   assert.equal(seen.filter(sql => /FROM member_sessions/.test(sql)).length, 1);
   assert.equal(seen.filter(sql => /FROM member_links WHERE/.test(sql)).length, 0);
+});
+
+test('member bills come from SQL: own payer rows only, newest first, no cancelled or other-club bills', async t => {
+  const f = fixture(t),
+    member = await f.login();
+  assert.equal((await f.request('/api/member/link', { playerId: 'p0' }, member)).status, 200);
+  assert.deepEqual((await (await f.request('/api/member/bills', null, member)).json()).bills, []);
+  const payer = (key, extra = {}) => ({
+    id: key,
+    name: key,
+    payerKey: 'member:' + key,
+    token: 't'.repeat(43) + key,
+    amount: 120,
+    status: 'unpaid',
+    ...extra,
+  });
+  const add = f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)');
+  add.run('old', 'sena', '2026-11-01', JSON.stringify({ payers: [payer('p1'), payer('p0')] }));
+  add.run(
+    'new',
+    'sena',
+    '2026-11-08',
+    JSON.stringify({ payers: [payer('p0', { method: 'cash' })] }),
+  );
+  add.run('gone', 'sena', '2026-11-09', JSON.stringify({ cancelled: true, payers: [payer('p0')] }));
+  add.run('theirs', 'sena', '2026-11-10', JSON.stringify({ payers: [payer('p1')] }));
+  add.run('other', '88', '2026-11-11', JSON.stringify({ payers: [payer('p0')] }));
+  const { bills } = await (await f.request('/api/member/bills', null, member)).json();
+  assert.deepEqual(
+    bills.map(b => [b.id, b.date, b.name, b.method ?? null]),
+    [
+      ['new', '2026-11-08', 'p0', 'cash'],
+      ['old', '2026-11-01', 'p0', null],
+    ],
+  );
+  assert.equal(new URL(bills[1].url).hash, '#pay=' + 't'.repeat(43) + 'p0');
+  const one = await (await f.request('/api/member/bills?bill=old', null, member)).json();
+  assert.deepEqual(
+    one.bills.map(b => b.id),
+    ['old'],
+  );
 });
