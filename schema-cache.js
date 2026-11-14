@@ -1,10 +1,10 @@
-// The modules create their tables lazily with `CREATE ... IF NOT EXISTS` on every
+// The modules create their tables (and backup triggers) lazily with `CREATE ... IF NOT EXISTS` on every
 // request. Each one is a full D1 round trip, which made pages noticeably slow.
 // This wrapper remembers which of those statements already succeeded against a
 // binding inside this Worker isolate and skips repeats. Every other statement is
 // passed through untouched. A new isolate (after a deploy or eviction) checks
 // once again, so a table that is genuinely missing is still created.
-const SCHEMA = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\b/i;
+const SCHEMA = /^\s*CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|TRIGGER)\s+IF\s+NOT\s+EXISTS\b/i;
 const ensured = new WeakMap();
 const ONCE = Symbol('schema-once');
 

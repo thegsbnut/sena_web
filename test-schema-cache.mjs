@@ -79,3 +79,11 @@ test('once() runs a seed a single time per binding, retries after failure, and r
   await once(raw, 'seed', seed);
   assert.equal(runs, 4);
 });
+
+test('backup triggers are remembered like tables, so admin saves skip the round trips', async () => {
+  const raw = fakeD1();
+  const trigger =
+    'CREATE TRIGGER IF NOT EXISTS backup_t BEFORE UPDATE OF payload ON t BEGIN SELECT 1; END';
+  for (let request = 0; request < 3; request++) await withSchemaCache(raw).prepare(trigger).run();
+  assert.deepEqual(raw.executed, [trigger]);
+});

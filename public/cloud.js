@@ -1,7 +1,8 @@
 let cloudRevision = 0,
   cloudEditable = false,
   cloudDirty = false,
-  cloudBusy = false;
+  cloudBusy = false,
+  cloudLoadedAt = 0;
 let legacyBackup = null;
 try {
   localStorage.removeItem(clubStorage('sena-v1'));
@@ -86,6 +87,7 @@ async function cloudLoad(force = false) {
       } catch {}
     }
     cloudDirty = false;
+    cloudLoadedAt = Date.now();
     if (!cloudEditable && !force) {
       try {
         const guest = JSON.parse(localStorage.getItem(clubStorage('sena-guest-session')));
@@ -194,7 +196,24 @@ window.addEventListener('beforeunload', e => {
 });
 cloudLock();
 cloudLoad();
-setInterval(() => cloudLoad(), 20000);
+// Refresh the shared data only while someone can see a tab that shows it.
+// The booking and bills tabs read their own APIs, and a role change reloads
+// the page (auth-status.js), so polling there or in a hidden tab is wasted.
+const CLOUD_POLL_MS = 20000;
+function cloudPoll() {
+  if (document.hidden) return;
+  if (
+    document.querySelector('nav .tab.active[data-tab="booking"], nav .tab.active[data-tab="bills"]')
+  )
+    return;
+  if (Date.now() - cloudLoadedAt >= CLOUD_POLL_MS) cloudLoad();
+}
+setInterval(cloudPoll, CLOUD_POLL_MS);
+document.addEventListener('visibilitychange', cloudPoll);
+// After navigation.js has marked the new tab active.
+document
+  .querySelectorAll('nav .tab')
+  .forEach(el => el.addEventListener('click', () => setTimeout(cloudPoll)));
 new MutationObserver(() => cloudLock()).observe(document.querySelector('main'), {
   childList: true,
   subtree: true,

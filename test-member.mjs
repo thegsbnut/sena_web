@@ -996,3 +996,18 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
     403,
   );
 });
+
+test('one booking request reads the LINE session once for both the organizer check and the member', async t => {
+  const f = fixture(t),
+    member = await f.login();
+  assert.equal((await f.request('/api/member/link', { playerId: 'p0' }, member)).status, 200);
+  const seen = [],
+    prepare = f.env.DB.prepare;
+  f.env.DB.prepare = sql => (seen.push(sql), prepare.call(f.env.DB, sql));
+  const r = await f.request('/api/booking', null, member);
+  f.env.DB.prepare = prepare;
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).member.playerId, 'p0');
+  assert.equal(seen.filter(sql => /FROM member_sessions/.test(sql)).length, 1);
+  assert.equal(seen.filter(sql => /FROM member_links WHERE/.test(sql)).length, 0);
+});

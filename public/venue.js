@@ -11,6 +11,25 @@ function venueUrl(path, club = activeClub) {
 function venueFetch(path, options) {
   return fetch(venueUrl(path), options);
 }
+// /api/session is asked by several scripts on the same page (status bar, admin
+// tools) and again on focus or tab clicks. Share one request and reuse its
+// answer briefly; pass fresh=true when the role may just have changed.
+let venueSessionCache = null;
+function venueSession(fresh = false) {
+  if (fresh || !venueSessionCache || Date.now() - venueSessionCache.at > 15000) {
+    const entry = { at: Date.now() };
+    entry.promise = venueFetch('/api/session', { cache: 'no-store' }).then(async r => {
+      const d = await r.json();
+      if (!r.ok || typeof d.canEdit !== 'boolean') throw Error(d.error || 'session');
+      return d;
+    });
+    entry.promise.catch(() => {
+      if (venueSessionCache === entry) venueSessionCache = null;
+    });
+    venueSessionCache = entry;
+  }
+  return venueSessionCache.promise;
+}
 function venueText(text) {
   return activeClub === '88'
     ? text

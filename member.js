@@ -69,40 +69,61 @@ export async function prepareMembers(db) {
     .run();
 }
 
+// One round trip per request for everything the auth checks need: the live
+// session, whether its account is marked admin, and its links in both clubs.
+// Several routes ask more than once (organizer check, then the member itself),
+// so the lookup is cached per request.
+const sessionCache = new WeakMap();
+function memberSession(req, env) {
+  if (!sessionCache.has(req))
+    sessionCache.set(
+      req,
+      (async () => {
+        if (!env.DB || !loginEnabled(env)) return null;
+        const token = cookie(req, '__Host-sena-member');
+        if (!/^[a-f0-9]{64}$/.test(token)) return null;
+        await prepareMembers(env.DB);
+        const tokenHash = await hash(token);
+        const { results } = await env.DB.prepare(
+          'SELECT s.user_id,s.expires_at,EXISTS(SELECT 1 FROM member_admins a WHERE a.user_id=s.user_id) AS marked,l.club,l.player_id,l.name,l.kind,l.status FROM member_sessions s LEFT JOIN member_links l ON l.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>?',
+        )
+          .bind(tokenHash, Date.now())
+          .all();
+        if (!results.length) return null;
+        const links = new Map(
+          results
+            .filter(r => r.club != null)
+            .map(({ club, player_id, name, kind, status }) => [
+              club,
+              { player_id, name, kind, status },
+            ]),
+        );
+        return {
+          userId: results[0].user_id,
+          expiresAt: results[0].expires_at,
+          tokenHash,
+          links,
+          // Admin rights need the mark and an account still linked to a player.
+          admin:
+            Boolean(results[0].marked) && [...links.values()].some(l => l.status === 'approved'),
+        };
+      })(),
+    );
+  return sessionCache.get(req);
+}
+
 // True when the request carries a live LINE member session whose account is
 // marked admin and is still linked to a player. Checked on every request, so
 // removing the mark (or unlinking the account) takes effect immediately.
 export async function memberIsAdmin(req, env) {
-  if (!env.DB || !loginEnabled(env)) return false;
-  const token = cookie(req, '__Host-sena-member');
-  if (!/^[a-f0-9]{64}$/.test(token)) return false;
-  await prepareMembers(env.DB);
-  const row = await env.DB.prepare(
-    "SELECT 1 AS ok FROM member_sessions s JOIN member_admins a ON a.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND EXISTS(SELECT 1 FROM member_links l WHERE l.user_id=s.user_id AND l.status='approved')",
-  )
-    .bind(await hash(token), Date.now())
-    .first();
-  return Boolean(row);
+  return Boolean((await memberSession(req, env))?.admin);
 }
 export async function memberFor(req, env, club) {
-  if (!env.DB || !loginEnabled(env)) return null;
-  const token = cookie(req, '__Host-sena-member');
-  if (!/^[a-f0-9]{64}$/.test(token)) return null;
-  await prepareMembers(env.DB);
-  const tokenHash = await hash(token);
-  const session = await env.DB.prepare(
-    'SELECT user_id,expires_at FROM member_sessions WHERE token_hash=? AND expires_at>?',
-  )
-    .bind(tokenHash, Date.now())
-    .first();
+  const session = await memberSession(req, env);
   if (!session) return null;
   const otherClub = counterpartClub(club);
-  const linkFor = c =>
-    env.DB.prepare('SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?')
-      .bind(session.user_id, c)
-      .first();
-  // Both clubs' links are independent reads: fetch them together.
-  let [link, other] = await Promise.all([linkFor(club), linkFor(otherClub)]);
+  let link = session.links.get(club) ?? null,
+    other = session.links.get(otherClub) ?? null;
   const anchor =
     link?.status === 'approved' || (link?.status === 'pending' && link.kind === 'existing')
       ? { club, link }
@@ -112,21 +133,23 @@ export async function memberFor(req, env, club) {
   let mappingError = null;
   if (anchor && (link?.status !== 'approved' || other?.status !== 'approved'))
     try {
-      await mapBoth(env.DB, session.user_id, anchor.club, anchor.link.player_id);
+      await mapBoth(env.DB, session.userId, anchor.club, anchor.link.player_id);
+      // The cached links are stale now: later checks in this request read again.
+      sessionCache.delete(req);
       link = await env.DB.prepare(
         'SELECT player_id,name,kind,status FROM member_links WHERE user_id=? AND club=?',
       )
-        .bind(session.user_id, club)
+        .bind(session.userId, club)
         .first();
     } catch (error) {
       if (!(error instanceof MappingError)) throw error;
       mappingError = error.message;
     }
   return {
-    userId: session.user_id,
+    userId: session.userId,
     link: link || null,
     mappingError,
-    session: { tokenHash, expiresAt: session.expires_at },
+    session: { tokenHash: session.tokenHash, expiresAt: session.expiresAt },
   };
 }
 
