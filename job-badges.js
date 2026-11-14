@@ -46,8 +46,9 @@ export async function recordAttendance(db, club, doc, players, today) {
   return added;
 }
 
-// Everything the booking card needs to draw each roster player's badge.
-export async function badgeData(db, club, players, latestAwards = new Map()) {
+// The rows behind the badges. Read on its own so the booking route can run it
+// alongside the booking document instead of after it.
+export async function readBadgeSource(db, club) {
   await prepareJobTables(db);
   const table = await cupHistoryTable(db, club);
   const [plays, jobs, cups] = await Promise.all([
@@ -56,13 +57,34 @@ export async function badgeData(db, club, players, latestAwards = new Map()) {
       .bind(club)
       .all(),
     db.prepare('SELECT player_id, line FROM player_jobs WHERE club=?').bind(club).all(),
-    db.prepare(`SELECT payload FROM ${table}`).all(),
+    db.prepare(`SELECT sequence, payload FROM ${table}`).all(),
   ]);
-  const playCount = new Map(plays.results.map(r => [r.player_id, r.n]));
-  const chosen = new Map(jobs.results.map(r => [r.player_id, r.line]));
+  return {
+    plays: plays.results,
+    jobs: jobs.results,
+    cups: cups.results.map(r => ({ sequence: r.sequence, cup: JSON.parse(r.payload) })),
+  };
+}
+
+// Same pick as leaderboard.js latestCup (newest date, then newest sequence),
+// taken from rows already read so the booking route skips a second query.
+export function latestCupOf(source) {
+  let best = null;
+  for (const row of source.cups) {
+    const date = typeof row.cup?.date === 'string' ? row.cup.date : '';
+    if (!best || date > best.date || (date === best.date && row.sequence > best.sequence))
+      best = { date, sequence: row.sequence, cup: row.cup };
+  }
+  return best ? best.cup : null;
+}
+
+// Everything the booking card needs to draw each roster player's badge.
+export function badgesFrom(source, club, players, latestAwards = new Map()) {
+  const playCount = new Map(source.plays.map(r => [r.player_id, r.n]));
+  const chosen = new Map(source.jobs.map(r => [r.player_id, r.line]));
   const titles = new Map();
-  for (const row of cups.results)
-    for (const [name, award] of globalThis.Sena.cupAwards(JSON.parse(row.payload)))
+  for (const { cup } of source.cups)
+    for (const [name, award] of globalThis.Sena.cupAwards(cup))
       if (award === '🥇') {
         const k = cupPlayerKey(name, club);
         titles.set(k, (titles.get(k) || 0) + 1);
@@ -85,6 +107,10 @@ export async function badgeData(db, club, players, latestAwards = new Map()) {
       ];
     }),
   );
+}
+
+export async function badgeData(db, club, players, latestAwards = new Map()) {
+  return badgesFrom(await readBadgeSource(db, club), club, players, latestAwards);
 }
 
 export async function setJobLine(db, club, playerId, line) {

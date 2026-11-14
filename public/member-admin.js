@@ -1,6 +1,5 @@
 (async () => {
-  const response = await venueFetch('/api/session'),
-    session = await response.json();
+  const session = await venueSession().catch(() => ({ canEdit: false }));
   if (!session.canEdit) return;
   const container = document.getElementById('roster');
   if (!container) return;

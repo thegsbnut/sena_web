@@ -27,13 +27,11 @@
       localStorage.setItem('sena-auth-changed', String(Date.now()));
     } catch {}
   }
-  async function check() {
+  async function check(fresh = false) {
     if (checking || loggingOut) return;
     checking = true;
     try {
-      const r = await venueFetch('/api/session', { cache: 'no-store' }),
-        d = await r.json();
-      if (!r.ok || typeof d.canEdit !== 'boolean') throw Error();
+      const d = await venueSession(fresh === true);
       const changed = role !== null && role !== d.canEdit;
       role = d.canEdit;
       bar.dataset.role = role ? 'admin' : 'guest';
@@ -87,13 +85,13 @@
       logout.disabled = false;
     }
   };
-  retry.onclick = check;
+  retry.onclick = () => check(true);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) check();
   });
   window.addEventListener('focus', check);
   window.addEventListener('storage', e => {
-    if (e.key === 'sena-auth-changed') check();
+    if (e.key === 'sena-auth-changed') check(true);
   });
   document.querySelectorAll('nav .tab').forEach(tab => tab.addEventListener('click', check));
   check();

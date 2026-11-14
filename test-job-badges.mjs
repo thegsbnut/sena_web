@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import './public/job-rules.js';
-import { recordAttendance } from './job-badges.js';
+import { recordAttendance, latestCupOf } from './job-badges.js';
 import { scheduledBookings, bookingRoute } from './booking.js';
 import worker from './worker.js';
 
@@ -368,4 +368,14 @@ test('admins set any roster player line; players cannot target someone else', as
     { player_id: 'p0', line: 'red' },
     { player_id: 'p2', line: 'yellow' },
   ]);
+});
+
+test('latestCupOf picks the newest date, then the newest sequence, like latestCup', () => {
+  const row = (sequence, date) => ({ sequence, cup: { date, id: sequence } });
+  assert.equal(latestCupOf({ cups: [] }), null);
+  assert.equal(
+    latestCupOf({ cups: [row(3, '2026-10-01'), row(1, '2026-11-01'), row(2, '2026-09-01')] }).id,
+    1,
+  );
+  assert.equal(latestCupOf({ cups: [row(4, '2026-11-01'), row(7, '2026-11-01')] }).id, 7);
 });

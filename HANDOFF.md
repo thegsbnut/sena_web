@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
+- 2026-11-14 · Claude · **tune performance บน branch `claude/adoring-pasteur-6ucnqd` ยังไม่ merge main** (รอเจ้าของสั่ง): (1) `cloud.js` โพลล์ `/api/state` เฉพาะแท็บที่ใช้ข้อมูลนี้และหน้าจอเปิดอยู่ (ไม่โพลล์ในแท็บจอง/บิล) (2) session LINE อ่าน query เดียวต่อ request (`memberSession` ใน `member.js` รวม admin + links สองก๊วน) และ `/api/booking` อ่านข้อมูล badge/Cup พร้อมกับเอกสารจอง (`readBadgeSource`/`latestCupOf`) (4) `schema-cache.js` จำ `CREATE TRIGGER` ด้วย (5) `/api/session` ใช้ `venueSession()` ใน `venue.js` ร่วมกัน (cache 15 วิ) — ทดสอบด้วย wrangler dev + Playwright (ผู้เล่นทั่วไป + ผู้จัด) ยังไม่ได้ลองล็อกอิน LINE จริง; ไอเดีย tune ที่เหลือ (index บิล, query `member_links` ทีละคนตอนทวงบิล, cache ไฟล์ static, MutationObserver ใน `cloud.js`) ยังไม่ได้ทำ
 - 2026-11-13 · Claude · **badge ในแท็บรายชื่อ (ผู้จัด) + เลือกสายจากตรงนั้นได้ + กรอบสายที่เลือกในแผ่นเลือกเด่นขึ้น (สีของสาย, ✓ มุม)** merge เข้า main แล้ว (PR #30, ขึ้น production); ทดสอบด้วย wrangler dev + Playwright เป็นผู้จัด (ADMIN_KEY) เท่านั้น
 - 2026-11-13 · Claude · **Job badge หน้าชื่อในการ์ดจอง เสร็จบน branch `claude/bold-dijkstra-s6qjbu` ยังไม่ merge main** (รอเจ้าของสั่ง) — Novice → 5 สาย × 3 job ตามจำนวนครั้งที่มาตี + มงกุฎแชมป์ + ผู้เล่นเลือกสายเอง (ผู้จัดเลือกให้ได้) + ตัวเลข 🏸 สั้นๆ เฉพาะผู้จัด/เจ้าตัว; สรุปใน `BOOKING.md` หัวข้อ Job badge, spec/plan `docs/superpowers/{specs,plans}/2026-11-13-job-badges*`
 - 2026-11-13 · Claude · ทดลองแล้ว**ยกเลิก**สองเรื่อง (revert แล้ว ขึ้น production): dev-login ทดสอบไม่ต้อง LINE (`c467734`), รูปโปรไฟล์ LINE แทนตัวย่อ (`794b404`) — เจ้าของไม่อยากให้ LIFF ช้าตอนโหลด LINE SDK เพื่อขอรูป; ตาราง `member_pictures` ใน D1 อาจค้างอยู่ (ไม่มีโค้ดใช้แล้ว ลบได้)
@@ -26,7 +27,7 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 195/195 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 198/198 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)

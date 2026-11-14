@@ -2,9 +2,15 @@ import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import { memberMode } from './member.js';
 import { once } from './schema-cache.js';
 import './public/engine.js';
-import { latestCup, cupPlayerKey } from './leaderboard.js';
+import { cupPlayerKey } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
-import { recordAttendance, badgeData, setJobLine } from './job-badges.js';
+import {
+  recordAttendance,
+  readBadgeSource,
+  latestCupOf,
+  badgesFrom,
+  setJobLine,
+} from './job-badges.js';
 const reply = (v, status = 200) =>
   Response.json(v, { status, headers: { 'Cache-Control': 'no-store' } });
 export class BookingError extends Error {
@@ -546,9 +552,10 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         input = null;
       }
     }
-    // Cup history is independent of the booking document: fetch both at once.
-    const [cupHistory, outcome] = await Promise.all([
-      env.DB ? latestCup(env.DB, club) : null,
+    // Badge rows and cup history are independent of the booking document: fetch
+    // them at the same time. The latest cup comes from those same rows.
+    const [badgeSource, outcome] = await Promise.all([
+      env.DB ? readBadgeSource(env.DB, club) : null,
       mutateBooking(
         env,
         club,
@@ -839,12 +846,11 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       ),
     ]);
     const awards = new Map(
-      [...globalThis.Sena.cupAwards(cupHistory ?? outcome.cup)].map(([name, award]) => [
-        cupPlayerKey(name, club),
-        award,
-      ]),
+      [...globalThis.Sena.cupAwards((badgeSource && latestCupOf(badgeSource)) ?? outcome.cup)].map(
+        ([name, award]) => [cupPlayerKey(name, club), award],
+      ),
     );
-    const badges = await badgeData(env.DB, club, outcome.players, awards);
+    const badges = badgesFrom(badgeSource, club, outcome.players, awards);
     const view = publicBooking(
       outcome.doc,
       outcome.revision,
