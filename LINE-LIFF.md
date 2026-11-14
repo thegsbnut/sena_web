@@ -93,6 +93,7 @@ spec: `docs/superpowers/specs/2026-11-14-line-group-notices-design.md`
 - หลังจอง ถอน แนบสลิป หรือผู้จัดกด "รับเงินสด" สำเร็จ API คืน `notice: { text, liffId }` (สร้างที่ Worker) แล้ว `public/line-notice.js` ส่งข้อความเข้ากลุ่ม**ในนามคนที่กด**ด้วย `liff.sendMessages` — โหลด LINE SDK ตอนกดปุ่ม (ไม่โหลดตอนเปิดหน้า) และส่งหลังขึ้นว่าสำเร็จแล้ว ส่งไม่ได้ก็เงียบ
 - ส่งได้เฉพาะเปิดใน LINE จากลิงก์ในกลุ่ม (`liff.getContext().type` = `group`/`room`) และผู้เล่นอนุญาต `chat_message.write` แล้ว (LINE ถามครั้งเดียว)
 - หน้าบิลเป็น iframe ใน `/court` → iframe ส่ง `postMessage` ให้หน้าหลักส่งแทน
+- **ห้ามเรียก `liff.init` บน `/court` ถ้าไม่มี credentials** — SDK จะพาไป LINE Login ด้วย redirect `/court` ซึ่งไม่ใช่ Endpoint → LINE ขึ้น 400 Bad Request (เจอใน production 2026-11-14) `liff.js` จึงเก็บ hash ตอนเปิด LIFF (`access_token`, `context_token`) ไว้ใน `sessionStorage['sena-liff-launch']` แล้ว `line-notice.js` ใส่กลับเข้า URL ชั่วคราวตอน init; ไม่มีทั้ง token ใน `LIFF_STORE:<liffId>:accessToken` และ launch hash → ไม่ส่ง
 - จอง / ถอน / จ่ายจนบิลครบ → ข้อความลงท้าย ` #xxxxx` (ตาราง `line_notices`, ใช้ครั้งเดียว อายุ 24 ชม.) Badbot เห็นใน webhook แล้ว **Reply** (ฟรี) — ตอบเฉพาะกลุ่มที่ผูกกับก๊วนของรหัส:
   - จอง: รายชื่อเต็มของวันที่จองที่ใกล้สุด + สรุปวันอื่นบรรทัดละวัน + ปุ่มต่อวัน (postback `badbot:round:<club>:<sessionId>`)
   - ถอน: แท็กจริงคนที่ได้ขึ้นจากสำรอง (ถ้ามี) + รายชื่อรอบนั้น

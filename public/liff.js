@@ -1,4 +1,11 @@
 (async () => {
+  // LINE hands this landing page its credentials in the URL hash (access_token,
+  // context_token…). We leave for /court without the SDK, so keep them for
+  // line-notice.js, which posts group notices from /court later.
+  if (/[#&]access_token=/.test(location.hash))
+    try {
+      sessionStorage.setItem('sena-liff-launch', location.hash);
+    } catch {}
   let club = 'sena',
     pay = false,
     bill = null;

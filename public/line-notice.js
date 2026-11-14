@@ -30,9 +30,35 @@
     if (framed) return window.parent.postMessage({ senaNoticePreload: true }, location.origin);
     loadSdk().catch(error => console.warn('line-notice', error));
   }
+  const storage = () => {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null;
+    }
+  };
+  // liff.init() without credentials sends the page to LINE Login with this URL as
+  // the redirect, which LINE rejects (400) because /court is not the LIFF endpoint.
+  // So init only with credentials: the SDK's own store, or the ones liff.js kept
+  // from the LIFF launch (put back in the hash just for init). Otherwise skip.
+  // Inside LINE the SDK keeps its token in sessionStorage under this exact key.
+  const hasToken = liffId => Boolean(storage()?.getItem('LIFF_STORE:' + liffId + ':accessToken'));
+  async function init(liffId) {
+    if (hasToken(liffId)) return liff.init({ liffId });
+    const launch = storage()?.getItem('sena-liff-launch');
+    if (!launch) throw Error('No LIFF credentials on this page');
+    const original = location.href;
+    history.replaceState(history.state, '', location.pathname + location.search + launch);
+    try {
+      await liff.init({ liffId });
+    } finally {
+      history.replaceState(history.state, '', original);
+    }
+  }
   async function deliver(notice) {
+    if (!hasToken(notice.liffId) && !storage()?.getItem('sena-liff-launch')) return;
     await loadSdk();
-    ready ||= liff.init({ liffId: notice.liffId }).catch(error => {
+    ready ||= init(notice.liffId).catch(error => {
       ready = null;
       throw error;
     });
