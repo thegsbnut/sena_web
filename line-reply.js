@@ -560,7 +560,17 @@ export async function replyToGroupCommand(event, env) {
         messages.push(...(await bookMessages(env, notice.club, notice.payload, now)));
       else if (notice.kind === 'withdraw')
         messages.push(...(await withdrawMessages(env, group, notice.club, notice.payload, now)));
-      else if (notice.kind === 'paid') {
+      else if (notice.kind === 'bill') {
+        const owed = await billingLineMessages(
+          env,
+          notice.club,
+          new URL(urls.sena).origin,
+          group,
+          mentionDiagnostics,
+        );
+        if (!owed) return;
+        messages.push(...owed);
+      } else if (notice.kind === 'paid') {
         const text = await paidSummaryText(env, notice.payload.billId);
         if (!text) return;
         messages.push(...textMessages(text));

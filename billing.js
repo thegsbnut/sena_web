@@ -540,7 +540,12 @@ export async function billingRoute(req, env, admin, club, ctx) {
       .prepare('SELECT id FROM bills WHERE club=? AND session_date=?')
       .bind(club, dateKey)
       .first();
-    return json({ id: existing.id, existing: existing.id !== billId });
+    if (existing.id !== billId) return json({ id: existing.id, existing: true });
+    return json({
+      id: billId,
+      existing: false,
+      notice: await openedNotice(env, club, dateKey, billId),
+    });
   }
   const bill = await readBill(db, id);
   if (!bill) return fail('ไม่พบบิล', 404);
@@ -833,26 +838,61 @@ async function paymentNotice(env, bill, payload, target) {
     }
   return { text, liffId: env.LINE_LIFF_ID || '' };
 }
+// Posted by the organizer's LIFF page when a bill opens; Badbot answers the code
+// with who still owes on that court (the same reply as "badbot bill <club>").
+async function openedNotice(env, club, dateKey, billId) {
+  const bill = await readBill(env.DB, billId);
+  let text =
+    '🧾 เปิดบิล ' +
+    billLabel({ club, session_date: dateKey }) +
+    ' · ' +
+    bill.payers.length +
+    ' คน · รวม ' +
+    money(bill.payers.reduce((total, p) => total + p.amount, 0)) +
+    ' บ.';
+  try {
+    text += ' #' + (await createNotice(env.DB, { club, kind: 'bill', payload: { billId } }));
+  } catch (error) {
+    logError('billing:notice', error);
+  }
+  return { text, liffId: env.LINE_LIFF_ID || '' };
+}
 // Badbot's reply to a paid-in-full notice: read the bill as it is now.
 export async function paidSummaryText(env, billId) {
   await prepare(env.DB);
   const bill = await readBill(env.DB, billId);
   if (!bill || bill.cancelled) return null;
-  const cash = bill.payers.filter(p => p.status === 'paid' && p.method === 'cash'),
-    paid = paidCount(bill),
-    full = paid === bill.payers.length;
-  return (
+  const paid = bill.payers.filter(p => p.status === 'paid'),
+    full = paid.length === bill.payers.length,
+    sum = list => list.reduce((total, p) => total + p.amount, 0),
+    method = p => (p.method === 'cash' ? 'เงินสด' : 'โอน');
+  const byMethod = ['transfer', 'cash']
+    .map(m => paid.filter(p => (p.method === 'cash' ? 'cash' : 'transfer') === m))
+    .filter(list => list.length)
+    .map(list => `${method(list[0])} ${list.length} คน ${money(sum(list))} บ.`);
+  // Paid in the order they paid, then anyone still owing.
+  const rows = [...paid]
+    .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))
+    .map(p => {
+      const others = (p.shares || []).map(x => x.name).filter(name => name && name !== p.name);
+      return `${p.name} ${money(p.amount)} บ. · ${method(p)}${others.length ? ' (รวม ' + others.join(', ') + ')' : ''}`;
+    })
+    .concat(
+      bill.payers
+        .filter(p => p.status !== 'paid')
+        .map(p => `${p.name} ${money(p.amount)} บ. · ยังไม่จ่าย`),
+    );
+  return [
     (full ? '✅ บิล ' : '💸 บิล ') +
-    billLabel(bill) +
-    (full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
-    paid +
-    '/' +
-    bill.payers.length +
-    ' · รวม ' +
-    money(bill.payers.reduce((total, p) => total + (p.status === 'paid' ? p.amount : 0), 0)) +
-    ' บ.' +
-    (cash.length ? '\n💵 เงินสด ' + cash.length + ' คน: ' + cash.map(p => p.name).join(', ') : '')
-  );
+      billLabel(bill) +
+      (full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
+      paid.length +
+      '/' +
+      bill.payers.length,
+    '💰 รวม ' + money(sum(paid)) + ' บ.' + byMethod.map(x => ' · ' + x).join(''),
+    '',
+    ...rows.map((row, i) => i + 1 + '. ' + row),
+  ].join('\n');
 }
 
 export async function billingLineText(env, scope, origin) {
