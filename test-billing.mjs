@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
 import { billingLineText, promptPayPayload, prunePaidSlips } from './billing.js';
+import { noticeDay, claimNotice } from './line-notices.js';
 
 const origin = 'https://sena.example';
 function fixture(t) {
@@ -479,4 +480,45 @@ test('LIFF pay links land on the new bills tab instead of the old per-bill page'
   const src = readFileSync(new URL('./public/liff.js', import.meta.url), 'utf8');
   assert.match(src, /'\/court' \+ \(club === '88' \? '\?club=88' : ''\) \+ '#bills'/);
   assert.doesNotMatch(src, /bills\[0\]\.url/);
+});
+
+test('payments return a group notice; the payment that completes the bill carries a code', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const path = '/api/billing?bill=' + id;
+  const [nut, bua] = (await (await f.request(path, { cookie })).json()).payers;
+  const baht = p => (p.amount / 100).toLocaleString('th-TH');
+  const day = noticeDay(draft.date);
+  let r = await f.request(path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount, {
+    method: 'POST',
+    body: slip,
+  });
+  assert.equal(
+    (await r.json()).notice.text,
+    `💸 Nut จ่ายบิล SENA ${day} ${baht(nut)} บ. สำเร็จ · จ่ายแล้ว 1/2`,
+  );
+  r = await f.request(path + '&action=cash', {
+    method: 'POST',
+    cookie,
+    payload: { payer: bua.id, received: true, revision: 1 },
+  });
+  const text = (await r.json()).notice.text;
+  const match = new RegExp(
+    `^💵 Bua จ่ายบิล SENA ${day} ${baht(bua)} บ\\. สำเร็จ \\(เงินสด\\) · จ่ายแล้ว 2/2 #([a-z0-9]{5})$`,
+  ).exec(text);
+  assert.ok(match, text);
+  assert.deepEqual(await claimNotice(f.env.DB, match[1]), {
+    club: 'sena',
+    kind: 'paid',
+    payload: { billId: id },
+  });
+  r = await f.request(path + '&action=cash', {
+    method: 'POST',
+    cookie,
+    payload: { payer: bua.id, received: false, revision: 2 },
+  });
+  assert.equal((await r.json()).notice, undefined);
 });
