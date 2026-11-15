@@ -4,7 +4,9 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
-- 2026-11-15 · Claude · **บิลค้างจ่ายเป็นการ์ด Flex (mockup 05) บน branch `claude/brave-fermi-6qsk2e` ยังไม่ merge main** (รอเจ้าของสั่ง) — `owedMessage` ใน `line-bill-card.js`, เรียกจาก `billingLineMessages` (`billing.js`); แท็ก @ ยังเป็นข้อความตามหลัง; การ์ดใหญ่เกิน → สรุปข้อความล้วนเดิม; หน้าแอดมินตรวจแท็ก (`mentionDiagnostics`) ยิง validate ของ LINE กับการ์ดด้วย ใช้เช็กการ์ดใน production ได้; **ยังไม่ได้ลองใน LINE จริง**; mockup ครบทุกข้อแล้ว
+- 2026-11-15 · Claude · **LINE นับ "คน" เป็นจำนวนคนจริงแล้ว (host + แขก/เพื่อนที่จ่ายรวม = หลายคนในบรรทัดบิลเดียว)** — `peopleIn()` ใน `billing.js` ใช้ในข้อความ/การ์ดทุกใบ (จ่ายแล้ว x/y, เปิดบิล, แก้ยอด, ยกเลิกเงินสด, สรุปจ่ายครบ, บิลค้าง); หน้าเว็บยังนับเป็น "บิล" (บรรทัด) ตามเดิม; การเช็กว่าจ่ายครบยังเทียบจำนวนบรรทัด
+- 2026-11-15 · Claude · **มือถือรายงานผลการส่งข้อความเข้ากลุ่มลง log (PR #45, ขึ้น production)** — สร้างบิลแล้วบางครั้งไม่เด้งเข้ากลุ่ม (log: 1 ใน 3 ครั้งไม่มี webhook ตามมา = `liff.sendMessages` ไม่ได้ส่ง) ยังไม่รู้สาเหตุ; `line-notice.js` รายงาน `stage` + error ของ LINE ไป `POST /api/line/notice-report` → log `line-notice:client` (เกิดแล้วดูใน Cloudflare Workers logs, `noticeReport` ใน `line-notices.js`); **ต่อไป: รอเจอครั้งที่ไม่เด้ง แล้วดู log ว่าพังขั้นไหน (`no-credentials` / `not-group` / `no-permission` / `failed`)**
+- 2026-11-15 · Claude · **บิลค้างจ่ายเป็นการ์ด Flex (mockup 05) merge เข้า main แล้ว (PR #44)** — `owedMessage` ใน `line-bill-card.js`, เรียกจาก `billingLineMessages` (`billing.js`); แท็ก @ ยังเป็นข้อความตามหลัง; การ์ดใหญ่เกิน → สรุปข้อความล้วนเดิม; หน้าแอดมินตรวจแท็ก (`mentionDiagnostics`) ยิง validate ของ LINE กับการ์ดด้วย ใช้เช็กการ์ดใน production ได้; **ยังไม่ได้ลองใน LINE จริง**; mockup ครบทุกข้อแล้ว
 - 2026-11-15 · Claude · **ตารางจัดคู่ (ครบทุกเกม ตัดที่ 20) / ตาราง Cup / อันดับ / ผล Cup เป็นการ์ด Flex (mockup 07–09) merge เข้า main แล้ว (PR #42)** — `line-board-cards.js` + helper อ่านข้อมูลใน `line-reply.js` (`matchupRound`, `cupMatches`, `cupRanks`, `leaderboardRows`, `boardMessage`); ไม่มีข้อมูล → ตอบข้อความล้วนเดิม; **ยังไม่ได้ลองใน LINE จริง**; ที่เหลือ: 05 บิลค้างจ่าย (ต้องเก็บแท็ก @ เป็นข้อความ + การ์ดสรุป)
 - 2026-11-15 · Claude · **สรุปบิลจ่ายครบเป็นการ์ด Flex (mockup 06: ยอดรายคน + วิธีจ่าย + badge + 🥇/💩) merge เข้า main แล้ว (PR #41)**; `paidSummaryText` ใน `billing.js` เปลี่ยนเป็น `paidSummary` (ข้อมูลดิบ) + `line-bill-card.js`; **ยังไม่ได้ลองใน LINE จริง**; ที่เหลือ: 05 บิลค้างจ่าย (ต้องรักษาแท็ก @), 07 ตารางจัดคู่, 08 อันดับ, 09 ผล Cup
 - 2026-11-15 · Claude · **รายชื่อในแชตเป็นการ์ด Flex + job badge + 🥇/💩 (เฉพาะแชมป์/ที่โหล่ของ Cup ล่าสุด ไม่มี 👑 ประวัติ) merge เข้า main แล้ว (PR #39 + PR แก้เหรียญ)** — mockup ข้อ 01–04 (รายชื่อสนามเดียว/ทุกสนาม, จองหลายวัน, ถอนแล้วสำรองได้ขึ้น); ถ้า LINE ไม่รับการ์ดจะส่งซ้ำเป็นข้อความ; สรุปใน `BADBOT-REPLY.md` หัวข้อ "รายชื่อเป็นการ์ด Flex"; **ยังไม่ได้ลองใน LINE จริง**; ต่อไป: 06 สรุปจ่ายครบ (ยอดรายคน + badge) แล้ว 05/07/08/09
@@ -34,7 +36,7 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 223/223 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 224/224 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)

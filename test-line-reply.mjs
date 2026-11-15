@@ -961,13 +961,13 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
     f.calls[0].messages.map(m => m.type),
     ['flex'],
   );
-  assert.equal(f.calls[0].messages[0].altText, '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2 · รวม 175 บ.');
+  assert.equal(f.calls[0].messages[0].altText, '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 3/3 · รวม 175 บ.');
   // Paid order (Bua first), each person's amount and how they paid, then the total.
   assert.equal(
     textOf(f.calls[0]),
     [
       '✅ บิล SENA ส. 14 พ.ย. จ่ายครบแล้ว',
-      '2/2 คน',
+      '3/3 คน', // Nut paid for a guest too: three people, two bill lines
       '175 บาท',
       'โอน 1 คน · เงินสด 1 คน',
       'Bua 💵 เงินสด 90',
@@ -1273,6 +1273,8 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
     label: 'SENA ส. 14 พ.ย.',
     full: false,
     total: 4,
+    paidPeople: 4, // Last also covers Pal
+    totalPeople: 5,
     paid: [
       { name: 'Champ', payerKey: 'member:p1', amount: 12000, method: 'transfer', shares: [] },
       {
@@ -1294,7 +1296,7 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
     flexText(bubble),
     [
       '💸 บิล SENA ส. 14 พ.ย.',
-      '3/4 คน',
+      '4/5 คน',
       '480 บาท',
       'โอน 2 คน · เงินสด 1 คน',
       '🥇 Champ 📲 โอน 120',
@@ -1467,6 +1469,13 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   // "Showing the oldest bills" sits on the last card only; extra bills say so.
   assert.match(flexText(other), /บิลเพิ่มเติม · จ่ายแล้ว 9\/10 คน[\s\S]*แสดง 3 บิลเก่าสุดต่อสนาม/);
   assert.doesNotMatch(flexText(sena), /แสดง 3 บิล/);
+  // A line that covers several people (host + guest) counts every one of them.
+  const hosted = owedMessage(
+    [bill('บิล Sena · ส. 14 พ.ย.', [{ name: 'เจ', amount: 24000, note: '', people: 2 }])],
+    { heading: 'h', note: '' },
+  );
+  assert.match(flexText(hosted.contents), /ยังไม่จ่าย 2 คน\nเจ \(รวม 2 คน\) 240 บ\./);
+  assert.match(hosted.altText, /ค้าง 2 คน$/);
   // Past 20 people, a bill lists everyone in one compact block.
   const crowd = Array.from({ length: 60 }, (_, i) => ({ name: 'P' + i, amount: 1700, note: '' }));
   const big = owedMessage([bill('บิล Sena · ส. 14 พ.ย.', crowd)], { heading: 'h', note: '' });

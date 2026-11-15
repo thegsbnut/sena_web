@@ -498,7 +498,7 @@ test('payments return a group notice; the payment that completes the bill carrie
   });
   assert.equal(
     (await r.json()).notice.text,
-    `💸 Nut จ่ายบิล SENA ${day} ${baht(nut)} บ. สำเร็จ · จ่ายแล้ว 1/2`,
+    `💸 Nut จ่ายบิล SENA ${day} ${baht(nut)} บ. สำเร็จ · จ่ายแล้ว 2/3`,
   );
   r = await f.request(path + '&action=cash', {
     method: 'POST',
@@ -507,7 +507,7 @@ test('payments return a group notice; the payment that completes the bill carrie
   });
   const text = (await r.json()).notice.text;
   const match = new RegExp(
-    `^💵 Bua จ่ายบิล SENA ${day} ${baht(bua)} บ\\. สำเร็จ \\(เงินสด\\) · จ่ายแล้ว 2/2 #([a-z0-9]{5})$`,
+    `^💵 Bua จ่ายบิล SENA ${day} ${baht(bua)} บ\\. สำเร็จ \\(เงินสด\\) · จ่ายแล้ว 3/3 #([a-z0-9]{5})$`,
   ).exec(text);
   assert.ok(match, text);
   assert.deepEqual(await claimNotice(f.env.DB, match[1]), {
@@ -522,7 +522,7 @@ test('payments return a group notice; the payment that completes the bill carrie
   });
   assert.equal(
     (await r.json()).notice.text,
-    `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 1/2`,
+    `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 2/3`,
   );
 });
 
@@ -532,7 +532,7 @@ test('opening a bill returns a group notice with a code; reopening the same day 
   let r = await f.request('/api/billing', { method: 'POST', payload: draft, cookie });
   const body = await r.json();
   const match = new RegExp(
-    `^🧾 เปิดบิล SENA ${noticeDay(draft.date)} · 2 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
+    `^🧾 เปิดบิล SENA ${noticeDay(draft.date)} · 3 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
   ).exec(body.notice.text);
   assert.ok(match, body.notice.text);
   assert.deepEqual(await claimNotice(f.env.DB, match[2]), {
@@ -557,7 +557,7 @@ test('organizer changes to a bill announce themselves: edit, cancel and restore'
     (await f.request(path + '&action=' + action, { method: 'POST', cookie, payload })).json();
   let body = await act('edit', { ...draft, court: 90000, revision: (await read()).revision });
   const edited = new RegExp(
-    `^✏️ บิล SENA ${day} แก้ยอดแล้ว · 2 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
+    `^✏️ บิล SENA ${day} แก้ยอดแล้ว · 3 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
   ).exec(body.notice.text);
   assert.ok(edited, body.notice.text);
   assert.deepEqual((await claimNotice(f.env.DB, edited[2])).kind, 'bill');
@@ -596,7 +596,7 @@ test('organizer changes after payments announce themselves: PromptPay, undo cash
     received: true,
     revision: (await read()).revision,
   });
-  assert.match(body.notice.text, /\(เงินสด\) · จ่ายแล้ว 2\/2 #/);
+  assert.match(body.notice.text, /\(เงินสด\) · จ่ายแล้ว 3\/3 #/);
   const account = { transfer: '1111111111', revision: (await read()).revision };
   body = await act('edit', account);
   assert.equal(
@@ -609,7 +609,7 @@ test('organizer changes after payments announce themselves: PromptPay, undo cash
     'same account, nothing changed',
   );
   body = await act('cash', { payer: bua.id, received: false, revision: (await read()).revision });
-  assert.equal(body.notice.text, `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 1/2`);
+  assert.equal(body.notice.text, `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 2/3`);
   const view = await read();
   body = await act('review', {
     payer: nut.id,
