@@ -94,7 +94,7 @@ spec: `docs/superpowers/specs/2026-11-14-line-group-notices-design.md`
 - ส่งได้เฉพาะเปิดใน LINE จากลิงก์ในกลุ่ม (`liff.getContext().type` = `group`/`room`) และผู้เล่นอนุญาต `chat_message.write` แล้ว (LINE ถามครั้งเดียว)
 - หน้าบิลเป็น iframe ใน `/court` → iframe ส่ง `postMessage` ให้หน้าหลักส่งแทน
 - **ห้ามเรียก `liff.init` บน `/court` ถ้าไม่มี credentials** — SDK จะพาไป LINE Login ด้วย redirect `/court` ซึ่งไม่ใช่ Endpoint → LINE ขึ้น 400 Bad Request (เจอใน production 2026-11-14) `liff.js` จึงเก็บ hash ตอนเปิด LIFF (`access_token`, `context_token`) ไว้ใน `sessionStorage['sena-liff-launch']` แล้ว `line-notice.js` ใส่กลับเข้า URL ชั่วคราวตอน init; ไม่มีทั้ง token ใน `LIFF_STORE:<liffId>:accessToken` และ launch hash → ไม่ส่ง
-- จอง / ถอน / จ่ายจนบิลครบ → ข้อความลงท้าย ` #xxxxx` (ตาราง `line_notices`, ใช้ครั้งเดียว อายุ 24 ชม.) Badbot เห็นใน webhook แล้ว **Reply** (ฟรี) — ตอบเฉพาะกลุ่มที่ผูกกับก๊วนของรหัส:
+- จอง / ถอน / จ่ายจนบิลครบ → ข้อความลงท้าย ` #xxxxx` (ตาราง `line_notices`, ใช้ครั้งเดียว อายุ 24 ชม.) Badbot เห็นใน webhook แล้ว **Reply** (ฟรี) — ตอบในกลุ่มที่ผูกไว้กลุ่มไหนก็ได้ (Sena หรือ 88 ไม่ต้องตรงก๊วนของรหัส เช่น จอง 88 จากกลุ่ม Sena):
   - จอง: รายชื่อเต็มของวันที่จองที่ใกล้สุด + สรุปวันอื่นบรรทัดละวัน + ปุ่มต่อวัน (postback `badbot:round:<club>:<sessionId>`)
   - ถอน: แท็กจริงคนที่ได้ขึ้นจากสำรอง (ถ้ามี) + รายชื่อรอบนั้น
   - เปิดบิล (ผู้จัดสร้างบิลใหม่): `🧾 เปิดบิล …` → บอทตอบบิลค้างของสนามนั้นพร้อมแท็ก (เหมือน `badbot bill <club>`)
