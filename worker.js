@@ -224,7 +224,7 @@ export default {
           `CREATE TABLE IF NOT EXISTS ${stateTable} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
         ).run();
       if (path === '/') return Response.redirect(url.origin + '/court.html', 302);
-      if (path === '/api/line/webhook') return await lineWebhook(req, env);
+      if (path === '/api/line/webhook') return await lineWebhook(req, env, ctx);
       if (path.startsWith('/api/') && req.method !== 'GET' && !originOK(req))
         return json({ error: 'Origin ไม่ถูกต้อง' }, 403);
       if (path === '/api/line/notice-report' && req.method === 'POST')

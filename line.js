@@ -14,7 +14,7 @@ async function prepare(db) {
     .run();
 }
 
-export async function lineWebhook(req, env) {
+export async function lineWebhook(req, env, ctx) {
   if (req.method !== 'POST') return reply({ error: 'Method not allowed' }, 405);
   if (!env.DB || !env.LINE_CHANNEL_SECRET)
     return reply({ error: 'Webhook is not configured' }, 503);
@@ -39,7 +39,7 @@ export async function lineWebhook(req, env) {
     return reply({ error: 'Invalid JSON' }, 400);
   }
   if (!Array.isArray(body?.events)) return reply({ error: 'Invalid events' }, 400);
-  let replyFailed = false;
+  const replyEvents = [];
   for (const event of body.events) {
     const group = event?.source?.groupId;
     if (
@@ -68,13 +68,29 @@ export async function lineWebhook(req, env) {
         .run();
       continue;
     }
-    try {
-      await replyToGroupCommand(event, env);
-    } catch (error) {
-      logError('line-webhook:reply', error, { eventType: event?.type });
-      replyFailed = true;
-    }
+    replyEvents.push(event);
   }
+  const replyAll = async () => {
+    let failed = false;
+    for (const event of replyEvents) {
+      try {
+        await replyToGroupCommand(event, env);
+      } catch (error) {
+        logError('line-webhook:reply', error, { eventType: event?.type });
+        failed = true;
+      }
+    }
+    return failed;
+  };
+  // LINE gives up on a webhook after about 2 seconds, and a reply takes 1-2 s (the
+  // member lookups and the Reply API): the request was cancelled mid-reply and the
+  // card never came (15 Nov 2026). In production answer LINE at once and finish the
+  // reply in the background; without a context (tests) wait for it and report failure.
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(replyAll());
+    return reply({ ok: true });
+  }
+  const replyFailed = await replyAll();
   return reply({ ok: !replyFailed }, replyFailed ? 503 : 200);
 }
 
