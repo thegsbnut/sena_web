@@ -1061,7 +1061,7 @@ export async function billingLineMessages(
   origin,
   groupId,
   diagnostics = [],
-  { tagsFrom = null } = {},
+  { tagsFrom = null, rosterOf } = {},
 ) {
   if (!memberMode(env) || !env.LINE_LIFF_ID) return null;
   await prepare(env.DB);
@@ -1133,6 +1133,20 @@ export async function billingLineMessages(
   const targets = new Map(
     await Promise.all([...membership].map(async ([userId, target]) => [userId, await target])),
   );
+  // Job badges and 🥇/💩 for the cards come from the public booking roster; if it
+  // cannot be read the cards still go out, just with a round initial instead.
+  const rosters = new Map(
+    await Promise.all(
+      billClubs.map(async club => {
+        try {
+          const list = (await rosterOf?.(club)) || [];
+          return [club, new Map(list.map(player => [player.id, player]))];
+        } catch {
+          return [club, new Map()];
+        }
+      }),
+    ),
+  );
   const cards = [];
   const tagFailure = reason =>
     'แท็กไม่สำเร็จ: ' +
@@ -1186,12 +1200,19 @@ export async function billingLineMessages(
       owed: outstanding(bill),
       paidCount: peopleIn(bill.payers) - peopleIn(pending),
       total: peopleIn(bill.payers),
-      unpaid: entries.map(({ p, userId, reason }) => ({
-        name: p.name,
-        amount: p.amount,
-        people: peopleIn([p]),
-        note: userId ? '' : tagFailure(reason),
-      })),
+      unpaid: entries.map(({ p, userId, reason }) => {
+        const player = rosters
+          .get(bill.club)
+          ?.get(String(p.payerKey || '').replace(/^member:/, ''));
+        return {
+          name: p.name,
+          amount: p.amount,
+          people: peopleIn([p]),
+          note: userId ? '' : tagFailure(reason),
+          badge: player?.badge,
+          award: player?.award,
+        };
+      }),
       reviewing,
       payUrl,
     });

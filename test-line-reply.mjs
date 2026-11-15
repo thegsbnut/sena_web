@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import worker from './worker.js';
 import { defaultSettings, bangkokDate } from './booking.js';
 import { prepareMembers } from './member.js';
+import { billingLineMessages } from './billing.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { createNotice, noticeDay } from './line-notices.js';
 import { badgeImage, rosterBubble } from './line-roster-card.js';
@@ -247,6 +248,43 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
   assert.equal(diagnostic.mentionCount, 1);
   assert.deepEqual(diagnostic.messageTypes, ['flex', 'textV2']);
   assert.doesNotMatch(JSON.stringify(diagnostic), new RegExp(userId));
+});
+
+test('outstanding-bill cards get badges and awards from the roster, and still go out without it', async t => {
+  const f = fixture(t),
+    userId = 'U' + 'b'.repeat(32);
+  f.env.LINE_MEMBER_AUTH_ENABLED = 'true';
+  f.env.LINE_LIFF_ID = '12345-test';
+  await prepareMembers(f.env.DB);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)',
+  );
+  f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+    'b'.repeat(32),
+    'sena',
+    future(0),
+    JSON.stringify({
+      payers: [{ name: 'Nut', payerKey: 'member:p0', amount: 8500, status: 'unpaid' }],
+    }),
+  );
+  f.db
+    .prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)")
+    .run(userId, 'sena', 'p0', 'Nut', 'existing', new Date().toISOString());
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ userId, displayName: 'Nut' }));
+  const roster = [{ id: 'p0', award: '🥇', badge: { line: 'green', plays: 40 } }];
+  const [card] = await billingLineMessages(f.env, 'sena', origin, group, [], {
+    rosterOf: async club => (club === 'sena' ? roster : []),
+  });
+  assert(JSON.stringify(card.contents).includes(badgeImage(origin, roster[0].badge)));
+  assert.match(summaryOf(card), /🥇 Nut 85 บ\./);
+  // A roster that cannot be read must not stop the card.
+  const [plain] = await billingLineMessages(f.env, 'sena', origin, group, [], {
+    rosterOf: async () => {
+      throw new Error('roster down');
+    },
+  });
+  assert.equal(plain.type, 'flex');
+  assert.match(summaryOf(plain), /N Nut 85 บ\./);
 });
 
 // Exercise the production route: signed webhook -> D1 payer mapping -> group
@@ -1618,6 +1656,27 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   assert.equal(fresh.hero.url, 'https://x.test/mascot/open.jpg?v=1');
   assert.match(flexText(fresh), /เปิดบิล|เคลียร์ค่าคอร์ต|บิลมาแล้ว/);
   assert.match(sena.hero.url, /\/mascot\/remind\.jpg\?v=1$/);
+  // Players show their job badge and the latest Cup's 🥇; guests keep a round initial.
+  const badged = owedMessage(
+    [
+      bill('บิล Sena · ส. 14 พ.ย.', [
+        {
+          name: 'Champ',
+          amount: 12000,
+          note: '',
+          badge: { line: 'green', plays: 40 },
+          award: '🥇',
+        },
+        { name: 'Guest', amount: 12000, note: '' },
+      ]),
+    ],
+    { heading: 'h', note: '', origin: 'https://x.test' },
+  ).contents;
+  assert.deepEqual(flexProblems(badged), []);
+  assert.deepEqual(JSON.stringify(badged).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g), [
+    badgeImage('https://x.test', { line: 'green', plays: 40 }),
+  ]);
+  assert.match(flexText(badged), /🥇 Champ 120 บ\.\nG Guest 120 บ\./);
   // A line that covers several people (host + guest) counts every one of them.
   const hosted = owedMessage(
     [bill('บิล Sena · ส. 14 พ.ย.', [{ name: 'เจ', amount: 24000, note: '', people: 2 }])],

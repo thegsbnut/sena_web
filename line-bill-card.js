@@ -178,6 +178,14 @@ const avatar = (name, i) =>
     justifyContent: 'center',
     flex: 0,
   });
+// Players show their job badge; guests and people not in the roster get a round initial.
+const lead = (p, origin, index) =>
+  p.badge
+    ? box('baseline', [{ type: 'icon', url: badgeImage(origin, p.badge), size: '22px' }], {
+        width: '28px',
+        flex: 0,
+      })
+    : avatar(p.name, index);
 const nameText = (spans, plain) => ({
   type: 'text',
   text: clean(plain) || ' ',
@@ -223,13 +231,7 @@ function paidRow(payer, roster, origin, owing, index) {
       : { text: '📲 โอน', color: GREY };
   return hbox(
     [
-      // Players show their job badge; guests get a round initial instead.
-      player?.badge
-        ? box('baseline', [{ type: 'icon', url: badgeImage(origin, player.badge), size: '22px' }], {
-            width: '28px',
-            flex: 0,
-          })
-        : avatar(payer.name, index),
+      lead({ name: payer.name, badge: player?.badge }, origin, index),
       nameText(spans, payer.name),
       text(how.text, { size: 'xxs', color: how.color, flex: 0, gravity: 'center' }),
       text(money(payer.amount), {
@@ -340,7 +342,7 @@ export const paidAlt = info =>
 // bills: [{ id, club, title, extra, owed, paidCount, total,
 //   unpaid: [{ name, amount, people, note }], reviewing, payUrl }]
 const MAX_ROWS_PER_BILL = 20;
-function owedRows(unpaid, compact) {
+function owedRows(unpaid, compact, origin) {
   // Long lists collapse into one wrapped text so every name still fits the card.
   if (unpaid.length > MAX_ROWS_PER_BILL)
     return [
@@ -357,21 +359,23 @@ function owedRows(unpaid, compact) {
     const name = {
       ...nameText(
         [
+          ...(p.award ? [{ type: 'span', text: p.award + ' ' }] : []),
           { type: 'span', text: clean(p.name) },
-          { type: 'span', text: ` (รวม ${p.people} คน)`, size: 'xxs', color: GREY },
+          ...(p.people > 1
+            ? [{ type: 'span', text: ` (รวม ${p.people} คน)`, size: 'xxs', color: GREY }]
+            : []),
         ],
         p.name,
       ),
       ...(compact ? { margin: 'none' } : {}),
     };
-    if (!(p.people > 1)) delete name.contents;
     const amount = money(p.amount) + ' บ.';
     // Compact rows (many bills at once) drop the avatar and pill to stay small.
     const row = compact
       ? hbox([name, text(amount, { size: 'sm', weight: 'bold', color: OWE, flex: 0 })], {
           margin: 'sm',
         })
-      : hbox([avatar(p.name, i), name, pill(amount, OWE, OWE_BG, 'xs')], {
+      : hbox([lead(p, origin, i), name, pill(amount, OWE, OWE_BG, 'xs')], {
           alignItems: 'center',
           margin: 'md',
         });
@@ -415,7 +419,7 @@ export function owedBubble(b, note, origin, compact = false) {
                   ...(b.unpaid.length
                     ? [
                         text(`ยังไม่จ่าย ${left} คน`, { size: 'xs', weight: 'bold', color: OWE }),
-                        ...owedRows(b.unpaid, compact),
+                        ...owedRows(b.unpaid, compact, origin),
                       ]
                     : []),
                   ...(b.reviewing
