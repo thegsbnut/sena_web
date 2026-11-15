@@ -237,6 +237,8 @@ function displayNames(data, session) {
   return id => names.get(id) || 'ผู้เล่นที่นำออกจากก๊วน';
 }
 
+// Player list (ids, job badges, latest Cup 🥇/💩) for the bill cards.
+const rosterOf = env => async club => (await bookingData(env, club))?.roster ?? [];
 async function bookingData(env, club) {
   const response = await bookingRoute(
     new Request('https://badbot.internal/api/booking'),
@@ -687,6 +689,7 @@ export async function replyToGroupCommand(event, env) {
           siteOrigin(env),
           group,
           mentionDiagnostics,
+          { rosterOf: rosterOf(env) },
         );
         if (!owed) return;
         messages.push(...owed);
@@ -750,6 +753,7 @@ export async function replyToGroupCommand(event, env) {
           siteOrigin(env),
           group,
           mentionDiagnostics,
+          { rosterOf: rosterOf(env) },
         )),
       );
     } else if (action.kind === 'menu') {
