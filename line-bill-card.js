@@ -121,3 +121,134 @@ export const paidAlt = info =>
   info.label +
   (info.full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
   `${info.paid.length}/${info.total} · รวม ${money(info.paidSum)} บ.`;
+
+// Outstanding-bills card ("badbot bill", or when a bill is opened): one bubble
+// per bill. Everyone still owing is listed by name, so people the bot cannot tag
+// still see themselves; the @ tags themselves follow as text messages because
+// Flex cannot carry mentions. bills: [{ title, extra, owed, paidCount, total,
+// unpaid: [{ name, amount, note }], reviewing, payUrl }]
+const MAX_ROWS_PER_BILL = 20;
+function owedRows(unpaid) {
+  // Long lists collapse into one wrapped text so every name still fits the card.
+  if (unpaid.length > MAX_ROWS_PER_BILL)
+    return [
+      {
+        type: 'text',
+        text: unpaid.map(p => '• ' + clean(p.name) + ' ' + money(p.amount) + ' บ.').join('\n'),
+        size: 'xs',
+        wrap: true,
+      },
+    ];
+  return unpaid.map(p =>
+    vbox(
+      [
+        hbox([
+          text(p.name, { size: 'sm', wrap: true, flex: 1 }),
+          text(money(p.amount) + ' บ.', {
+            size: 'sm',
+            weight: 'bold',
+            color: RED,
+            flex: 0,
+            align: 'end',
+          }),
+        ]),
+        ...(p.note ? [text(p.note, { size: 'xxs', color: GREY, wrap: true })] : []),
+      ],
+      { margin: 'sm' },
+    ),
+  );
+}
+
+export function owedBubble(b, note) {
+  const pct = Math.min(100, Math.round((100 * b.paidCount) / (b.total || 1)));
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: vbox(
+      [
+        text('💸 ' + b.title, { weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }),
+        text((b.extra ? b.extra + ' · ' : '') + `จ่ายแล้ว ${b.paidCount}/${b.total} คน`, {
+          size: 'xs',
+          color: '#FFFFFFD9',
+        }),
+      ],
+      { backgroundColor: DARK, paddingAll: 'lg', spacing: 'xs' },
+    ),
+    body: vbox(
+      [
+        hbox(
+          [
+            text('ค้าง', { size: 'sm', color: GREY, flex: 0, gravity: 'bottom' }),
+            text(money(b.owed), { size: 'xxl', weight: 'bold', flex: 0, margin: 'sm' }),
+            text('บาท', { size: 'sm', color: GREY, flex: 0, margin: 'sm', gravity: 'bottom' }),
+          ],
+          { justifyContent: 'center', alignItems: 'flex-end' },
+        ),
+        vbox(
+          [
+            vbox([{ type: 'filler' }], {
+              width: Math.max(pct, 1) + '%',
+              height: '6px',
+              backgroundColor: GREEN,
+            }),
+          ],
+          { backgroundColor: TRACK, height: '6px', cornerRadius: 'md', margin: 'md' },
+        ),
+        ...(b.unpaid.length
+          ? [
+              text('ยังไม่จ่าย ' + b.unpaid.length + ' คน', {
+                size: 'xs',
+                weight: 'bold',
+                color: RED,
+                margin: 'lg',
+              }),
+              ...owedRows(b.unpaid),
+            ]
+          : []),
+        ...(b.reviewing
+          ? [
+              text(`รอตรวจสลิป/เงินสด ${b.reviewing} คน`, {
+                size: 'xs',
+                weight: 'bold',
+                color: AMBER,
+                margin: 'lg',
+              }),
+            ]
+          : []),
+        ...(note ? [text(note, { size: 'xxs', color: GREY, wrap: true, margin: 'lg' })] : []),
+      ],
+      { spacing: 'xs', paddingAll: 'lg' },
+    ),
+    footer: vbox(
+      [
+        {
+          type: 'button',
+          style: 'primary',
+          color: GREEN,
+          height: 'sm',
+          action: { type: 'uri', label: '💳 จ่าย / ดู QR', uri: b.payUrl },
+        },
+      ],
+      { paddingAll: 'lg', paddingTop: 'none' },
+    ),
+  };
+}
+
+// The whole card, or null when it would not fit LINE's limits (30 KB a bubble,
+// 50 KB a carousel, 12 bubbles): the caller then sends the plain-text summary.
+export function owedMessage(bills, { heading, note }) {
+  if (!bills.length || bills.length > 12) return null;
+  const bubbles = bills.map((b, i) => owedBubble(b, i === bills.length - 1 ? note : ''));
+  const message = {
+    type: 'flex',
+    altText: (
+      heading +
+      ' · ' +
+      bills.map(b => b.title.replace(/^บิล /, '') + ' ค้าง ' + b.unpaid.length + ' คน').join(' · ')
+    ).slice(0, 400),
+    contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles },
+  };
+  const size = bubble => new TextEncoder().encode(JSON.stringify(bubble)).length;
+  if (bubbles.some(b => size(b) > 28000) || size(message.contents) > 45000) return null;
+  return message;
+}

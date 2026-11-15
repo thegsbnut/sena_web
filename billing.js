@@ -10,6 +10,7 @@ import {
 import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
 import qrcode from 'qrcode-generator';
 import { slipAiEnabled, checkSlip, slipChecksFor } from './slip-check.js';
+import { owedMessage } from './line-bill-card.js';
 
 const day = 86400000;
 const maxSlipBytes = 1024 * 1024;
@@ -1078,9 +1079,9 @@ export async function billingLineMessages(
         text: '✅ ไม่มีบิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
       },
     ];
-  // The summary is plain text and lists everyone. Tags follow in grouped messages
-  // (see planMentionMessages for the layout rules); what does not fit in the
-  // 5-message reply is offered as a "tag the rest" quick-reply button.
+  // The summary lists everyone (a Flex card, or plain text when the card would not
+  // fit). Tags follow in grouped text messages (see planMentionMessages); what
+  // does not fit in the 5-message reply is offered as a "tag the rest" button.
   const messages = [],
     membership = new Map(),
     owed = new Map();
@@ -1124,6 +1125,14 @@ export async function billingLineMessages(
   const targets = new Map(
     await Promise.all([...membership].map(async ([userId, target]) => [userId, await target])),
   );
+  const cards = [];
+  const tagFailure = reason =>
+    'แท็กไม่สำเร็จ: ' +
+    ({
+      not_linked: 'ยังไม่ผูกบัญชี LINE',
+      legacy_payer_key: 'บิลยังไม่อ้างอิงสมาชิก',
+      not_in_group_or_provider_mismatch: 'ไม่พบสมาชิกในกลุ่มปลายทาง',
+    }[reason] || 'ตรวจยืนยันสมาชิก LINE ไม่สำเร็จ');
   for (const { bill, pending, unpaid } of open) {
     const entries = unpaid.map(p => {
       const userId = userOf(bill, p);
@@ -1155,27 +1164,39 @@ export async function billingLineMessages(
           risk: seen?.risk ?? mentionNameRisk(displayName),
         });
         append('• ' + p.name + ' ' + money(p.amount) + ' บ.');
-      } else
-        append(
-          '• ' +
-            p.name +
-            ' ' +
-            money(p.amount) +
-            ' บ. · แท็กไม่สำเร็จ: ' +
-            ({
-              not_linked: 'ยังไม่ผูกบัญชี LINE',
-              legacy_payer_key: 'บิลยังไม่อ้างอิงสมาชิก',
-              not_in_group_or_provider_mismatch: 'ไม่พบสมาชิกในกลุ่มปลายทาง',
-            }[reason] || 'ตรวจยืนยันสมาชิก LINE ไม่สำเร็จ'),
-        );
+      } else append('• ' + p.name + ' ' + money(p.amount) + ' บ. · ' + tagFailure(reason));
     }
     const reviewing = pending.length - unpaid.length;
     if (reviewing) append('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
-    append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + liffUrl(env, bill.club, 'pay', bill.id));
+    const payUrl = liffUrl(env, bill.club, 'pay', bill.id);
+    append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + payUrl);
+    cards.push({
+      title: 'บิล ' + clubName(bill.club) + ' · ' + noticeDay(billDate(bill)),
+      extra: bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '',
+      owed: outstanding(bill),
+      paidCount: bill.payers.length - pending.length,
+      total: bill.payers.length,
+      unpaid: entries.map(({ p, userId, reason }) => ({
+        name: p.name,
+        amount: p.amount,
+        note: userId ? '' : tagFailure(reason),
+      })),
+      reviewing,
+      payUrl,
+    });
   }
-  if (groups.some(g => g.results.length > limit))
-    append('แสดง ' + limit + ' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด');
-  flush();
+  const more = groups.some(g => g.results.length > limit)
+    ? 'แสดง ' + limit + ' บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด'
+    : '';
+  if (more) append(more);
+  // The summary is a Flex card when it fits LINE's limits; plain text otherwise.
+  const card = owedMessage(cards, {
+    heading: '💸 บิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
+    note: more,
+  });
+  // (The text summary may already have flushed chunks into `messages`.)
+  if (card) messages.splice(0, messages.length, card);
+  else flush();
   // Continuation from the quick-reply button: only the next tags, no summary.
   if (tagsFrom !== null) messages.length = 0;
   if (messages.length > 5) {
