@@ -1,3 +1,4 @@
+import { noticeReport } from './line-notices.js';
 import { syncLinkedPlayers } from './roster-sync.js';
 import { clubOf, isClub, DEFAULT_CLUB } from './clubs.js';
 import { memberRoute, memberFor, memberMode, memberIsAdmin } from './member.js';
@@ -226,6 +227,8 @@ export default {
       if (path === '/api/line/webhook') return await lineWebhook(req, env);
       if (path.startsWith('/api/') && req.method !== 'GET' && !originOK(req))
         return json({ error: 'Origin ไม่ถูกต้อง' }, 403);
+      if (path === '/api/line/notice-report' && req.method === 'POST')
+        return await noticeReport(req);
       if (path === '/api/session') {
         if (req.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
         const key = await keySession(req, env),

@@ -77,3 +77,35 @@ export async function claimNotice(db, code, now = Date.now()) {
 export async function releaseNotice(db, code) {
   await db.prepare('UPDATE line_notices SET used_at=NULL WHERE code=?').bind(code).run();
 }
+
+// POST /api/line/notice-report from public/line-notice.js: where a group notice
+// ended up on the phone. Logged only (no database); every field is whitelisted
+// and trimmed so nothing personal reaches the log.
+const REPORT_STAGES = new Set(['sent', 'no-credentials', 'not-group', 'no-permission', 'failed']);
+export async function noticeReport(req) {
+  const text = await req.text();
+  if (text.length > 2000) return new Response(null, { status: 413 });
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return new Response(null, { status: 400 });
+  }
+  if (!REPORT_STAGES.has(body?.stage)) return new Response(null, { status: 400 });
+  const field = (value, n) =>
+    String(value ?? '')
+      .replace(/U[a-f0-9]{32}/g, '[LINE_USER_ID]')
+      .slice(0, n);
+  const entry = {
+    context: 'line-notice:client',
+    stage: body.stage,
+    kind: field(body.kind, 4),
+    page: field(body.page, 40),
+    at: field(body.at, 20),
+    lineContext: field(body.context, 20),
+    permission: field(body.permission, 20),
+    error: field(body.error, 300),
+  };
+  (body.stage === 'sent' ? console.log : console.warn)(JSON.stringify(entry));
+  return new Response(null, { status: 204 });
+}
