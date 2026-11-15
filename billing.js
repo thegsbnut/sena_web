@@ -961,6 +961,7 @@ export async function paidSummary(env, billId) {
     sum = list => list.reduce((total, p) => total + p.amount, 0);
   const isCash = p => p.method === 'cash';
   return {
+    id: bill.id,
     club: bill.club,
     label: billLabel(bill),
     full: paid.length === bill.payers.length,
@@ -1178,6 +1179,7 @@ export async function billingLineMessages(
     const payUrl = liffUrl(env, bill.club, 'pay', bill.id);
     append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + payUrl);
     cards.push({
+      id: bill.id,
       club: bill.club,
       title: 'บิล ' + clubName(bill.club) + ' · ' + noticeDay(billDate(bill)),
       extra: bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '',
@@ -1202,6 +1204,7 @@ export async function billingLineMessages(
   const card = owedMessage(cards, {
     heading: '💸 บิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
     note: more,
+    origin,
   });
   // (The text summary may already have flushed chunks into `messages`.)
   if (card) messages.splice(0, messages.length, card);

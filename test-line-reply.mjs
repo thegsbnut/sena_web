@@ -998,14 +998,17 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
   assert.equal(
     textOf(f.calls[0]),
     [
-      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบแล้ว',
-      '3/3 คน', // Nut paid for a guest too: three people, two bill lines
-      '175 บาท',
-      'โอน 1 คน · เงินสด 1 คน',
-      'Bua 💵 เงินสด 90',
-      'Nut (รวม Guest) 📲 โอน 85',
+      '💚 น้องขุนเงิน',
+      'ครบแล้วค่า~ ขอบคุณพี่ๆ ทุกคนน้า 🎉💚',
+      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบแล้ว · 📲 โอน 1 · 💵 เงินสด 1',
+      'ได้รับแล้ว',
+      '฿175 ครบแล้ว ✓',
+      'จ่ายแล้ว 3/3 คน', // Nut paid for a guest too: three people, two bill lines
+      'รายชื่อคนจ่าย',
+      'B Bua 💵 เงินสด 90', // no badge in this roster: a round initial instead
+      'N Nut (รวม Guest) 📲 โอน 85',
       'รวม 175 บ.',
-      'ขอบคุณทุกคนครับ 🙏🏸',
+      'ขุนเงินเก็บครบแล้ว ไปตีแบดกันต่อน้า 🏸',
     ].join('\n'),
   );
 });
@@ -1039,7 +1042,7 @@ test("notice codes answer in any linked group (not only their club's), and survi
   f.status(200);
   assert.equal((await f.hook([f.event('x #' + other)])).status, 200);
   assert.equal(f.calls.length, 2);
-  assert.match(textOf(f.calls[1]), /^✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบแล้ว\n1\/1 คน/);
+  assert.match(textOf(f.calls[1]), /✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบแล้ว[\s\S]*จ่ายแล้ว 1\/1 คน/);
   await f.hook([f.event('ordinary chat #zzzzz')]);
   assert.equal(f.calls.length, 2);
 });
@@ -1376,39 +1379,49 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
   assert.equal(
     flexText(bubble),
     [
-      '💸 บิล SENA ส. 14 พ.ย.',
-      '4/5 คน',
-      '480 บาท',
-      'โอน 2 คน · เงินสด 1 คน',
+      '💚 น้องขุนเงิน',
+      'ยังขาดอีก 1 คนน้า~ ขุนเงินรอพี่ๆ อยู่นะคะ 🥺',
+      '💸 บิล SENA ส. 14 พ.ย. · 📲 โอน 2 · 💵 เงินสด 1',
+      'ได้รับแล้ว',
+      '฿480 ขาด 1 คน',
+      'จ่ายแล้ว 4/5 คน',
+      'รายชื่อคนจ่าย',
       '🥇 Champ 📲 โอน 120',
       '💩 Last (รวม Pal) 💵 เงินสด 240',
-      'Old 📲 โอน 120',
-      'Late ยังไม่จ่าย 120',
+      'O Old 📲 โอน 120', // not in the roster: a round initial instead of a badge
+      'L Late ยังไม่จ่าย 120',
       'รวม 480 บ.',
+      'ใครยังไม่จ่าย กด "บิลค้าง" ในเมนูได้เลยค่ะ',
     ].join('\n'),
   );
-  assert.equal(bubble.header.backgroundColor, '#168B42', 'Sena is green');
-  // Headers fade from a deep to a lighter shade of the club's colour.
-  assert.deepEqual(bubble.header.background, {
+  // Not paid in full: the "pleading" mascot and a pink price tag.
+  assert.equal(bubble.hero.url, 'https://x.test/mascot/remind.jpg?v=1');
+  const tag = b => b.body.contents[1];
+  assert.equal(tag(bubble).background.endColor, '#E25563');
+  const full = { ...info, full: true, paid: [...info.paid, ...info.owing], owing: [] };
+  assert.equal(
+    paidBubble(full, roster, 'https://x.test').hero.url,
+    'https://x.test/mascot/done.jpg?v=1',
+  );
+  // Paid in full the tag fades between two shades of the club's colour.
+  assert.deepEqual(tag(paidBubble(full, roster, 'https://x.test')).background, {
     type: 'linearGradient',
     angle: '135deg',
-    startColor: '#0E6B31',
-    endColor: '#2FB35A',
+    startColor: '#34C892',
+    endColor: '#0E8F67',
   });
   assert.equal(
-    paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.background.endColor,
-    '#3F7FD6',
-  );
-  assert.equal(
-    paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.backgroundColor,
-    '#1F4E9A',
+    tag(paidBubble({ ...full, club: '88' }, roster, 'https://x.test')).backgroundColor,
+    '#2558B0',
     '88 is blue',
   );
+  // One chick per person: four mint (paid), one faded.
+  const chicks = JSON.stringify(bubble.body.contents[2]);
+  assert.equal(chicks.match(/mascot\/chick\.png/g).length, 4);
+  assert.equal(chicks.match(/mascot\/chick-off\.png/g).length, 1);
   assert.deepEqual(JSON.stringify(bubble).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g), [
     'https://x.test/badges/red-3-2.png',
     'https://x.test/badges/green-1.png',
-    'https://x.test/badges/blank.png',
-    'https://x.test/badges/blank.png',
   ]);
   // A huge bill stays inside LINE's 30 KB bubble limit.
   const many = {
@@ -1553,23 +1566,27 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   assert.deepEqual(flexProblems(card.contents), []);
   const [sena, other] = card.contents.contents;
   const colors = b => [
-    b.header.backgroundColor,
+    b.body.contents[1].backgroundColor,
     b.footer.contents[0].action && b.footer.contents[0].color,
   ];
-  assert.deepEqual(colors(sena), ['#168B42', '#168B42']);
-  assert.deepEqual(colors(other), ['#1F4E9A', '#1F4E9A'], 'an 88 bill is blue throughout');
+  assert.deepEqual(colors(sena), ['#0E8F67', '#17A673']);
+  assert.deepEqual(colors(other), ['#2558B0', '#3F7FD6'], 'an 88 bill is blue throughout');
   assert.equal(
     flexText(sena),
     [
-      '💸 บิล Sena · ส. 14 พ.ย.',
+      '💚 น้องขุนเงิน',
+      'เหลืออีก 2 คนเองน้า ขุนเงินรออยู่ค่า 🥺', // some paid already: a reminder line
+      '🧾 บิล Sena · ส. 14 พ.ย.',
+      'ยอดค้างทั้งหมด',
+      '฿240',
       'จ่ายแล้ว 9/12 คน',
-      'ค้าง 240 บาท',
       'ยังไม่จ่าย 2 คน',
-      'บอส 120 บ.',
-      'ปาล์ม 120 บ.',
+      'บ บอส 120 บ.', // round initial, name, amount
+      'ป ปาล์ม 120 บ.',
       'แท็กไม่สำเร็จ: ยังไม่ผูกบัญชี LINE',
-      'รอตรวจสลิป/เงินสด 1 คน',
+      '⏳ รอตรวจสลิป/เงินสด 1 คน',
       '💳 จ่าย / ดู QR',
+      'จ่ายแล้วแนบสลิปในหน้าจ่ายได้เลยน้า ขอบคุณค่ะ',
     ].join('\n'),
   );
   assert.equal(
@@ -1577,14 +1594,31 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
     'https://liff.line.me/x?club=sena&page=pay&bill=b1',
   );
   // "Showing the oldest bills" sits on the last card only; extra bills say so.
-  assert.match(flexText(other), /บิลเพิ่มเติม · จ่ายแล้ว 9\/10 คน[\s\S]*แสดง 3 บิลเก่าสุดต่อสนาม/);
+  assert.match(
+    flexText(other),
+    /฿150 บิลเพิ่มเติม\nจ่ายแล้ว 9\/10 คน[\s\S]*แสดง 3 บิลเก่าสุดต่อสนาม/,
+  );
   assert.doesNotMatch(flexText(sena), /แสดง 3 บิล/);
+  // A fresh bill (nobody paid yet) gets the winking mascot and an opening line;
+  // reminders get the pleading one.
+  const fresh = owedMessage(
+    [
+      bill('บิล Sena · ส. 14 พ.ย.', [{ name: 'บอส', amount: 12000, note: '' }], {
+        paidCount: 0,
+        total: 1,
+      }),
+    ],
+    { heading: 'h', note: '', origin: 'https://x.test' },
+  ).contents;
+  assert.equal(fresh.hero.url, 'https://x.test/mascot/open.jpg?v=1');
+  assert.match(flexText(fresh), /เปิดบิล|เคลียร์ค่าคอร์ต|บิลมาแล้ว/);
+  assert.match(sena.hero.url, /\/mascot\/remind\.jpg\?v=1$/);
   // A line that covers several people (host + guest) counts every one of them.
   const hosted = owedMessage(
     [bill('บิล Sena · ส. 14 พ.ย.', [{ name: 'เจ', amount: 24000, note: '', people: 2 }])],
     { heading: 'h', note: '' },
   );
-  assert.match(flexText(hosted.contents), /ยังไม่จ่าย 2 คน\nเจ \(รวม 2 คน\) 240 บ\./);
+  assert.match(flexText(hosted.contents), /ยังไม่จ่าย 2 คน\nจ เจ \(รวม 2 คน\) 240 บ\./);
   assert.match(hosted.altText, /ค้าง 2 คน$/);
   // Past 20 people, a bill lists everyone in one compact block.
   const crowd = Array.from({ length: 60 }, (_, i) => ({ name: 'P' + i, amount: 1700, note: '' }));
