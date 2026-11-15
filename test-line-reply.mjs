@@ -1152,20 +1152,21 @@ test('roster cards pick the pre-rendered badge picture for each job level', () =
   assert(existsSync(new URL('./public/badges/blank.png', import.meta.url)));
 });
 
-test('roster cards show badges, the 💩 award, champion crowns, guests and who just joined', () => {
+test('roster cards show badges, only the latest Cup 🥇 and 💩, guests and who just joined', () => {
   const data = {
     roster: [
       { id: 'a', name: 'Champ', award: '🥇', badge: { line: 'red', plays: 95, titles: 3 } },
       { id: 'b', name: 'Last', award: '💩', badge: { line: 'green', plays: 6, titles: 1 } },
       { id: 'c', name: 'New', award: '', badge: { line: 'blue', plays: 0, titles: 0 } },
+      { id: 'd', name: 'Old', award: '', badge: { line: 'pink', plays: 40, titles: 2 } },
     ],
   };
   const session = {
     date: '2026-11-21',
     start: '19:00',
     end: '22:00',
-    capacity: 4,
-    confirmedCount: 4,
+    capacity: 5,
+    confirmedCount: 5,
     waitlistCount: 0,
     courtNumbers: '3, 4',
     registrations: [
@@ -1173,6 +1174,7 @@ test('roster cards show badges, the 💩 award, champion crowns, guests and who 
       { playerId: 'b', status: 'confirmed', position: 2 },
       { playerId: 'g1', status: 'confirmed', position: 3, guest: { name: 'Pal', hostId: 'a' } },
       { playerId: 'c', status: 'confirmed', position: 4 },
+      { playerId: 'd', status: 'confirmed', position: 5 },
     ],
   };
   const bubble = rosterBubble(data, 'sena', session, {
@@ -1183,16 +1185,18 @@ test('roster cards show badges, the 💩 award, champion crowns, guests and who 
   });
   const text = flexText(bubble);
   assert.match(text, /^📍 เสนา · ส\. 21 พ\.ย\.\n19:00–22:00 น\. · คอร์ต 3, 4/);
-  assert.match(text, /4 \/ 4 คน เต็ม/);
-  // 🥇 gives way to the badge crown (as on the booking page); 💩 stays.
-  assert.match(text, /1 Champ 👑3 2 💩 Last 👑\n3 Pal \(แขกของ Champ\) 4 New ✨/);
-  assert.doesNotMatch(text, /🥇/);
+  assert.match(text, /5 \/ 5 คน เต็ม/);
+  // Only the latest Cup's winner and last place carry a mark; past champions
+  // (Old won twice before) get none, and there is no 👑 history tag.
+  assert.match(text, /1 🥇 Champ 2 💩 Last\n3 Pal \(แขกของ Champ\) 4 New ✨\n5 Old/);
+  assert.doesNotMatch(text, /👑/);
   const icons = JSON.stringify(bubble).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g);
   assert.deepEqual(icons, [
     'https://x.test/badges/red-3-2.png',
     'https://x.test/badges/green-1.png',
     'https://x.test/badges/blank.png',
     'https://x.test/badges/novice.png',
+    'https://x.test/badges/pink-3-0.png',
   ]);
   assert.equal(bubble.footer.contents[0].action.uri, 'https://x.test/court#booking');
 });

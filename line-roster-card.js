@@ -32,8 +32,9 @@ export function badgeImage(origin, badge) {
   return origin + '/badges/' + badge.line + '-' + lvl + (lvl === 3 ? '-' + stars : '') + '.png';
 }
 
-// One entry per registration: name, the 💩 award (the badge crown stands in for
-// 🥇, as on the booking page), the badge, and whether they were just added.
+// One entry per registration: name, the award (🥇 / 💩 — from the latest Cup
+// only, so just its winner and last place carry one), the badge, and whether
+// they were just added.
 function people(data, session, status, highlight) {
   const roster = new Map(data.roster.map(p => [p.id, p]));
   const name = id => clean(roster.get(id)?.name) || 'ผู้เล่นที่นำออกจากก๊วน';
@@ -47,7 +48,7 @@ function people(data, session, status, highlight) {
         : r.invitedBy
           ? name(r.playerId) + ' (จองโดย ' + name(r.invitedBy) + ' · จ่ายแทน)'
           : name(r.playerId);
-      const award = !r.guest && player?.award && player.award !== '🥇' ? player.award : '';
+      const award = (!r.guest && player?.award) || '';
       return {
         label,
         award,
@@ -58,7 +59,6 @@ function people(data, session, status, highlight) {
 }
 
 function cell(person, n, origin, color) {
-  const titles = Math.max(0, Number(person.badge?.titles) || 0);
   const spans = [
     person.award && { type: 'span', text: person.award + ' ' },
     {
@@ -66,7 +66,6 @@ function cell(person, n, origin, color) {
       text: person.label,
       ...(person.mark ? { weight: 'bold', color } : {}),
     },
-    titles && { type: 'span', text: ' 👑' + (titles > 1 ? titles : ''), size: 'xs', color: AMBER },
     person.mark && { type: 'span', text: ' ' + person.mark },
   ].filter(Boolean);
   return {
