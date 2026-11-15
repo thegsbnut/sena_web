@@ -14,6 +14,7 @@ import { billingLineText, billingLineMessages, paidSummary, resubmitMessages } f
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 import { paidAlt, paidBubble } from './line-bill-card.js';
+import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-cards.js';
 import {
   emptyBubble,
   flexFallback,
@@ -274,6 +275,167 @@ async function rosterCard(env, club, now, { data, sessionId, highlight, extra } 
   return { bubble: rosterBubble(data, club, session, opts), alt: rosterAlt(club, session) };
 }
 
+// Data readers shared by the Flex cards and their plain-text fallbacks.
+async function matchupRound(env) {
+  const response = await bookingRoute(
+    new Request('https://badbot.internal/api/booking'),
+    env,
+    false,
+    'sena',
+  );
+  if (!response.ok) return { error: 'อ่านตารางคู่ตี Sena ไม่สำเร็จ' };
+  const data = await response.json();
+  const session = data.settings.enabled && data.sessions.find(s => !s.skipped && !s.isCup);
+  if (!session) return { error: 'ยังไม่มีรอบปกติถัดไปของ Sena' };
+  const date = thaiDay.format(new Date(session.date + 'T12:00:00+07:00'));
+  const heading =
+    '🏸 คู่ตี Sena · ' +
+    date +
+    ` · ${session.start}–${session.end} น.` +
+    (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : '');
+  if (session.closed || !session.schedule?.schedule?.length)
+    return { error: heading + '\nตารางคู่ยังไม่พร้อม' };
+  return { data, session, heading, name: displayNames(data, session) };
+}
+
+async function cupMatches(env, club) {
+  const table = clubOf(club).stateTable;
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+  ).run();
+  const row = await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
+  const cup = row ? JSON.parse(row.payload).cup : null;
+  if (
+    !cup?.matches?.length ||
+    cup.matches.every(m => Number.isInteger(m.sa) && Number.isInteger(m.sb) && m.sa !== m.sb)
+  )
+    return null;
+  return cup;
+}
+const cupRest = (cup, i) =>
+  i > 0 && globalThis.Sena.cupRestConflicts(cup.matches.slice(i - 1, i + 1));
+
+// Standings rows with ties sharing a rank, as the text reply shows them.
+function cupRanks(cup) {
+  const rows = globalThis.Sena.standings(cup.teams, cup.matches);
+  let previous, rank;
+  return rows.map((row, i) => {
+    if (
+      !previous ||
+      row.w !== previous.w ||
+      row.pf - row.pa !== previous.pf - previous.pa ||
+      row.pf !== previous.pf
+    )
+      rank = i + 1;
+    previous = row;
+    return { ...row, rank };
+  });
+}
+
+async function leaderboardRows(env, club) {
+  const response = await leaderboardRoute(
+    new Request('https://badbot.internal/api/leaderboard'),
+    env,
+    false,
+    club,
+  );
+  return response.ok ? (await response.json()).standings : null;
+}
+const leaderboardLink = url => {
+  const link = new URL(url);
+  link.hash = 'leaderboard';
+  return link.href;
+};
+
+// Table replies as Flex cards; null means "nothing to draw" and the caller sends
+// the plain-text reply (which also explains why there is no table).
+async function boardMessage(action, env, urls) {
+  if (action.kind === 'matchup') {
+    const round = await matchupRound(env);
+    if (round.error) return null;
+    const { session, name } = round;
+    const day = noticeDay(session.date);
+    const card = gamesBubble({
+      club: 'sena',
+      title: '🆚 คู่ตี Sena · ' + day,
+      subtitle:
+        `${session.start}–${session.end} น.` +
+        (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : ''),
+      games: session.schedule.schedule.map(m => ({
+        round: m.round,
+        left: m.ids.slice(0, 2).map(name),
+        right: m.ids.slice(2).map(name),
+      })),
+      url: urls.sena,
+    });
+    return flexMessage(
+      [card],
+      'คู่ตี Sena ' + day + ' · ' + session.schedule.schedule.length + ' เกม',
+    );
+  }
+  if (action.kind === 'cupMatchup') {
+    const cup = await cupMatches(env, action.club);
+    if (!cup) return null;
+    const card = gamesBubble({
+      club: action.club,
+      title: '🏆 ตาราง ' + clubOf(action.club).cupName,
+      subtitle: cup.matches.length + ' เกม',
+      games: cup.matches.map((m, i) => ({
+        round: i + 1,
+        left: cup.teams[m.a],
+        right: cup.teams[m.b],
+        rest: cupRest(cup, i),
+      })),
+      url: urls[action.club],
+    });
+    return flexMessage(
+      [card],
+      'ตาราง ' + clubOf(action.club).cupName + ' · ' + cup.matches.length + ' เกม',
+    );
+  }
+  if (action.kind === 'cupResult') {
+    const cup = await latestCup(env.DB, action.club);
+    if (!cup) return null;
+    const rows = cupRanks(cup).map(r => ({ ...r, name: clean(r.name) }));
+    const card = cupResultBubble({
+      club: action.club,
+      title: cup.title,
+      date: thaiDay.format(new Date(cup.date + 'T12:00:00+07:00')),
+      rows,
+      url: urls[action.club],
+    });
+    return flexMessage(
+      [card],
+      'ผล ' +
+        clean(cup.title) +
+        ' · แชมป์ ' +
+        rows
+          .filter(r => r.rank === 1)
+          .map(r => r.name)
+          .join(', '),
+    );
+  }
+  if (action.kind === 'leaderboard') {
+    const selected = action.scope === 'all' ? clubs : [action.scope];
+    const tables = await Promise.all(selected.map(club => leaderboardRows(env, club)));
+    if (tables.some(rows => !rows)) return null;
+    const cards = selected.map((club, i) =>
+      leaderboardBubble({
+        club,
+        rows: tables[i].map(r => ({ ...r, name: clean(r.name) })),
+        url: leaderboardLink(courtUrl(env, club)),
+      }),
+    );
+    return flexMessage(
+      cards,
+      selected
+        .map((club, i) => clubOf(club).label + ' อันดับ 1 ' + (clean(tables[i][0]?.name) || '-'))
+        .join(' · '),
+    );
+  }
+  return null;
+}
+
 async function shortcutText(action, env, urls) {
   const club = action.club;
   const cupName = clubOf(club).cupName;
@@ -285,25 +447,9 @@ async function shortcutText(action, env, urls) {
   if (action.kind === 'bill') return billingLineText(env, action.scope, new URL(urls.sena).origin);
   if (action.kind === 'book') return '🏸 จอง / ถอน ' + clubOf(club).label + '\n' + urls[club];
   if (action.kind === 'matchup') {
-    const response = await bookingRoute(
-      new Request('https://badbot.internal/api/booking'),
-      env,
-      false,
-      'sena',
-    );
-    if (!response.ok) return 'อ่านตารางคู่ตี Sena ไม่สำเร็จ';
-    const data = await response.json();
-    const session = data.settings.enabled && data.sessions.find(s => !s.skipped && !s.isCup);
-    if (!session) return 'ยังไม่มีรอบปกติถัดไปของ Sena';
-    const date = thaiDay.format(new Date(session.date + 'T12:00:00+07:00'));
-    const heading =
-      '🏸 คู่ตี Sena · ' +
-      date +
-      ` · ${session.start}–${session.end} น.` +
-      (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : '');
-    if (session.closed || !session.schedule?.schedule?.length)
-      return heading + '\nตารางคู่ยังไม่พร้อม';
-    const name = displayNames(data, session);
+    const round = await matchupRound(env);
+    if (round.error) return round.error;
+    const { session, heading, name } = round;
     return boundedSection([
       heading,
       ...session.schedule.schedule.map(
@@ -318,17 +464,8 @@ async function shortcutText(action, env, urls) {
     ]);
   }
   if (action.kind === 'cupMatchup') {
-    const table = clubOf(club).stateTable;
-    await env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-    ).run();
-    const row = await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
-    const cup = row ? JSON.parse(row.payload).cup : null;
-    if (
-      !cup?.matches?.length ||
-      cup.matches.every(m => Number.isInteger(m.sa) && Number.isInteger(m.sb) && m.sa !== m.sb)
-    )
-      return 'ยังไม่มีตาราง ' + cupName + ' ที่กำลังรอแข่ง';
+    const cup = await cupMatches(env, club);
+    if (!cup) return 'ยังไม่มีตาราง ' + cupName + ' ที่กำลังรอแข่ง';
     return boundedSection([
       '🏸 ตาราง ' + cupName,
       ...cup.matches.map(
@@ -339,32 +476,20 @@ async function shortcutText(action, env, urls) {
           cup.teams[m.a].map(clean).join(' / ') +
           ' vs ' +
           cup.teams[m.b].map(clean).join(' / ') +
-          (i > 0 && globalThis.Sena.cupRestConflicts(cup.matches.slice(i - 1, i + 1))
-            ? ' · เว้นพักก่อนเกมนี้'
-            : ''),
+          (cupRest(cup, i) ? ' · เว้นพักก่อนเกมนี้' : ''),
       ),
     ]);
   }
   if (action.kind === 'cupResult') {
     const cup = await latestCup(env.DB, club);
     if (!cup) return 'ยังไม่มีผล ' + cupName + ' ที่บันทึกไว้';
-    const rows = globalThis.Sena.standings(cup.teams, cup.matches);
-    let previous, rank;
     return boundedSection([
       '🏆 ผล ' + clean(cup.title),
       thaiDay.format(new Date(cup.date + 'T12:00:00+07:00')),
-      ...rows.map((row, i) => {
-        if (
-          !previous ||
-          row.w !== previous.w ||
-          row.pf - row.pa !== previous.pf - previous.pa ||
-          row.pf !== previous.pf
-        )
-          rank = i + 1;
-        previous = row;
-        return (
-          (rank === 1 ? '🥇 ' : '') +
-          rank +
+      ...cupRanks(cup).map(
+        row =>
+          (row.rank === 1 ? '🥇 ' : '') +
+          row.rank +
           '. ' +
           clean(row.name) +
           ' · ชนะ ' +
@@ -374,9 +499,8 @@ async function shortcutText(action, env, urls) {
           ' · แต้ม ' +
           row.pf +
           '–' +
-          row.pa
-        );
-      }),
+          row.pa,
+      ),
     ]);
   }
   const selected = action.scope === 'all' ? clubs : [action.scope];
@@ -388,16 +512,8 @@ async function shortcutText(action, env, urls) {
 
 async function leaderboardSection(env, club, url) {
   const heading = '🏆 ' + clubOf(club).label + ' Leaderboard';
-  const response = await leaderboardRoute(
-    new Request('https://badbot.internal/api/leaderboard'),
-    env,
-    false,
-    club,
-  );
-  if (!response.ok) return heading + '\nอ่านอันดับไม่สำเร็จ';
-  const { standings } = await response.json();
-  const link = new URL(url);
-  link.hash = 'leaderboard';
+  const standings = await leaderboardRows(env, club);
+  if (!standings) return heading + '\nอ่านอันดับไม่สำเร็จ';
   const topFive = standings
     .slice(0, 5)
     .map(
@@ -407,7 +523,7 @@ async function leaderboardSection(env, club, url) {
   return [
     heading,
     ...(topFive.length ? topFive : ['ยังไม่มีข้อมูลอันดับ']),
-    'ดูอันดับทั้งหมด: ' + link.href,
+    'ดูอันดับทั้งหมด: ' + leaderboardLink(url),
   ].join('\n');
 }
 
@@ -640,7 +756,8 @@ export async function replyToGroupCommand(event, env) {
     } else if (action.kind === 'menu') {
       messages.push(menu(urls));
     } else {
-      messages.push(...textMessages(await shortcutText(action, env, urls)));
+      const card = await boardMessage(action, env, urls);
+      messages.push(...(card ? [card] : textMessages(await shortcutText(action, env, urls))));
     }
     let response, evidence;
     const send = async body => {
