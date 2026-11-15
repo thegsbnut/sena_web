@@ -8,7 +8,7 @@ import { prepareMembers } from './member.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { createNotice, noticeDay } from './line-notices.js';
 import { badgeImage, rosterBubble } from './line-roster-card.js';
-import { paidBubble } from './line-bill-card.js';
+import { owedMessage, paidBubble } from './line-bill-card.js';
 import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-cards.js';
 
 const origin = 'https://example.com',
@@ -165,6 +165,8 @@ const flexText = node => {
       .join(node.layout === 'vertical' ? '\n' : ' ');
   return '';
 };
+// The bill summary as text, whether it came as a Flex card or plain text.
+const summaryOf = m => (m.type === 'flex' ? flexText(m.contents) : m.text);
 const textOf = call =>
   call.messages
     .filter(m => m.type === 'text' || m.type === 'flex')
@@ -201,8 +203,8 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
   assert.equal((await f.hook([f.event('badbot bill')])).status, 200);
   const [summary, message] = f.calls[0].messages;
   assert.equal(f.calls[0].messages.length, 2);
-  assert.equal(summary.type, 'text');
-  assert.match(summary.text, /• Nut 85 บ\./);
+  assert.equal(summary.type, 'flex');
+  assert.match(summaryOf(summary), /Nut 85 บ\./);
   assert.equal(message.type, 'textV2');
   assert.deepEqual(message.substitution, {
     m0: { type: 'mention', mentionee: { type: 'user', userId } },
@@ -215,7 +217,7 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
   );
   assert.equal(diagnostic.replyStatus, 200);
   assert.equal(diagnostic.mentionCount, 1);
-  assert.deepEqual(diagnostic.messageTypes, ['text', 'textV2']);
+  assert.deepEqual(diagnostic.messageTypes, ['flex', 'textV2']);
   assert.doesNotMatch(JSON.stringify(diagnostic), new RegExp(userId));
 });
 
@@ -275,7 +277,7 @@ async function billFixture(t, count = 1) {
         : {
             message: 'Invalid message for ' + ids[0],
             details: [
-              { property: 'messages[0].substitution.member0', message: 'Mention rejected' },
+              { property: 'messages[1].substitution.member0', message: 'Mention rejected' },
             ],
           },
       { status: replyStatus, headers: { 'x-line-request-id': 'request-audit-123' } },
@@ -310,10 +312,11 @@ for (const count of [1, 3, 4, 10, 12, 13, 40])
       fit = Math.min(count, 4 * 3);
     assert.equal(f.calls[0].notificationDisabled, false);
     assert(messages.length <= 5);
-    assert.equal(messages[0].type, 'text');
+    // One summary card listing everyone, then the grouped @ tags as text.
+    assert.equal(messages[0].type, 'flex');
     for (const name of f.names.slice(0, count))
-      assert(messages[0].text.includes('• ' + name + ' 17 บ.'));
-    assert(messages[0].text.length <= 5000);
+      assert(summaryOf(messages[0]).includes(name + ' 17 บ.'));
+    assert(JSON.stringify(messages[0]).length <= 50000);
     const tagged = tagMessages.flatMap(m =>
       Object.values(m.substitution).map(v => v.mentionee.userId),
     );
@@ -358,7 +361,8 @@ test('a payer owing on several bills is tagged once, and the summary shows each 
   );
   await f.hook([f.event('badbot bill')]);
   const [summary, tags] = f.calls[0].messages;
-  assert.match(summary.text, /• .* 17 บ\.[\s\S]*• .* 30 บ\./);
+  assert.equal(summary.contents.type, 'carousel');
+  assert.match(summaryOf(summary), /17 บ\.[\s\S]*30 บ\./);
   assert.deepEqual(
     Object.values(tags.substitution).map(v => v.mentionee.userId),
     f.ids,
@@ -384,7 +388,7 @@ for (const failure of [
         Object.values(messages[1].substitution).map(v => v.mentionee.userId),
         [f.ids[0]],
       );
-      assert.match(messages[0].text, /แท็กไม่สำเร็จ:/);
+      assert.match(summaryOf(messages[0]), /แท็กไม่สำเร็จ:/);
       assert(!JSON.stringify(messages).includes('@ทอม'));
       assert.notEqual(f.report().payers.find(p => p.name === f.names[1]).reason, 'mention_ready');
     },
@@ -403,7 +407,7 @@ for (const status of [400, 429, 500])
       assert.equal(report.outcome, 'rejected');
       assert.equal(report.requestId, 'request-audit-123');
       assert.match(report.error.message, /Invalid message/);
-      assert.equal(report.error.details[0].property, 'messages[0].substitution.member0');
+      assert.equal(report.error.details[0].property, 'messages[1].substitution.member0');
       assert(!JSON.stringify(report).includes(f.ids[0]));
       assert.equal(f.calls.length, 1);
       if (status === 400) {
@@ -434,8 +438,8 @@ test('very long bills list everyone, tag what fits and the quick reply tags the 
   const first = f.calls[0].messages;
   assert(first.length <= 5);
   const summary = first
-    .filter(m => m.type === 'text')
-    .map(m => m.text)
+    .filter(m => m.type === 'text' || m.type === 'flex')
+    .map(summaryOf)
     .join('\n');
   for (const name of f.names.slice(0, 101)) assert(summary.includes('• ' + name + ' 17 บ.'));
   const tagged = ms =>
@@ -1098,7 +1102,8 @@ test('an opened-bill code replies with who still owes on that court, tagging lin
   });
   await f.hook([f.event('🧾 เปิดบิล SENA #' + code)]);
   const [summary, tag] = f.calls[0].messages;
-  assert.match(summary.text, /💸 บิลค้าง · Sena[\s\S]*• Nut 85 บ\./);
+  assert.match(summary.altText, /^💸 บิลค้าง · Sena/);
+  assert.match(summaryOf(summary), /Nut 85 บ\./);
   assert.deepEqual(tag.substitution.m0.mentionee, { type: 'user', userId });
 });
 
@@ -1406,4 +1411,70 @@ test('table shortcuts with nothing to show still answer in plain text', async t 
   }
   assert.match(textOf(f.calls[0]), /ยังไม่มีผล Sena Cup/);
   assert.match(textOf(f.calls[1]), /ยังไม่มีตาราง Sena Cup/);
+});
+
+test('outstanding-bill cards list each person owing, tag failures and cash waiting; oversize falls back', () => {
+  const bill = (title, unpaid, extra = {}) => ({
+    title,
+    extra: '',
+    owed: unpaid.reduce((n, p) => n + p.amount, 0),
+    paidCount: 9,
+    total: 9 + unpaid.length + (extra.reviewing || 0),
+    unpaid,
+    reviewing: 0,
+    payUrl: 'https://liff.line.me/x?club=sena&page=pay&bill=b1',
+    ...extra,
+  });
+  const card = owedMessage(
+    [
+      bill(
+        'บิล Sena · ส. 14 พ.ย.',
+        [
+          { name: 'บอส', amount: 12000, note: '' },
+          { name: 'ปาล์ม', amount: 12000, note: 'แท็กไม่สำเร็จ: ยังไม่ผูกบัญชี LINE' },
+        ],
+        { reviewing: 1 },
+      ),
+      bill('บิล 88 · อา. 15 พ.ย.', [{ name: 'หมิว', amount: 15000, note: '' }], {
+        extra: 'บิลเพิ่มเติม',
+      }),
+    ],
+    { heading: '💸 บิลค้าง · ทุกสนาม', note: 'แสดง 3 บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด' },
+  );
+  assert.equal(
+    card.altText,
+    '💸 บิลค้าง · ทุกสนาม · Sena · ส. 14 พ.ย. ค้าง 2 คน · 88 · อา. 15 พ.ย. ค้าง 1 คน',
+  );
+  const [sena, other] = card.contents.contents;
+  assert.equal(
+    flexText(sena),
+    [
+      '💸 บิล Sena · ส. 14 พ.ย.',
+      'จ่ายแล้ว 9/12 คน',
+      'ค้าง 240 บาท',
+      'ยังไม่จ่าย 2 คน',
+      'บอส 120 บ.',
+      'ปาล์ม 120 บ.',
+      'แท็กไม่สำเร็จ: ยังไม่ผูกบัญชี LINE',
+      'รอตรวจสลิป/เงินสด 1 คน',
+      '💳 จ่าย / ดู QR',
+    ].join('\n'),
+  );
+  assert.equal(
+    sena.footer.contents[0].action.uri,
+    'https://liff.line.me/x?club=sena&page=pay&bill=b1',
+  );
+  // "Showing the oldest bills" sits on the last card only; extra bills say so.
+  assert.match(flexText(other), /บิลเพิ่มเติม · จ่ายแล้ว 9\/10 คน[\s\S]*แสดง 3 บิลเก่าสุดต่อสนาม/);
+  assert.doesNotMatch(flexText(sena), /แสดง 3 บิล/);
+  // Past 20 people, a bill lists everyone in one compact block.
+  const crowd = Array.from({ length: 60 }, (_, i) => ({ name: 'P' + i, amount: 1700, note: '' }));
+  const big = owedMessage([bill('บิล Sena · ส. 14 พ.ย.', crowd)], { heading: 'h', note: '' });
+  assert.match(flexText(big.contents), /• P0 17 บ\.\n• P1 17 บ\.[\s\S]*• P59 17 บ\./);
+  // A card LINE would refuse for size is not built; the caller sends text instead.
+  const huge = crowd.map(p => ({ ...p, name: 'ยาว'.repeat(200) + p.name }));
+  assert.equal(
+    owedMessage([bill('บิล Sena · ส. 14 พ.ย.', huge)], { heading: 'h', note: '' }),
+    null,
+  );
 });

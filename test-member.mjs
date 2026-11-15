@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import worker from './worker.js';
 import { defaultSettings } from './booking.js';
 import { billingLineMessages } from './billing.js';
+import { flexText } from './line-roster-card.js';
 const origin = 'https://sena.example',
   uid = 'U' + 'a'.repeat(32),
   other = 'U' + 'b'.repeat(32);
@@ -859,7 +860,7 @@ test('organizer mention diagnostics report the actual fallback and verify the we
     }
     if (String(url).endsWith('/message/validate/reply')) {
       const payload = JSON.parse(options.body);
-      assert(payload.messages.every(m => ['textV2', 'text'].includes(m.type)));
+      assert(payload.messages.every(m => ['textV2', 'text', 'flex'].includes(m.type)));
       return new Response('{}');
     }
     assert(String(url).endsWith('/channel/webhook/endpoint'));
@@ -918,21 +919,25 @@ test('maximum bill reminders list every payer by name, tag in groups, and stay w
   // 48 payers across 6 bills: their LINE accounts come from a single read.
   assert.equal(seen.filter(sql => /FROM member_links/.test(sql)).length, 1);
   assert(messages.length <= 5);
-  assert(messages.every(m => m.text.length <= 5000));
   const mentions = messages.filter(m => m.type === 'textV2'),
-    summaries = messages.filter(m => m.type === 'text');
-  assert.equal(messages.length, 5);
-  assert.equal(summaries.length, 2);
-  // Grouped tags (<= 3 names each) fill the three remaining slots; the rest is
-  // offered through the quick-reply button.
+    summaries = messages.filter(m => m.type === 'flex');
+  assert.deepEqual(
+    messages.map(m => m.type),
+    ['flex', 'textV2', 'textV2', 'textV2', 'textV2'],
+  );
+  // One carousel (a bubble per bill) within LINE's 50 KB, then grouped tags
+  // (<= 3 names each) in the four remaining slots; the rest via quick reply.
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].contents.contents.length, 6);
+  assert(JSON.stringify(summaries[0].contents).length < 50000);
   assert(mentions.every(m => Object.keys(m.substitution).length <= 3));
   const tagged = mentions.flatMap(m => Object.values(m.substitution).map(v => v.mentionee.userId));
   assert.equal(new Set(tagged).size, tagged.length);
-  assert.equal(tagged.length, 9);
+  assert.equal(tagged.length, 12);
   assert(tagged.every(id => ids.includes(id)));
-  assert.equal(messages.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 39 คน');
-  const billText = summaries.map(m => m.text).join('\n');
-  assert.equal((billText.match(/• /g) || []).length, 48);
+  assert.equal(messages.at(-1).quickReply.items[0].action.label, 'แท็กต่ออีก 36 คน');
+  const billText = flexText(summaries[0].contents);
+  assert.equal((billText.match(/x{96}\d+ 1,000,000 บ\./g) || []).length, 48);
 });
 
 test('personal bill links reveal only the owner; uploads enforce ownership; group mentions contain no payer tokens', async t => {
@@ -971,9 +976,12 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
   );
   const messages = await billingLineMessages(f.env, 'all', origin, 'C' + 'a'.repeat(32));
   assert.equal(messages.at(-1).type, 'textV2');
-  assert.equal(messages[0].type, 'text');
+  assert.equal(messages[0].type, 'flex');
   assert.equal(Object.values(messages.at(-1).substitution)[0].mentionee.userId, uid);
-  assert.match(messages[0].text, /https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/);
+  assert.match(
+    messages[0].contents.footer.contents[0].action.uri,
+    /^https:\/\/liff.line.me\/12345-test\?club=sena&page=pay&bill=/,
+  );
   assert(!JSON.stringify(messages).includes(mine.token));
   assert(!JSON.stringify(messages).includes(theirs.token));
   assert.equal(
