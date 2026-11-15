@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
@@ -6,6 +7,7 @@ import { defaultSettings, bangkokDate } from './booking.js';
 import { prepareMembers } from './member.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { createNotice, noticeDay } from './line-notices.js';
+import { badgeImage, rosterBubble } from './line-roster-card.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -145,10 +147,26 @@ function session(date, { names = 2, closed = false, holiday = null, capacity = 8
     })),
   };
 }
+// Flex cards read as text: vertical boxes become lines, other boxes join with spaces.
+const flexText = node => {
+  if (!node || typeof node !== 'object') return '';
+  if (node.type === 'text')
+    return node.contents ? node.contents.map(span => span.text).join('') : node.text;
+  if (node.type === 'button') return node.action.label;
+  if (node.type === 'bubble')
+    return [node.header, node.body, node.footer].map(flexText).filter(Boolean).join('\n');
+  if (node.type === 'carousel') return node.contents.map(flexText).join('\n\n');
+  if (node.type === 'box')
+    return node.contents
+      .map(flexText)
+      .filter(Boolean)
+      .join(node.layout === 'vertical' ? '\n' : ' ');
+  return '';
+};
 const textOf = call =>
   call.messages
-    .filter(m => m.type === 'text')
-    .map(m => m.text)
+    .filter(m => m.type === 'text' || m.type === 'flex')
+    .map(m => (m.type === 'text' ? m.text : flexText(m.contents)))
     .join('\n');
 
 test('signed bill webhook sends a real LINE mention object all the way to the reply API', async t => {
@@ -568,15 +586,18 @@ test('roster postback shows the nearest upcoming round for both courts and refre
   const text = textOf(f.calls[0]);
   assert.match(
     text,
-    /เสนา[\s\S]*2\/8 คน[\s\S]*1\. Nut\n2\. Bua[\s\S]*88[\s\S]*1\/8 คน[\s\S]*1\. Pete/,
+    /เสนา[\s\S]*2 \/ 8 คน[\s\S]*1 Nut 2 Bua[\s\S]*88[\s\S]*1 \/ 8 คน[\s\S]*1 Pete/,
   );
   assert.match(text, /เหลือ 6 ที่/);
-  assert.match(text, /อัปเดต ณ/);
+  assert.match(text, /อัปเดต \d\d:\d\d น\./);
   assert.doesNotMatch(text, /"lv"|gender|ownerHash|never-show-this|LINE-user-not-a-player-id/);
+  // Both courts come as one swipeable carousel.
   assert.deepEqual(
     f.calls[0].messages.map(message => message.type),
-    ['text'],
+    ['flex'],
   );
+  assert.equal(f.calls[0].messages[0].contents.type, 'carousel');
+  assert.match(f.calls[0].messages[0].altText, /^รายชื่อ Sena .* 2\/8 เหลือ 6 ที่ · รายชื่อ 88 /);
   const doc = JSON.parse(
     f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload,
   );
@@ -585,7 +606,7 @@ test('roster postback shows the nearest upcoming round for both courts and refre
     .registrations.push({ id: 'new', playerId: 'p2', seq: 10, source: 'manual' });
   f.db.prepare("UPDATE booking_clubs SET payload=? WHERE club='sena'").run(JSON.stringify(doc));
   assert.equal((await f.hook([f.event('badbot รายชื่อ')])).status, 200);
-  assert.match(textOf(f.calls[1]), /3\/8 คน[\s\S]*3\. Bomb/);
+  assert.match(textOf(f.calls[1]), /3 \/ 8 คน[\s\S]*3 Bomb/);
   assert.notEqual(f.calls[0].replyToken, f.calls[1].replyToken);
 });
 
@@ -601,7 +622,7 @@ test('roster buttons return scoped text only and old menu actions still work', a
   const all = f.calls.at(-1);
   assert.deepEqual(
     all.messages.map(message => message.type),
-    ['text'],
+    ['flex'],
   );
   assert.match(textOf(all), /📍 เสนา[\s\S]*📍 88/);
   // The all-courts reply carries free Quick Reply chips for each club.
@@ -615,7 +636,8 @@ test('roster buttons return scoped text only and old menu actions still work', a
     await post('badbot:roster:' + scope);
     const text = textOf(f.calls.at(-1));
     assert.equal(f.calls.at(-1).messages[0].quickReply, undefined);
-    assert.match(text, scope === '88' ? /1\. Pete/ : /1\. Nut/);
+    assert.equal(f.calls.at(-1).messages[0].contents.type, 'bubble');
+    assert.match(text, scope === '88' ? /1 Pete/ : /1 Nut/);
     assert.doesNotMatch(text, scope === 'sena' ? /📍 88|Pete/ : /📍 เสนา|Nut/);
     assert.equal(
       f.db.prepare('SELECT payload FROM booking_clubs WHERE club=?').get(other).payload,
@@ -690,9 +712,14 @@ test('waitlists are ordered and both venue headings survive very long rosters wi
   const call = f.calls[0],
     text = textOf(call);
   assert(call.messages.length <= 5);
-  assert(call.messages.filter(m => m.type === 'text').every(m => m.text.length <= 5000));
-  assert.match(text, /เสนา[\s\S]*สำรอง 192 คน[\s\S]*1\. Player 8[\s\S]*88/);
-  assert.match(text, /รายชื่อเพิ่มเติมดูได้บนเว็บ/);
+  // LINE caps a bubble at 30 KB and a carousel at 50 KB; altText at 400 characters.
+  const [card] = call.messages;
+  assert.equal(card.type, 'flex');
+  assert(card.altText.length <= 400);
+  assert(JSON.stringify(card.contents).length < 50000);
+  for (const bubble of card.contents.contents) assert(JSON.stringify(bubble).length < 30000);
+  assert.match(text, /เสนา[\s\S]*ปิดรับจอง[\s\S]*สำรอง · 192 คน[\s\S]*1 Player 8[\s\S]*88/);
+  assert.match(text, /… อีก 182 คน ดูได้บนเว็บ/);
 });
 
 test('ordinary chat, unrelated postbacks, private chats, standby, and unlinked groups produce no replies', async t => {
@@ -828,8 +855,9 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
   for (const [command, expected] of cases) {
     assert.equal((await f.hook([f.event('badbot ' + command)])).status, 200, command);
     const reply = f.calls.at(-1);
+    // Roster lists are Flex cards; every other shortcut stays plain text.
     assert(
-      reply.messages.every(m => m.type === 'text'),
+      reply.messages.every(m => m.type === (command.startsWith('list') ? 'flex' : 'text')),
       command,
     );
     assert.match(textOf(reply), expected, command);
@@ -873,9 +901,13 @@ test('a withdrawal code tags the promoted player for real and shows that round',
     tag.text,
     new RegExp(`^🎉 \\{m0\\}\\u200b+\\nได้สิทธิ์เล่น SENA ${noticeDay(date)} แล้ว$`),
   );
-  const roster = rest.map(m => m.text).join('\n');
-  assert.match(roster, /👥 ผู้ตี 2\/2/);
-  assert.match(roster, /2\. Bomb/);
+  assert.deepEqual(
+    rest.map(m => m.type),
+    ['flex'],
+  );
+  const roster = flexText(rest[0].contents);
+  assert.match(roster, /2 \/ 2 คน เต็ม/);
+  assert.match(roster, /2 Bomb ⬆️/);
   // The same code again (copied, or redelivered with a new id) never replies twice.
   await f.hook([f.event(text)]);
   assert.equal(f.calls.length, 1);
@@ -967,15 +999,17 @@ test('a booking code lists the nearest booked round, sums up the other days and 
   assert.equal((await f.hook([f.event('🏸 Bomb จอง SENA #' + code)])).status, 200);
   const reply = f.calls[0];
   const text = textOf(reply);
-  assert.match(text, /👥 ผู้ตี 3\/8/);
-  assert.match(text, /3\. Bomb/);
-  assert.match(
-    text,
-    new RegExp(`📅 วันอื่นที่ Bomb จอง\\n• ${noticeDay(d2)} · ตัวจริง 2/2 · สำรอง 1`),
+  assert.deepEqual(
+    reply.messages.map(m => m.type),
+    ['flex'],
   );
+  assert.match(text, /3 \/ 8 คน/);
+  assert.match(text, /3 Bomb ✨/);
+  assert.match(text, new RegExp(`📅 วันอื่นที่ Bomb จอง\\n${noticeDay(d2)} 2/2 · สำรอง 1`));
+  assert.match(reply.messages[0].altText, /· จองวันอื่นอีก 1 วัน$/);
   assert.doesNotMatch(
     text.split('📅')[0],
-    /สำรอง 1 คน/,
+    /สำรอง · 1 คน/,
     'only the nearest round is listed in full',
   );
   const items = reply.messages.at(-1).quickReply.items;
@@ -992,8 +1026,8 @@ test('a booking code lists the nearest booked round, sums up the other days and 
     }),
   ]);
   const second = textOf(f.calls[1]);
-  assert.match(second, /👥 ผู้ตี 2\/2/);
-  assert.match(second, /⏳ สำรอง 1 คน\n1\. Bomb/);
+  assert.match(second, /2 \/ 2 คน เต็ม/);
+  assert.match(second, /⏳ สำรอง · 1 คน\n1 Bomb/);
 });
 
 test('a withdrawal with nobody moving up still answers with that round', async t => {
@@ -1006,8 +1040,10 @@ test('a withdrawal with nobody moving up still answers with that round', async t
     payload: { sessionId: date, date, promotedIds: [] },
   });
   await f.hook([f.event('➖ Bomb ถอน SENA #' + code)]);
-  assert.equal(f.calls[0].messages[0].type, 'text');
-  assert.match(textOf(f.calls[0]), /👥 ผู้ตี 2\/8[\s\S]*1\. Nut\n2\. Bua/);
+  assert.equal(f.calls[0].messages.length, 1);
+  assert.equal(f.calls[0].messages[0].type, 'flex');
+  assert.match(textOf(f.calls[0]), /2 \/ 8 คน[\s\S]*1 Nut 2 Bua/);
+  assert.doesNotMatch(textOf(f.calls[0]), /⬆️/);
 });
 
 test('an opened-bill code replies with who still owes on that court, tagging linked members', async t => {
@@ -1094,4 +1130,107 @@ test('a resend-slip code tags the payer with the link; it stays quiet once they 
   save('paid');
   await f.hook([f.event('⚠️ สลิปของ Nut ใช้ไม่ได้ #' + (await code()))]);
   assert.equal(f.calls.length, 1, 'already resent, nothing to chase');
+});
+
+test('roster cards pick the pre-rendered badge picture for each job level', () => {
+  const o = 'https://x.test';
+  assert.equal(badgeImage(o, null), o + '/badges/blank.png');
+  assert.equal(badgeImage(o, { line: 'red', plays: 4 }), o + '/badges/novice.png');
+  assert.equal(badgeImage(o, { line: 'red', plays: 5 }), o + '/badges/red-1.png');
+  assert.equal(badgeImage(o, { line: 'pink', plays: 15 }), o + '/badges/pink-2.png');
+  assert.equal(badgeImage(o, { line: 'blue', plays: 30 }), o + '/badges/blue-3-0.png');
+  assert.equal(badgeImage(o, { line: 'blue', plays: 95 }), o + '/badges/blue-3-2.png');
+  assert.equal(badgeImage(o, { line: 'blue', plays: 999 }), o + '/badges/blue-3-5.png');
+  assert.equal(badgeImage(o, { line: 'purple', plays: 50 }), o + '/badges/novice.png');
+  // Every picture a card can point at exists in public/ (scripts/render-badges.cjs).
+  const plays = [0, 5, 15, ...[0, 1, 2, 3, 4, 5].map(s => 30 + 30 * s)];
+  for (const line of globalThis.SenaJobRules.LINES)
+    for (const n of plays) {
+      const file = badgeImage('public', { line, plays: n });
+      assert(existsSync(new URL('./' + file, import.meta.url)), file);
+    }
+  assert(existsSync(new URL('./public/badges/blank.png', import.meta.url)));
+});
+
+test('roster cards show badges, the 💩 award, champion crowns, guests and who just joined', () => {
+  const data = {
+    roster: [
+      { id: 'a', name: 'Champ', award: '🥇', badge: { line: 'red', plays: 95, titles: 3 } },
+      { id: 'b', name: 'Last', award: '💩', badge: { line: 'green', plays: 6, titles: 1 } },
+      { id: 'c', name: 'New', award: '', badge: { line: 'blue', plays: 0, titles: 0 } },
+    ],
+  };
+  const session = {
+    date: '2026-11-21',
+    start: '19:00',
+    end: '22:00',
+    capacity: 4,
+    confirmedCount: 4,
+    waitlistCount: 0,
+    courtNumbers: '3, 4',
+    registrations: [
+      { playerId: 'a', status: 'confirmed', position: 1 },
+      { playerId: 'b', status: 'confirmed', position: 2 },
+      { playerId: 'g1', status: 'confirmed', position: 3, guest: { name: 'Pal', hostId: 'a' } },
+      { playerId: 'c', status: 'confirmed', position: 4 },
+    ],
+  };
+  const bubble = rosterBubble(data, 'sena', session, {
+    origin: 'https://x.test',
+    bookUrl: 'https://x.test/court#booking',
+    updated: '20:15',
+    highlight: new Map([['c', '✨']]),
+  });
+  const text = flexText(bubble);
+  assert.match(text, /^📍 เสนา · ส\. 21 พ\.ย\.\n19:00–22:00 น\. · คอร์ต 3, 4/);
+  assert.match(text, /4 \/ 4 คน เต็ม/);
+  // 🥇 gives way to the badge crown (as on the booking page); 💩 stays.
+  assert.match(text, /1 Champ 👑3 2 💩 Last 👑\n3 Pal \(แขกของ Champ\) 4 New ✨/);
+  assert.doesNotMatch(text, /🥇/);
+  const icons = JSON.stringify(bubble).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g);
+  assert.deepEqual(icons, [
+    'https://x.test/badges/red-3-2.png',
+    'https://x.test/badges/green-1.png',
+    'https://x.test/badges/blank.png',
+    'https://x.test/badges/novice.png',
+  ]);
+  assert.equal(bubble.footer.contents[0].action.uri, 'https://x.test/court#booking');
+});
+
+test('a roster card LINE rejects is resent once as plain text; an expired token is not', async t => {
+  const f = fixture(t),
+    date = future(1);
+  f.seed('sena', [session(date)]);
+  const bodies = [];
+  let reject = true;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    if (reject && body.messages.some(m => m.type === 'flex'))
+      return Response.json(
+        {
+          message: 'A message (messages[0]) in the request body is invalid',
+          details: [{ property: 'messages[0].contents.body', message: 'invalid' }],
+        },
+        { status: 400 },
+      );
+    return Response.json({});
+  });
+  assert.equal((await f.hook([f.event('badbot รายชื่อ')])).status, 200);
+  assert.equal(bodies.length, 2);
+  const [fallback] = bodies[1].messages;
+  assert.equal(fallback.type, 'text');
+  assert.match(fallback.text, /📍 เสนา[\s\S]*1 Nut 2 Bua[\s\S]*━━━━━━━━━━[\s\S]*📍 88/);
+  assert.deepEqual(
+    fallback.quickReply.items.map(i => i.action.data),
+    ['badbot:roster:sena', 'badbot:roster:88'],
+  );
+  // A spent reply token (no validation details) is never retried.
+  reject = false;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return Response.json({ message: 'Invalid reply token' }, { status: 400 });
+  });
+  await f.hook([f.event('badbot รายชื่อ')]);
+  assert.equal(bodies.length, 3);
 });

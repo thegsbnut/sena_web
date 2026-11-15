@@ -18,6 +18,14 @@ import {
 } from './billing.js';
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
+import {
+  emptyBubble,
+  flexFallback,
+  flexMessage,
+  otherDays,
+  rosterAlt,
+  rosterBubble,
+} from './line-roster-card.js';
 
 const defaultBookingUrl = 'https://sena-web.thegsbnut.workers.dev/court#booking';
 const clubs = CLUB_IDS;
@@ -239,40 +247,35 @@ async function bookingData(env, club) {
 }
 
 // The nearest upcoming round, or the given round (`sessionId`) when there is one.
-async function rosterSection(env, club, now, { data, sessionId } = {}) {
-  const heading = '📍 ' + clubOf(club).heading;
+function pickRound(data, now, sessionId) {
+  if (sessionId) return data.sessions.find(s => s.id === sessionId) || null;
+  if (!data.settings.enabled) return null;
+  return (
+    data.sessions
+      .filter(s => !s.skipped && Date.parse(s.date + 'T' + s.start + ':00+07:00') > +now)
+      .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start))[0] || null
+  );
+}
+
+// One roster card for a club, with its altText line.
+async function rosterCard(env, club, now, { data, sessionId, highlight, extra } = {}) {
+  const opts = {
+    origin: new URL(courtUrl(env, club)).origin,
+    bookUrl: bookingUrl(env, club),
+    updated: thaiTime.format(now),
+    highlight,
+    extra,
+  };
   data ??= await bookingData(env, club);
-  if (!data) return heading + '\nอ่านคิวไม่สำเร็จ กรุณากดดูข้อมูลล่าสุดอีกครั้ง';
-  const session = sessionId
-    ? data.sessions.find(s => s.id === sessionId)
-    : data.settings.enabled &&
-      data.sessions
-        .filter(s => !s.skipped && Date.parse(s.date + 'T' + s.start + ':00+07:00') > +now)
-        .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start))[0];
-  if (!session) return heading + '\nยังไม่มีรอบเปิดรับ';
-  const name = displayNames(data, session);
-  const numbered = status =>
-    session.registrations
-      .filter(r => r.status === status)
-      .sort((a, b) => a.position - b.position)
-      .map((r, i) => `${i + 1}. ${name(r.playerId)}`);
-  const confirmed = numbered('confirmed'),
-    waiting = numbered('waitlist');
-  const vacancy = session.closed
-    ? 'ปิดรับจอง'
-    : session.confirmedCount >= session.capacity
-      ? 'เต็ม'
-      : `เหลือ ${session.capacity - session.confirmedCount} ที่`;
-  return boundedSection([
-    heading + (session.isCup ? ' · CUP' : ''),
-    thaiDay.format(new Date(session.date + 'T12:00:00+07:00')) +
-      ` · ${session.start}–${session.end} น.${session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : ''}`,
-    `👥 ผู้ตี ${session.confirmedCount}/${session.capacity} คน · ${vacancy}`,
-    ...(confirmed.length ? confirmed : ['ยังไม่มีผู้ลงชื่อ']),
-    '',
-    waiting.length ? `⏳ สำรอง ${session.waitlistCount} คน` : '⏳ สำรอง: ไม่มี',
-    ...waiting,
-  ]);
+  if (!data)
+    return {
+      bubble: emptyBubble(club, 'อ่านคิวไม่สำเร็จ กรุณากดดูข้อมูลล่าสุดอีกครั้ง', opts),
+      alt: 'รายชื่อ ' + clubOf(club).label + ' · อ่านคิวไม่สำเร็จ',
+    };
+  const session = pickRound(data, now, sessionId);
+  if (!session)
+    return { bubble: emptyBubble(club, 'ยังไม่มีรอบเปิดรับ', opts), alt: rosterAlt(club) };
+  return { bubble: rosterBubble(data, club, session, opts), alt: rosterAlt(club, session) };
 }
 
 async function shortcutText(action, env, urls) {
@@ -465,36 +468,37 @@ async function withdrawMessages(env, group, club, { sessionId, date, promotedIds
     if (plain.length)
       messages.push({ type: 'text', text: '🎉 ' + plain.join(', ') + ' ' + suffix });
   }
-  messages.push(...textMessages(await rosterSection(env, club, now, { data, sessionId })));
-  return messages.slice(0, 5);
+  const highlight = new Map((round ? promotedIds : []).map(id => [id, '⬆️']));
+  const card = await rosterCard(env, club, now, { data, sessionId, highlight });
+  return [...messages.slice(0, 4), flexMessage([card.bubble], card.alt)];
 }
 
-// Reply to a booking notice: the nearest booked round in full, one line for each
-// other booked day, and a free quick-reply button per day for its full list.
+// Reply to a booking notice: the nearest booked round as a card (the booker
+// marked ✨), a line for each other booked day, and a free quick-reply button
+// per day for its full list.
 async function bookMessages(env, club, { playerId, sessionIds }, now) {
   const data = await bookingData(env, club);
   const rounds = (data?.sessions ?? [])
     .filter(s => sessionIds.includes(s.id) && !s.started)
     .sort((a, b) => (a.date + 'T' + a.start).localeCompare(b.date + 'T' + b.start));
-  if (!rounds.length) return textMessages(await rosterSection(env, club, now, { data }));
-  const [nearest, ...others] = rounds;
-  let text = await rosterSection(env, club, now, { data, sessionId: nearest.id });
-  if (others.length) {
-    const name = clean(data.roster.find(p => p.id === playerId)?.name || 'ผู้เล่น');
-    text +=
-      '\n\n📅 วันอื่นที่ ' +
-      name +
-      ' จอง\n' +
-      others
-        .map(
-          s =>
-            `• ${noticeDay(s.date)} · ตัวจริง ${s.confirmedCount}/${s.capacity} · สำรอง ${s.waitlistCount}`,
-        )
-        .join('\n');
+  if (!rounds.length) {
+    const card = await rosterCard(env, club, now, { data });
+    return [flexMessage([card.bubble], card.alt)];
   }
-  const messages = textMessages(text);
+  const [nearest, ...others] = rounds;
+  const name = clean(data.roster.find(p => p.id === playerId)?.name || 'ผู้เล่น');
+  const card = await rosterCard(env, club, now, {
+    data,
+    sessionId: nearest.id,
+    highlight: new Map([[playerId, '✨']]),
+    extra: others.length ? otherDays(name, others) : [],
+  });
+  const message = flexMessage(
+    [card.bubble],
+    card.alt + (others.length ? ' · จองวันอื่นอีก ' + others.length + ' วัน' : ''),
+  );
   if (others.length)
-    messages.at(-1).quickReply = {
+    message.quickReply = {
       items: others.slice(0, 13).map(s => ({
         type: 'action',
         action: {
@@ -505,7 +509,7 @@ async function bookMessages(env, club, { playerId, sessionIds }, now) {
         },
       })),
     };
-  return messages;
+  return [message];
 }
 
 async function eventKey(event) {
@@ -585,21 +589,17 @@ export async function replyToGroupCommand(event, env) {
         messages.push(...textMessages(text));
       } else return;
     } else if (action.kind === 'round') {
-      messages.push(
-        ...textMessages(
-          await rosterSection(env, action.club, now, { sessionId: action.sessionId }),
-        ),
-      );
+      const card = await rosterCard(env, action.club, now, { sessionId: action.sessionId });
+      messages.push(flexMessage([card.bubble], card.alt));
     } else if (action.kind === 'roster') {
       const selected = action.scope === 'all' ? clubs : [action.scope];
-      const sections = await Promise.all(selected.map(club => rosterSection(env, club, now)));
-      const text =
-        '🏸 รอบตีที่กำลังจะถึง\n\n' +
-        sections.join('\n\n━━━━━━━━━━\n\n') +
-        '\n\nอัปเดต ณ ' +
-        thaiTime.format(now) +
-        ' น.';
-      messages.push(...textMessages(text));
+      const cards = await Promise.all(selected.map(club => rosterCard(env, club, now)));
+      messages.push(
+        flexMessage(
+          cards.map(c => c.bubble),
+          cards.map(c => c.alt).join(' · '),
+        ),
+      );
       if (action.scope === 'all')
         messages.at(-1).quickReply = {
           items: clubs.map(club => ({
@@ -639,31 +639,51 @@ export async function replyToGroupCommand(event, env) {
       messages.push(...textMessages(await shortcutText(action, env, urls)));
     }
     let response, evidence;
-    try {
-      response = await fetch('https://api.line.me/v2/bot/message/reply', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + env.LINE_CHANNEL_ACCESS_TOKEN,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          replyToken: event.replyToken,
-          messages,
-          notificationDisabled: false,
-        }),
-        signal: AbortSignal.timeout(10000),
+    const send = async body => {
+      try {
+        response = await fetch('https://api.line.me/v2/bot/message/reply', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + env.LINE_CHANNEL_ACCESS_TOKEN,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            replyToken: event.replyToken,
+            messages: body,
+            notificationDisabled: false,
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
+        evidence = await lineReplyEvidence(response, body);
+      } catch (error) {
+        logError('line-reply:send', error, { command: action.kind });
+        response = undefined;
+        evidence = {
+          replyStatus: 0,
+          outcome: 'network_error',
+          error: { message: 'LINE reply timed out or network failed' },
+          payload: redactedMentionPayload(body),
+          payloadRedacted: true,
+          renderingConfirmed: false,
+        };
+      }
+    };
+    await send(messages);
+    // A Flex card LINE refuses must not leave the group without an answer: when
+    // LINE points at a flex message (validation details), send the same reply
+    // once more with the cards flattened to text. An expired token has no details.
+    const flexAt = new Set(
+      messages.flatMap((m, i) => (m.type === 'flex' ? ['messages[' + i + ']'] : [])),
+    );
+    if (
+      response?.status === 400 &&
+      evidence.error?.details?.some(d => flexAt.has(d.property.split('.')[0]))
+    ) {
+      logError('line-reply:flex-rejected', evidence.error?.message, {
+        command: action.kind,
+        details: evidence.error?.details,
       });
-      evidence = await lineReplyEvidence(response, messages);
-    } catch (error) {
-      logError('line-reply:send', error, { command: action.kind });
-      evidence = {
-        replyStatus: 0,
-        outcome: 'network_error',
-        error: { message: 'LINE reply timed out or network failed' },
-        payload: redactedMentionPayload(messages),
-        payloadRedacted: true,
-        renderingConfirmed: false,
-      };
+      await send(messages.map(flexFallback));
     }
     if (action.kind === 'bill')
       try {
