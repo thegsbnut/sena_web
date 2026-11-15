@@ -9,6 +9,7 @@ import { groupMentionTarget } from './line-mentions.js';
 import { createNotice, noticeDay } from './line-notices.js';
 import { badgeImage, rosterBubble } from './line-roster-card.js';
 import { paidBubble } from './line-bill-card.js';
+import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-cards.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -526,11 +527,9 @@ test('enabled member mode sends both booking buttons through the configured LIFF
     assert.equal(url.searchParams.get('page'), 'book');
   }
   await f.hook([f.event('badbot leaderboard sena')]);
-  assert.match(
-    textOf(f.calls.at(-1)),
-    /https:\/\/sena-web\.thegsbnut\.workers\.dev\/court#leaderboard/,
-  );
-  assert.doesNotMatch(textOf(f.calls.at(-1)), /liff\.line\.me/);
+  const link = JSON.stringify(f.calls.at(-1).messages);
+  assert.match(link, /https:\/\/sena-web\.thegsbnut\.workers\.dev\/court#leaderboard/);
+  assert.doesNotMatch(link, /liff\.line\.me/);
 });
 
 const menuButtons = m => {
@@ -837,17 +836,14 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
     ['list', /📍 เสนา[\s\S]*📍 88/],
     ['list 88', /📍 88/],
     ['list sena', /📍 เสนา/],
-    ['matchup sena', /เกม 1 · Sena \d/],
-    ['matchup 88cup', /88 One \/ 88 Two vs 88 Three \/ 88 Four/],
-    ['matchup senacup', /Sena One \/ Sena Two vs Sena Three \/ Sena Four/],
-    ['senacup', /🥇 1\. Sena One \/ Sena Two · ชนะ 1\/1/],
-    ['88cup', /🥇 1\. 88 One \/ 88 Two · ชนะ 1\/1/],
-    [
-      'leaderboard',
-      /Sena Leaderboard[\s\S]*5\.[\s\S]*\/court#leaderboard[\s\S]*88 Leaderboard[\s\S]*88 One[\s\S]*\/court\?club=88#leaderboard/,
-    ],
-    ['leaderboard sena', /Sena Leaderboard[\s\S]*5\.[\s\S]*\/court#leaderboard/],
-    ['leaderboard 88', /88 Leaderboard[\s\S]*88 One[\s\S]*\/court\?club=88#leaderboard/],
+    ['matchup sena', /เกม 1 Sena \d/],
+    ['matchup 88cup', /เกม 1 88 One \/ 88 Two vs 88 Three \/ 88 Four/],
+    ['matchup senacup', /เกม 1 Sena One \/ Sena Two vs Sena Three \/ Sena Four/],
+    ['senacup', /🥇\nSena One \/ Sena Two\nชนะ 1\/1 · แต้ม 21–14/],
+    ['88cup', /🥇\n88 One \/ 88 Two\nชนะ 1\/1 · แต้ม 21–14/],
+    ['leaderboard', /Sena Leaderboard[\s\S]*5\. [\s\S]*88 Leaderboard[\s\S]*88 One/],
+    ['leaderboard sena', /Sena Leaderboard[\s\S]*5\. /],
+    ['leaderboard 88', /88 Leaderboard[\s\S]*88 One/],
     [
       'help',
       /badbot leaderboard ·[^\n]+\nbadbot leaderboard sena ·[^\n]+\nbadbot leaderboard 88 ·/,
@@ -856,13 +852,26 @@ test('English shortcuts route bookings, lists, matchups, completed Cup results a
   for (const [command, expected] of cases) {
     assert.equal((await f.hook([f.event('badbot ' + command)])).status, 200, command);
     const reply = f.calls.at(-1);
-    // Roster lists are Flex cards; every other shortcut stays plain text.
+    // Roster lists and tables are Flex cards; the rest stay plain text.
     assert(
-      reply.messages.every(m => m.type === (command.startsWith('list') ? 'flex' : 'text')),
+      reply.messages.every(
+        m =>
+          m.type === (/^(list|matchup|senacup|88cup|leaderboard)/.test(command) ? 'flex' : 'text'),
+      ),
       command,
     );
     assert.match(textOf(reply), expected, command);
     assert.doesNotMatch(textOf(reply), /\bLv\b|ownerHash/);
+    // The web links live in each card's button.
+    if (command.startsWith('leaderboard')) {
+      const links = JSON.stringify(reply.messages);
+      assert.equal(
+        command === 'leaderboard 88' || command === 'leaderboard',
+        links.includes('/court?club=88#leaderboard'),
+        command,
+      );
+      assert.equal(command !== 'leaderboard 88', links.includes('/court#leaderboard'), command);
+    }
     if (command === 'leaderboard sena') assert.doesNotMatch(textOf(reply), /88 Leaderboard|88 One/);
     if (command === 'leaderboard 88')
       assert.doesNotMatch(textOf(reply), /Sena Leaderboard|Sena One/);
@@ -1305,4 +1314,91 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
   const big = JSON.stringify(paidBubble(many, roster, 'https://x.test'));
   assert(big.length < 30000);
   assert.match(flexText(JSON.parse(big)), /… อีก 161 คน/);
+});
+
+test('table cards: schedule cap and rest marks, podium order, shared first place', () => {
+  const games = Array.from({ length: 12 }, (_, i) => ({
+    round: i + 1,
+    left: ['A' + i, 'B' + i],
+    right: ['C' + i, 'D' + i],
+    rest: i === 2,
+  }));
+  const schedule = gamesBubble({ club: 'sena', title: 'T', games, url: 'https://x.test/court' });
+  const text = flexText(schedule);
+  assert.match(text, /เกม 6 A5 \/ B5 vs C5 \/ D5\n… อีก 6 เกม\nแถบเหลือง = เว้นพักก่อนเกมนี้/);
+  assert.doesNotMatch(text, /เกม 7/);
+  assert.equal(schedule.footer.contents[0].action.uri, 'https://x.test/court');
+  assert(
+    JSON.stringify(
+      gamesBubble({
+        club: '88',
+        title: 'T',
+        games: games.map(g => ({ ...g, left: ['ยาว'.repeat(40)] })),
+      }),
+    ).length < 30000,
+  );
+
+  const row = (name, w) => ({ name, w, played: 10 });
+  const board = leaderboardBubble({
+    club: 'sena',
+    rows: ['ต้น', 'แนน', 'เจ', 'โอ๊ต', 'มิ้นท์', 'ไม่โชว์'].map((n, i) => row(n, 9 - i)),
+    url: 'https://x.test/court#leaderboard',
+  });
+  // Podium blocks stand 2nd · 1st · 3rd with 1st the tallest; 4th and 5th are rows.
+  const [podium] = board.body.contents;
+  assert.deepEqual(
+    podium.contents.map(b => b.contents[1].text),
+    ['แนน', 'ต้น', 'เจ'],
+  );
+  assert.deepEqual(
+    podium.contents.map(b => b.height),
+    ['104px', '118px', '96px'],
+  );
+  assert.match(
+    flexText(board),
+    /🥈\nแนน\nชนะ 8\/10 🥇\nต้น\nชนะ 9\/10 🥉\nเจ\nชนะ 7\/10\n4\. โอ๊ต ชนะ 6\/10\n5\. มิ้นท์ ชนะ 5\/10\nดูอันดับทั้งหมด$/,
+  );
+  assert.doesNotMatch(flexText(board), /ไม่โชว์/);
+  // Fewer than three players: plain rows, no podium.
+  const small = leaderboardBubble({ club: '88', rows: [row('หนึ่ง', 3), row('สอง', 2)] });
+  assert.equal(flexText(small).includes('🥇'), false);
+  assert.match(flexText(small), /1\. หนึ่ง ชนะ 3\/10\n2\. สอง ชนะ 2\/10/);
+
+  const cup = cupResultBubble({
+    club: 'sena',
+    title: 'Sena Cup #12',
+    date: 'ส. 7 พ.ย.',
+    rows: [
+      { rank: 1, name: 'A / B', w: 3, played: 4, pf: 80, pa: 60 },
+      { rank: 1, name: 'C / D', w: 3, played: 4, pf: 80, pa: 60 },
+      { rank: 3, name: 'E / F', w: 1, played: 4, pf: 50, pa: 70 },
+    ],
+  });
+  assert.equal(
+    flexText(cup),
+    [
+      '🏆 Sena Cup #12',
+      'ส. 7 พ.ย.',
+      '🥇',
+      'A / B',
+      'ชนะ 3/4 · แต้ม 80–60',
+      'C / D',
+      'ชนะ 3/4 · แต้ม 80–60',
+      '3. E / F 1/4 · 50–70',
+    ].join('\n'),
+  );
+});
+
+test('table shortcuts with nothing to show still answer in plain text', async t => {
+  const f = fixture(t);
+  for (const command of ['senacup', 'matchup senacup', 'matchup sena']) {
+    await f.hook([f.event('badbot ' + command)]);
+    assert.deepEqual(
+      f.calls.at(-1).messages.map(m => m.type),
+      ['text'],
+      command,
+    );
+  }
+  assert.match(textOf(f.calls[0]), /ยังไม่มีผล Sena Cup/);
+  assert.match(textOf(f.calls[1]), /ยังไม่มีตาราง Sena Cup/);
 });
