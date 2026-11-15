@@ -36,25 +36,16 @@ const MAX_ROWS = 40;
 // Past this many people the chick row becomes a progress bar.
 const MAX_CHICKS = 12;
 
-// What น้องขุนเงิน says. One line is picked by bill id, so a repost of the same
-// bill shows the same line. She never names anyone; names stay in the list.
+// What น้องขุนเงิน says: one fixed line per situation, kept short enough to stay on
+// one line in the speech box (12px bold ≈ 266px of room; see `speech`). She never
+// names anyone; names stay in the list.
 export const KHUN_NGERN_LINES = {
-  open: [
-    'พี่ๆ ขา~ น้องขุนเงินเปิดบิลแล้วน้า 💚',
-    'ตีกันเหนื่อยแล้ว มาเคลียร์ค่าคอร์ตกันน้า 🏸',
-    'บิลมาแล้วค่า~ โอนตามยอดของตัวเองได้เลยน้า 💸',
-  ],
-  remind: ['เหลืออีก {n} คนเองน้า ขุนเงินรออยู่ค่า 🥺', 'อีกนิดเดียวก็ครบแล้ว~ สู้ๆ น้า พี่ๆ 💪'],
-  last: ['เหลือพี่คนสุดท้ายแล้วน้า~ ขุนเงินรอพี่อยู่ค่า 🥺💚'],
-  full: ['ครบแล้วค่า~ ขอบคุณพี่ๆ ทุกคนน้า 🎉💚', 'เก็บครบทุกบาทแล้ว! เจอกันคอร์ตหน้านะคะ 🏸'],
-  short: ['ยังขาดอีก {n} คนน้า~ ขุนเงินรอพี่ๆ อยู่นะคะ 🥺'],
+  open: 'เปิดบิลแล้วค่าาา ใครพร้อมโอนยกมือขึ้นนน 🙋‍♀️✨',
+  // Reminders and a summary that is not yet complete.
+  remind: 'แงงง ขุนเงินแอบเหงา บิลยังรอคนโอนอยู่น้าาา',
+  // ≈257-260px at 11px, so it needs the 11px size to stay on one line.
+  full: 'ได้รับยอดครบถ้วนแล้วค่า ไว้มาเล่นกันใหม่อีกน้า 🥰🎉',
 };
-function say(kind, seed, n) {
-  const list = KHUN_NGERN_LINES[kind];
-  let h = 0;
-  for (const c of String(seed ?? '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return list[h % list.length].replace('{n}', n);
-}
 
 const money = cents => (cents / 100).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const clean = value =>
@@ -76,25 +67,39 @@ const mascot = (origin, name) => origin + '/mascot/' + name + '?v=' + MASCOT_VER
 const initial = name =>
   (Array.from(clean(name)).find(c => !/[เแโใไ\s]/.test(c)) || '?').toUpperCase();
 
+// 20:11 (was 20:13): the whole character on a pale sky, shorter than before.
 const hero = url => ({
   type: 'image',
   url,
   size: 'full',
-  aspectRatio: '20:13',
+  aspectRatio: '20:11',
   aspectMode: 'cover',
 });
-const speech = (line, t) =>
+// Centered, no name tag above it: the mascot and her coin already say who is talking.
+// 12px keeps open/remind on one line; the longer "full" line takes 11px. Side padding is
+// small so the text has ≈270px (box 276px minus border).
+const speech = (line, t, size = '12px') =>
   vbox(
     [
-      text('💚 น้องขุนเงิน', { size: 'xxs', weight: 'bold', color: t.main }),
-      text(line, { size: 'sm', weight: 'bold', color: t.deep, wrap: true, margin: 'xs' }),
+      {
+        type: 'text',
+        text: line,
+        size,
+        weight: 'bold',
+        color: t.deep,
+        wrap: true,
+        align: 'center',
+      },
     ],
     {
       backgroundColor: '#FFFFFF',
       cornerRadius: 'xl',
       borderWidth: '1px',
       borderColor: t.line,
-      paddingAll: 'md',
+      paddingTop: 'md',
+      paddingBottom: 'md',
+      paddingStart: 'xs',
+      paddingEnd: 'xs',
     },
   );
 const pill = (label, color, background, size = 'xxs') =>
@@ -261,15 +266,12 @@ export function paidBubble(info, roster, origin) {
   return {
     type: 'bubble',
     size: 'mega',
-    hero: hero(mascot(origin, info.full ? 'done.jpg' : 'remind.jpg')),
+    hero: hero(mascot(origin, info.full ? 'hero-done.jpg' : 'hero-remind.jpg')),
     body: vbox(
       [
-        speech(info.full ? say('full', info.id) : say('short', info.id, short), t),
+        info.full ? speech(KHUN_NGERN_LINES.full, t, '11px') : speech(KHUN_NGERN_LINES.remind, t),
         priceTag(
-          (info.full ? '✅ บิล ' : '💸 บิล ') +
-            info.label +
-            (info.full ? ' จ่ายครบแล้ว' : '') +
-            ways.map(w => ' · ' + w).join(''),
+          (info.full ? '✅ บิล ' : '💸 บิล ') + info.label + ways.map(w => ' · ' + w).join(''),
           'ได้รับแล้ว',
           info.paidSum,
           info.full
@@ -392,15 +394,11 @@ export function owedBubble(b, note, origin, compact = false) {
   const t = theme(b.club);
   const left = b.unpaid.reduce((n, p) => n + (p.people || 1), 0);
   const fresh = b.paidCount === 0;
-  const line = fresh
-    ? say('open', b.id)
-    : left === 1
-      ? say('last', b.id)
-      : say('remind', b.id, left);
+  const line = fresh ? KHUN_NGERN_LINES.open : KHUN_NGERN_LINES.remind;
   return {
     type: 'bubble',
     size: 'mega',
-    hero: hero(mascot(origin, fresh ? 'open.jpg' : 'remind.jpg')),
+    hero: hero(mascot(origin, fresh ? 'hero-open.jpg' : 'hero-remind.jpg')),
     body: vbox(
       [
         speech(line, t),

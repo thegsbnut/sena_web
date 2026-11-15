@@ -1041,9 +1041,8 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
   assert.equal(
     textOf(f.calls[0]),
     [
-      '💚 น้องขุนเงิน',
-      'ครบแล้วค่า~ ขอบคุณพี่ๆ ทุกคนน้า 🎉💚',
-      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบแล้ว · 📲 โอน 1 · 💵 เงินสด 1',
+      'ได้รับยอดครบถ้วนแล้วค่า ไว้มาเล่นกันใหม่อีกน้า 🥰🎉',
+      '✅ บิล SENA ส. 14 พ.ย. · 📲 โอน 1 · 💵 เงินสด 1',
       'ได้รับแล้ว',
       '฿175 ครบแล้ว ✓',
       'จ่ายแล้ว 3/3 คน', // Nut paid for a guest too: three people, two bill lines
@@ -1085,7 +1084,7 @@ test("notice codes answer in any linked group (not only their club's), and survi
   f.status(200);
   assert.equal((await f.hook([f.event('x #' + other)])).status, 200);
   assert.equal(f.calls.length, 2);
-  assert.match(textOf(f.calls[1]), /✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบแล้ว[\s\S]*จ่ายแล้ว 1\/1 คน/);
+  assert.match(textOf(f.calls[1]), /✅ บิล 88 ส\. 14 พ\.ย\.[\s\S]*จ่ายแล้ว 1\/1 คน/);
   await f.hook([f.event('ordinary chat #zzzzz')]);
   assert.equal(f.calls.length, 2);
 });
@@ -1385,7 +1384,7 @@ test('a summary card LINE rejects with its real error shape is resent as plain t
   assert.equal((await f.hook([f.event('💵 Bua จ่ายบิล … #' + code)])).status, 200);
   assert.equal(bodies.length, 2);
   assert.equal(bodies[1].messages[0].type, 'text');
-  assert.match(bodies[1].messages[0].text, /จ่ายครบ[\s\S]*Bua/);
+  assert.match(bodies[1].messages[0].text, /ได้รับยอดครบถ้วน[\s\S]*Bua/);
 });
 
 test('bill summary cards show each person with badge, latest 🥇/💩, amount and how they paid', () => {
@@ -1422,8 +1421,7 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
   assert.equal(
     flexText(bubble),
     [
-      '💚 น้องขุนเงิน',
-      'ยังขาดอีก 1 คนน้า~ ขุนเงินรอพี่ๆ อยู่นะคะ 🥺',
+      'แงงง ขุนเงินแอบเหงา บิลยังรอคนโอนอยู่น้าาา',
       '💸 บิล SENA ส. 14 พ.ย. · 📲 โอน 2 · 💵 เงินสด 1',
       'ได้รับแล้ว',
       '฿480 ขาด 1 คน',
@@ -1438,13 +1436,13 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
     ].join('\n'),
   );
   // Not paid in full: the "pleading" mascot and a pink price tag.
-  assert.equal(bubble.hero.url, 'https://x.test/mascot/remind.jpg?v=1');
+  assert.equal(bubble.hero.url, 'https://x.test/mascot/hero-remind.jpg?v=1');
   const tag = b => b.body.contents[1];
   assert.equal(tag(bubble).background.endColor, '#E25563');
   const full = { ...info, full: true, paid: [...info.paid, ...info.owing], owing: [] };
   assert.equal(
     paidBubble(full, roster, 'https://x.test').hero.url,
-    'https://x.test/mascot/done.jpg?v=1',
+    'https://x.test/mascot/hero-done.jpg?v=1',
   );
   // Paid in full the tag fades between two shades of the club's colour.
   assert.deepEqual(tag(paidBubble(full, roster, 'https://x.test')).background, {
@@ -1617,8 +1615,7 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   assert.equal(
     flexText(sena),
     [
-      '💚 น้องขุนเงิน',
-      'เหลืออีก 2 คนเองน้า ขุนเงินรออยู่ค่า 🥺', // some paid already: a reminder line
+      'แงงง ขุนเงินแอบเหงา บิลยังรอคนโอนอยู่น้าาา', // some paid already: a reminder line
       '🧾 บิล Sena · ส. 14 พ.ย.',
       'ยอดค้างทั้งหมด',
       '฿240',
@@ -1653,9 +1650,9 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
     ],
     { heading: 'h', note: '', origin: 'https://x.test' },
   ).contents;
-  assert.equal(fresh.hero.url, 'https://x.test/mascot/open.jpg?v=1');
-  assert.match(flexText(fresh), /เปิดบิล|เคลียร์ค่าคอร์ต|บิลมาแล้ว/);
-  assert.match(sena.hero.url, /\/mascot\/remind\.jpg\?v=1$/);
+  assert.equal(fresh.hero.url, 'https://x.test/mascot/hero-open.jpg?v=1');
+  assert.match(flexText(fresh), /เปิดบิลแล้วค่าาา ใครพร้อมโอนยกมือขึ้นนน/);
+  assert.match(sena.hero.url, /\/mascot\/hero-remind\.jpg\?v=1$/);
   // Players show their job badge and the latest Cup's 🥇; guests keep a round initial.
   const badged = owedMessage(
     [
