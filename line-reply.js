@@ -18,6 +18,7 @@ import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-ca
 import {
   emptyBubble,
   flexFallback,
+  clubHeaderStyle,
   flexMessage,
   otherDays,
   rosterAlt,
@@ -154,7 +155,7 @@ function menu(urls) {
         type: 'box',
         layout: 'vertical',
         spacing: 'xs',
-        backgroundColor: '#168B42',
+        ...clubHeaderStyle('sena'),
         paddingAll: 'lg',
         contents: [
           {
