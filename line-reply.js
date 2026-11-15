@@ -108,6 +108,9 @@ function bookingUrl(env, club = DEFAULT_CLUB) {
   if (memberMode(env) && env.LINE_LIFF_ID) return liffUrl(env, club);
   return courtUrl(env, club);
 }
+// Where the web app (and its public/ images) lives. Not the booking link: with
+// LINE login that is liff.line.me, which does not serve our mascot or badges.
+const siteOrigin = env => new URL(courtUrl(env)).origin;
 function courtUrl(env, club = DEFAULT_CLUB) {
   const url = new URL(env.LINE_BOOKING_URL || defaultBookingUrl);
   if (url.protocol !== 'https:' || url.username || url.password) throw Error('Invalid booking URL');
@@ -681,7 +684,7 @@ export async function replyToGroupCommand(event, env) {
         const owed = await billingLineMessages(
           env,
           notice.club,
-          new URL(urls.sena).origin,
+          siteOrigin(env),
           group,
           mentionDiagnostics,
         );
@@ -733,7 +736,7 @@ export async function replyToGroupCommand(event, env) {
         ...(await billingLineMessages(
           env,
           action.scope,
-          new URL(urls.sena).origin,
+          siteOrigin(env),
           group,
           mentionDiagnostics,
           { tagsFrom: action.offset },
@@ -744,7 +747,7 @@ export async function replyToGroupCommand(event, env) {
         ...(await billingLineMessages(
           env,
           action.scope,
-          new URL(urls.sena).origin,
+          siteOrigin(env),
           group,
           mentionDiagnostics,
         )),

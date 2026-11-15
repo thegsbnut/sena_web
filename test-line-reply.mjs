@@ -227,6 +227,11 @@ test('signed bill webhook sends a real LINE mention object all the way to the re
   const [summary, message] = f.calls[0].messages;
   assert.equal(f.calls[0].messages.length, 2);
   assert.equal(summary.type, 'flex');
+  // With LINE login the booking link is liff.line.me; card images must still
+  // come from the web app (production showed blank mascots on 15 Nov 2026).
+  const images = JSON.stringify(summary.contents).match(/https:\/\/[^"]+\/mascot\/[^"]+/g);
+  assert(images.length > 0);
+  assert(images.every(url => url.startsWith('https://sena-web.thegsbnut.workers.dev/mascot/')));
   assert.match(summaryOf(summary), /Nut 85 บ\./);
   assert.equal(message.type, 'textV2');
   assert.deepEqual(message.substitution, {
