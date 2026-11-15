@@ -74,3 +74,36 @@ test('old notices are pruned when a new one is created', async t => {
   const row = await db.prepare('SELECT code FROM line_notices WHERE code=?').bind(old).first();
   assert.equal(row, undefined);
 });
+
+test('notice reports from the phone are logged with whitelisted fields only', async () => {
+  const { noticeReport } = await import('./line-notices.js');
+  const logged = [];
+  const warn = console.warn;
+  console.warn = line => logged.push(JSON.parse(line));
+  try {
+    const post = body =>
+      noticeReport(new Request('https://x.test/api/line/notice-report', { method: 'POST', body }));
+    const ok = await post(
+      JSON.stringify({
+        stage: 'failed',
+        at: 'send',
+        kind: '🧾',
+        page: '/court',
+        error: 'FORBIDDEN U' + 'a'.repeat(32) + ' denied',
+        text: 'never logged',
+        name: 'Nut',
+      }),
+    );
+    assert.equal(ok.status, 204);
+    assert.equal((await post('{"stage":"hack"}')).status, 400);
+    assert.equal((await post('not json')).status, 400);
+    assert.equal((await post('x'.repeat(3000))).status, 413);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].context, 'line-notice:client');
+  assert.equal(logged[0].at, 'send');
+  assert.equal(logged[0].error, 'FORBIDDEN [LINE_USER_ID] denied');
+  assert.doesNotMatch(JSON.stringify(logged), /never logged|Nut/);
+});

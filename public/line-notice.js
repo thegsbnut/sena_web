@@ -55,18 +55,55 @@
       history.replaceState(history.state, '', original);
     }
   }
+  // Where each send ends up goes to the server log (stage + LINE's error text, no
+  // names or message text), so a notice that never reached the group can be traced.
+  function report(notice, stage, detail = {}) {
+    try {
+      fetch('/api/line/notice-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage,
+          kind: String(notice?.text || '')
+            .split(' ')[0]
+            .slice(0, 4),
+          page: location.pathname,
+          ...detail,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  }
   async function deliver(notice) {
-    if (!hasToken(notice.liffId) && !storage()?.getItem('sena-liff-launch')) return;
-    await loadSdk();
-    ready ||= init(notice.liffId).catch(error => {
-      ready = null;
+    let stage = 'credentials';
+    if (!hasToken(notice.liffId) && !storage()?.getItem('sena-liff-launch'))
+      return report(notice, 'no-credentials');
+    try {
+      stage = 'sdk';
+      await loadSdk();
+      stage = 'init';
+      ready ||= init(notice.liffId).catch(error => {
+        ready = null;
+        throw error;
+      });
+      await ready;
+      stage = 'context';
+      const context = liff.getContext()?.type || 'none';
+      if (!['group', 'room'].includes(context)) return report(notice, 'not-group', { context });
+      stage = 'permission';
+      const permission = await liff.permission.query('chat_message.write');
+      if (permission.state !== 'granted')
+        return report(notice, 'no-permission', { permission: permission.state });
+      stage = 'send';
+      await liff.sendMessages([{ type: 'text', text: notice.text }]);
+      report(notice, 'sent');
+    } catch (error) {
+      report(notice, 'failed', {
+        at: stage,
+        error: String(error?.code || error?.name || '') + ' ' + String(error?.message || error),
+      });
       throw error;
-    });
-    await ready;
-    if (!['group', 'room'].includes(liff.getContext()?.type)) return;
-    const permission = await liff.permission.query('chat_message.write');
-    if (permission.state !== 'granted') return;
-    await liff.sendMessages([{ type: 'text', text: notice.text }]);
+    }
   }
   // Resolves when the message is sent or given up on; never rejects.
   async function send(notice) {
