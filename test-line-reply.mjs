@@ -1317,26 +1317,31 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
 });
 
 test('table cards: schedule cap and rest marks, podium order, shared first place', () => {
-  const games = Array.from({ length: 12 }, (_, i) => ({
-    round: i + 1,
-    left: ['A' + i, 'B' + i],
-    right: ['C' + i, 'D' + i],
-    rest: i === 2,
-  }));
-  const schedule = gamesBubble({ club: 'sena', title: 'T', games, url: 'https://x.test/court' });
+  const make = n =>
+    Array.from({ length: n }, (_, i) => ({
+      round: i + 1,
+      left: ['A' + i, 'B' + i],
+      right: ['C' + i, 'D' + i],
+      rest: i === 2,
+    }));
+  // A usual night (10 games) shows every game, with the rest legend.
+  const schedule = gamesBubble({
+    club: 'sena',
+    title: 'T',
+    games: make(10),
+    url: 'https://x.test/court',
+  });
   const text = flexText(schedule);
-  assert.match(text, /เกม 6 A5 \/ B5 vs C5 \/ D5\n… อีก 6 เกม\nแถบเหลือง = เว้นพักก่อนเกมนี้/);
-  assert.doesNotMatch(text, /เกม 7/);
+  assert.match(text, /เกม 10 A9 \/ B9 vs C9 \/ D9\nแถบเหลือง = เว้นพักก่อนเกมนี้/);
+  assert.doesNotMatch(text, /อีก/);
   assert.equal(schedule.footer.contents[0].action.uri, 'https://x.test/court');
-  assert(
-    JSON.stringify(
-      gamesBubble({
-        club: '88',
-        title: 'T',
-        games: games.map(g => ({ ...g, left: ['ยาว'.repeat(40)] })),
-      }),
-    ).length < 30000,
+  // Only a very long schedule is cut, and even long names stay inside LINE's 30 KB.
+  assert.match(
+    flexText(gamesBubble({ club: 'sena', title: 'T', games: make(30) })),
+    /เกม 20 .*\n… อีก 10 เกม/,
   );
+  const long = make(30).map(g => ({ ...g, left: ['ยาว'.repeat(40), 'ยาว'.repeat(40)] }));
+  assert(JSON.stringify(gamesBubble({ club: '88', title: 'T', games: long })).length < 30000);
 
   const row = (name, w) => ({ name, w, played: 10 });
   const board = leaderboardBubble({

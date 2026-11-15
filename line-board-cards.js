@@ -9,7 +9,7 @@ const GOLD = '#B8860B',
   AMBER = '#B26A00',
   TRACK = '#ECEEF1';
 // Keeps one bubble well under LINE's 30 KB limit.
-const MAX_GAMES = 6;
+const MAX_GAMES = 20;
 
 const clean = value =>
   String(value ?? '')
