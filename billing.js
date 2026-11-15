@@ -1178,6 +1178,7 @@ export async function billingLineMessages(
     const payUrl = liffUrl(env, bill.club, 'pay', bill.id);
     append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + payUrl);
     cards.push({
+      club: bill.club,
       title: 'บิล ' + clubName(bill.club) + ' · ' + noticeDay(billDate(bill)),
       extra: bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '',
       owed: outstanding(bill),

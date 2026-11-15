@@ -6,6 +6,8 @@ import { clubOf } from './clubs.js';
 import { noticeDay } from './line-notices.js';
 
 const COLORS = { sena: '#168B42', 88: '#1F4E9A' };
+// Sena green, 88 blue: every card tells the clubs apart by this colour.
+export const clubColor = club => COLORS[club] || COLORS.sena;
 const GREY = '#8A8F98',
   AMBER = '#B26A00',
   RED = '#C62828',

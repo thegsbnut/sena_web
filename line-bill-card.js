@@ -1,10 +1,9 @@
 // Flex card for the "bill paid" summary Badbot posts when the last person pays.
 // Pure: takes billing.js `paidSummary()` plus the public booking roster (for
 // badges and the latest Cup's 🥇/💩) and returns one LINE bubble.
-import { badgeImage } from './line-roster-card.js';
+import { badgeImage, clubColor } from './line-roster-card.js';
 
 const GREEN = '#2E7D32',
-  DARK = '#263238',
   GREY = '#8A8F98',
   AMBER = '#B26A00',
   RED = '#C62828',
@@ -86,7 +85,7 @@ export function paidBubble(info, roster, origin) {
           color: '#FFFFFFD9',
         }),
       ],
-      { backgroundColor: info.full ? GREEN : DARK, paddingAll: 'lg', spacing: 'xs' },
+      { backgroundColor: clubColor(info.club), paddingAll: 'lg', spacing: 'xs' },
     ),
     body: vbox(
       [
@@ -175,6 +174,7 @@ function owedRows(unpaid) {
 }
 
 export function owedBubble(b, note) {
+  const color = clubColor(b.club);
   const pct = Math.min(100, Math.round((100 * b.paidCount) / (b.total || 1)));
   return {
     type: 'bubble',
@@ -187,7 +187,7 @@ export function owedBubble(b, note) {
           color: '#FFFFFFD9',
         }),
       ],
-      { backgroundColor: DARK, paddingAll: 'lg', spacing: 'xs' },
+      { backgroundColor: color, paddingAll: 'lg', spacing: 'xs' },
     ),
     body: vbox(
       [
@@ -204,7 +204,7 @@ export function owedBubble(b, note) {
             vbox([{ type: 'filler' }], {
               width: Math.max(pct, 1) + '%',
               height: '6px',
-              backgroundColor: GREEN,
+              backgroundColor: color,
             }),
           ],
           { backgroundColor: TRACK, height: '6px', cornerRadius: 'md', margin: 'md' },
@@ -239,7 +239,7 @@ export function owedBubble(b, note) {
         {
           type: 'button',
           style: 'primary',
-          color: GREEN,
+          color,
           height: 'sm',
           action: { type: 'uri', label: '💳 จ่าย / ดู QR', uri: b.payUrl },
         },
