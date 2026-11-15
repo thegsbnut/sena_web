@@ -87,3 +87,11 @@ Rollback เฉพาะโค้ด ไม่ restore D1 และไม่ล�
 - ช่วยเหลือ ยังเป็นข้อความเหมือนเดิม
 
 - ตัวเลข "n คน" ในข้อความ/การ์ดบิลทุกใบนับเป็นจำนวนคนจริง: ถ้าเจ้าของบรรทัดจ่ายรวมให้แขกหรือเพื่อน (`shares`) นับทุกคนในบรรทัดนั้น (เช่น 12 คนมาตี มีคนจ่ายแทน 1 คน ขึ้น 12 ไม่ใช่ 11); การ์ดบิลค้างมี "(รวม n คน)" ต่อท้ายชื่อเจ้าของบรรทัด
+
+### สีการ์ด กฎของ LINE และการดูปัญหา (15 พ.ย. 2026)
+
+- สีหัวการ์ดแยกตามก๊วน แบบไล่เฉดทแยง 135°: Sena เขียว `#0E6B31→#2FB35A`, 88 น้ำเงิน `#17386F→#3F7FD6` (`GRADIENTS` / `clubHeaderStyle()` ใน `line-roster-card.js`, มี `backgroundColor` ทึบเป็นสีสำรองสำหรับ LINE รุ่นเก่า); ใช้กับการ์ดรายชื่อ ตารางจัดคู่/Cup สรุปจ่ายครบ บิลค้างจ่าย (ปุ่มและแถบความคืบหน้าเป็นสีทึบของก๊วน); เมนู Badbot ใช้เฉดเขียว Sena; **leaderboard และผล Cup คงสีทอง** (`goldHeader`)
+- กฎโครงสร้าง Flex ที่ LINE บังคับ (เคยพังใน production): `icon` อยู่ได้เฉพาะในกล่อง `baseline` และกล่อง `baseline` ใส่ได้แค่ text / icon / filler — ผิดแล้ว LINE ตอบ 400 `invalid box content type`; เทส `flexProblems()` ใน `test-line-reply.mjs` ตรวจโครงสร้างนี้ ถ้าเพิ่มการ์ดใหม่ให้ใส่ในเทสด้วย
+- ตัวสำรอง (ส่งซ้ำเป็นข้อความล้วน) อ่านเลข message ที่ถูกปฏิเสธได้ทั้งจาก `details[].property` (`messages[0].…`) และจาก `error.message` ("A message (messages[0]) …" โดย property เป็น `/body/…`)
+- รหัสแจ้งเข้ากลุ่ม `#xxxxx` ตอบได้ในทุกกลุ่มที่ผูกไว้ ไม่ต้องตรงก๊วนของรหัส (เช่น จอง 88 แล้วโพสต์ในกลุ่ม Sena); รหัสใช้ได้ครั้งเดียว ส่วนแชตที่ไม่ได้ผูกกับก๊วนไหนไม่ตอบและรหัสยังใช้ได้
+- ดู log production ผ่าน API: `POST /accounts/<id>/workers/observability/telemetry/query` (ต้อง `queryId`, `timeframe`, `view: "events"`, `parameters.filterCombination` + `filters`); error ของ LINE อยู่ใน log `line-reply:rejected` (`details`), ผลส่งจากมือถืออยู่ใน `line-notice:client` (`stage` = sent / no-credentials / not-group / no-permission / failed)
