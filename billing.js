@@ -943,41 +943,31 @@ export async function resubmitMessages(env, groupId, { billId, payerId }) {
     : [{ type: 'text', text: '⚠️ ' + payer.name + ' ' + suffix }];
 }
 // Badbot's reply to a paid-in-full notice: read the bill as it is now.
-export async function paidSummaryText(env, billId) {
+// The facts behind the "paid" summary, shared by the plain-text and Flex replies.
+// Amounts are satang; `paid` is in the order people paid, `owing` is everyone else.
+export async function paidSummary(env, billId) {
   await prepare(env.DB);
   const bill = await readBill(env.DB, billId);
   if (!bill || bill.cancelled) return null;
-  const paid = bill.payers.filter(p => p.status === 'paid'),
-    full = paid.length === bill.payers.length,
-    sum = list => list.reduce((total, p) => total + p.amount, 0),
-    method = p => (p.method === 'cash' ? 'เงินสด' : 'โอน');
-  const byMethod = ['transfer', 'cash']
-    .map(m => paid.filter(p => (p.method === 'cash' ? 'cash' : 'transfer') === m))
-    .filter(list => list.length)
-    .map(list => `${method(list[0])} ${list.length} คน ${money(sum(list))} บ.`);
-  // Paid in the order they paid, then anyone still owing.
-  const rows = [...paid]
-    .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))
-    .map(p => {
-      const others = (p.shares || []).map(x => x.name).filter(name => name && name !== p.name);
-      return `${p.name} ${money(p.amount)} บ. · ${method(p)}${others.length ? ' (รวม ' + others.join(', ') + ')' : ''}`;
-    })
-    .concat(
-      bill.payers
-        .filter(p => p.status !== 'paid')
-        .map(p => `${p.name} ${money(p.amount)} บ. · ยังไม่จ่าย`),
-    );
-  return [
-    (full ? '✅ บิล ' : '💸 บิล ') +
-      billLabel(bill) +
-      (full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
-      paid.length +
-      '/' +
-      bill.payers.length,
-    '💰 รวม ' + money(sum(paid)) + ' บ.' + byMethod.map(x => ' · ' + x).join(''),
-    '',
-    ...rows.map((row, i) => i + 1 + '. ' + row),
-  ].join('\n');
+  const paid = bill.payers
+      .filter(p => p.status === 'paid')
+      .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0)),
+    sum = list => list.reduce((total, p) => total + p.amount, 0);
+  const isCash = p => p.method === 'cash';
+  return {
+    club: bill.club,
+    label: billLabel(bill),
+    full: paid.length === bill.payers.length,
+    total: bill.payers.length,
+    paid,
+    owing: bill.payers.filter(p => p.status !== 'paid'),
+    paidSum: sum(paid),
+    cash: { count: paid.filter(isCash).length, sum: sum(paid.filter(isCash)) },
+    transfer: {
+      count: paid.filter(p => !isCash(p)).length,
+      sum: sum(paid.filter(p => !isCash(p))),
+    },
+  };
 }
 
 export async function billingLineText(env, scope, origin) {

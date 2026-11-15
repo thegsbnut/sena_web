@@ -8,6 +8,7 @@ import { prepareMembers } from './member.js';
 import { groupMentionTarget } from './line-mentions.js';
 import { createNotice, noticeDay } from './line-notices.js';
 import { badgeImage, rosterBubble } from './line-roster-card.js';
+import { paidBubble } from './line-bill-card.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -943,14 +944,23 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
     payload: { billId: id },
   });
   assert.equal((await f.hook([f.event('💵 Bua จ่ายบิล … #' + code)])).status, 200);
+  assert.deepEqual(
+    f.calls[0].messages.map(m => m.type),
+    ['flex'],
+  );
+  assert.equal(f.calls[0].messages[0].altText, '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2 · รวม 175 บ.');
+  // Paid order (Bua first), each person's amount and how they paid, then the total.
   assert.equal(
     textOf(f.calls[0]),
     [
-      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบ 2/2',
-      '💰 รวม 175 บ. · โอน 1 คน 85 บ. · เงินสด 1 คน 90 บ.',
-      '',
-      '1. Bua 90 บ. · เงินสด',
-      '2. Nut 85 บ. · โอน (รวม Guest)',
+      '✅ บิล SENA ส. 14 พ.ย. จ่ายครบแล้ว',
+      '2/2 คน',
+      '175 บาท',
+      'โอน 1 คน · เงินสด 1 คน',
+      'Bua 💵 เงินสด 90',
+      'Nut (รวม Guest) 📲 โอน 85',
+      'รวม 175 บ.',
+      'ขอบคุณทุกคนครับ 🙏🏸',
     ].join('\n'),
   );
 });
@@ -981,7 +991,7 @@ test('notice codes answer only in the group linked to that club, and survive a f
   f.status(200);
   assert.equal((await f.hook([f.event('x #' + other)])).status, 200);
   assert.equal(f.calls.length, 2);
-  assert.match(textOf(f.calls[1]), /^✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบ 1\/1/);
+  assert.match(textOf(f.calls[1]), /^✅ บิล 88 ส\. 14 พ\.ย\. จ่ายครบแล้ว\n1\/1 คน/);
   await f.hook([f.event('ordinary chat #zzzzz')]);
   assert.equal(f.calls.length, 2);
 });
@@ -1237,4 +1247,62 @@ test('a roster card LINE rejects is resent once as plain text; an expired token 
   });
   await f.hook([f.event('badbot รายชื่อ')]);
   assert.equal(bodies.length, 3);
+});
+
+test('bill summary cards show each person with badge, latest 🥇/💩, amount and how they paid', () => {
+  const roster = [
+    { id: 'p1', name: 'Champ', award: '🥇', badge: { line: 'red', plays: 95 } },
+    { id: 'p2', name: 'Last', award: '💩', badge: { line: 'green', plays: 6 } },
+  ];
+  const info = {
+    club: 'sena',
+    label: 'SENA ส. 14 พ.ย.',
+    full: false,
+    total: 4,
+    paid: [
+      { name: 'Champ', payerKey: 'member:p1', amount: 12000, method: 'transfer', shares: [] },
+      {
+        name: 'Last',
+        payerKey: 'member:p2',
+        amount: 24000,
+        method: 'cash',
+        shares: [{ name: 'Last' }, { name: 'Pal' }],
+      },
+      { name: 'Old', payerKey: 'legacy', amount: 12000, method: 'transfer' },
+    ],
+    owing: [{ name: 'Late', payerKey: 'member:p9', amount: 12000 }],
+    paidSum: 48000,
+    transfer: { count: 2, sum: 24000 },
+    cash: { count: 1, sum: 24000 },
+  };
+  const bubble = paidBubble(info, roster, 'https://x.test');
+  assert.equal(
+    flexText(bubble),
+    [
+      '💸 บิล SENA ส. 14 พ.ย.',
+      '3/4 คน',
+      '480 บาท',
+      'โอน 2 คน · เงินสด 1 คน',
+      '🥇 Champ 📲 โอน 120',
+      '💩 Last (รวม Pal) 💵 เงินสด 240',
+      'Old 📲 โอน 120',
+      'Late ยังไม่จ่าย 120',
+      'รวม 480 บ.',
+    ].join('\n'),
+  );
+  assert.equal(bubble.header.backgroundColor, '#263238');
+  assert.deepEqual(JSON.stringify(bubble).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g), [
+    'https://x.test/badges/red-3-2.png',
+    'https://x.test/badges/green-1.png',
+    'https://x.test/badges/blank.png',
+    'https://x.test/badges/blank.png',
+  ]);
+  // A huge bill stays inside LINE's 30 KB bubble limit.
+  const many = {
+    ...info,
+    paid: Array.from({ length: 200 }, (_, i) => ({ ...info.paid[0], name: 'P' + i })),
+  };
+  const big = JSON.stringify(paidBubble(many, roster, 'https://x.test'));
+  assert(big.length < 30000);
+  assert.match(flexText(JSON.parse(big)), /… อีก 161 คน/);
 });

@@ -19,7 +19,7 @@
 | `member.js`, `member-shared.js` | LINE Login ผ่าน LIFF (verify idToken กับ LINE), session `__Host-sena-member`, ผูกบัญชี LINE กับชื่อผู้เล่นทั้งสองก๊วน |
 | `line.js` | `/api/line/webhook` (ตรวจ HMAC), จับคู่กลุ่มด้วย `/badbot <code>`, หน้า admin เชื่อมกลุ่ม |
 | `line-reply.js`, `line-mentions.js` | ตอบคำสั่ง/ปุ่มในกลุ่ม, สร้างข้อความ mention |
-| `line-roster-card.js` | การ์ด Flex รายชื่อผู้ตี (badge PNG ใน `public/badges/`) |
+| `line-roster-card.js`, `line-bill-card.js` | การ์ด Flex รายชื่อผู้ตี / สรุปบิลจ่ายครบ (badge PNG ใน `public/badges/`) |
 | `backups.js`, `leaderboard.js`, `booking-holidays.js` | backup state, ตารางคะแนน Cup, วันหยุด |
 | `public/engine.js` | อัลกอริทึมจัดคู่ (`globalThis.Sena.generate`) ใช้ทั้งในเบราว์เซอร์และ Worker |
 
