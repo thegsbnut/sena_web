@@ -1046,3 +1046,52 @@ test('an opened-bill code replies with who still owes on that court, tagging lin
   assert.match(summary.text, /💸 บิลค้าง · Sena[\s\S]*• Nut 85 บ\./);
   assert.deepEqual(tag.substitution.m0.mentionee, { type: 'user', userId });
 });
+
+test('a resend-slip code tags the payer with the link; it stays quiet once they have resent', async t => {
+  const f = fixture(t),
+    userId = 'U' + 'd'.repeat(32),
+    billId = '9'.repeat(32);
+  f.env.LINE_MEMBER_AUTH_ENABLED = 'true';
+  f.env.LINE_LIFF_ID = '12345-test';
+  await prepareMembers(f.env.DB);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0)',
+  );
+  const save = status =>
+    f.db.prepare('INSERT OR REPLACE INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+      billId,
+      'sena',
+      '2026-11-14',
+      JSON.stringify({
+        payers: [{ id: 'x1', name: 'Nut', payerKey: 'member:p0', amount: 8500, status }],
+      }),
+    );
+  save('rejected');
+  f.db
+    .prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)")
+    .run(userId, 'sena', 'p0', 'Nut', 'existing', new Date().toISOString());
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (url === 'https://api.line.me/v2/bot/group/' + group + '/member/' + userId)
+      return Response.json({ userId, displayName: 'Nut' });
+    f.calls.push(JSON.parse(options.body));
+    return Response.json({});
+  });
+  const code = () =>
+    createNotice(f.env.DB, {
+      club: 'sena',
+      kind: 'resubmit',
+      payload: { billId, payerId: 'x1' },
+    });
+  await f.hook([f.event('⚠️ สลิปของ Nut ใช้ไม่ได้ #' + (await code()))]);
+  const [message] = f.calls[0].messages;
+  assert.equal(message.type, 'textV2');
+  assert.deepEqual(message.substitution.m0.mentionee, { type: 'user', userId });
+  assert.match(
+    message.text,
+    /^⚠️ \{m0\}​+\nกรุณาส่งสลิปใหม่ที่ https:\/\/liff\.line\.me\/12345-test\?/,
+  );
+  assert.match(message.text, /page=pay/);
+  save('paid');
+  await f.hook([f.event('⚠️ สลิปของ Nut ใช้ไม่ได้ #' + (await code()))]);
+  assert.equal(f.calls.length, 1, 'already resent, nothing to chase');
+});

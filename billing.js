@@ -725,9 +725,24 @@ export async function billingRoute(req, env, admin, club, ctx) {
   if (action === 'cancel' || action === 'restore') {
     if (input?.revision !== bill.revision) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     payload.cancelled = action === 'cancel';
-    return (await updateBill(db, bill, payload))
-      ? json({ ok: true })
-      : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    const label = billLabel(bill),
+      owing = payload.payers.filter(p => p.status !== 'paid').length;
+    return json({
+      ok: true,
+      notice:
+        action === 'cancel'
+          ? plainNotice(env, `🚫 บิล ${label} ถูกยกเลิก ไม่ต้องโอน`)
+          : owing
+            ? await codedNotice(
+                env,
+                `♻️ บิล ${label} เปิดใหม่อีกครั้ง · ค้าง ${owing} คน`,
+                bill.club,
+                'bill',
+                { billId: bill.id },
+              )
+            : plainNotice(env, `♻️ บิล ${label} เปิดใหม่อีกครั้ง · จ่ายครบแล้ว`),
+    });
   }
   if (bill.cancelled) return fail('กรุณาเปิดบิลอีกครั้งก่อนแก้ไข', 409);
   if (action === 'cash') {
@@ -735,6 +750,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
     if (!target || input.revision !== bill.revision || typeof input.received !== 'boolean')
       return fail('ข้อมูลบิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     const declaredCash = target.status === 'review' && target.method === 'cash' && !target.slipKey;
+    let undoneCash = false;
     if (input.received && (['unpaid', 'rejected'].includes(target.status) || declaredCash)) {
       Object.assign(target, { status: 'paid', method: 'cash', paidAt: Date.now() });
     } else if (!input.received && declaredCash) {
@@ -750,11 +766,21 @@ export async function billingRoute(req, env, admin, club, ctx) {
         method: null,
         paidAt: null,
       });
+      undoneCash = true;
     } else return fail('สถานะการชำระเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     return json({
       ok: true,
-      ...(input.received ? { notice: await paymentNotice(env, bill, payload, target) } : {}),
+      ...(input.received
+        ? { notice: await paymentNotice(env, bill, payload, target) }
+        : undoneCash
+          ? {
+              notice: plainNotice(
+                env,
+                `↩️ ยกเลิกรับเงินสดของ ${target.name} · บิล ${billLabel(bill)} จ่ายแล้ว ${paidCount(payload)}/${payload.payers.length}`,
+              ),
+            }
+          : {}),
     });
   }
   if (action === 'edit') {
@@ -763,17 +789,36 @@ export async function billingRoute(req, env, admin, club, ctx) {
         return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
       if ('court' in input || 'shuttle' in input || 'attendees' in input)
         return fail('มีการชำระแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
+      const accountChanged = payload.transfer !== input.transfer;
       payload.transfer = input.transfer;
-      return (await updateBill(db, bill, payload))
-        ? json({ ok: true })
-        : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+      if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+      return json({
+        ok: true,
+        ...(accountChanged
+          ? {
+              notice: plainNotice(
+                env,
+                `✏️ บิล ${billLabel(bill)} เปลี่ยนบัญชีรับเงิน · ใครยังไม่โอนให้เปิดบิลเพื่อดู QR ใหม่`,
+              ),
+            }
+          : {}),
+      });
     }
     const draft = input && readDraft({ ...input, date: billDate(bill) });
     if (!draft || input.revision !== bill.revision)
       return fail('ข้อมูลบิลไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
-    return (await updateBill(db, bill, splitBill(draft, bill.payers)))
-      ? json({ ok: true })
-      : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    const next = splitBill(draft, bill.payers);
+    if (!(await updateBill(db, bill, next))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    return json({
+      ok: true,
+      notice: await codedNotice(
+        env,
+        `✏️ บิล ${billLabel(bill)} แก้ยอดแล้ว · ${next.payers.length} คน · รวม ${money(next.payers.reduce((total, p) => total + p.amount, 0))} บ.`,
+        bill.club,
+        'bill',
+        { billId: bill.id },
+      ),
+    });
   }
   if (action === 'review') {
     const target = payload.payers.find(p => p.id === input?.payer);
@@ -794,13 +839,36 @@ export async function billingRoute(req, env, admin, club, ctx) {
     target.method = input.status === 'paid' ? 'transfer' : null;
     target.note = input.status === 'rejected' ? note : '';
     target.paidAt = input.status === 'paid' ? Date.now() : null;
-    return (await updateBill(db, bill, payload))
-      ? json({ ok: true })
-      : fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    // The group is told to resend, never why: the reason is for that payer only.
+    return json({
+      ok: true,
+      ...(input.status === 'rejected'
+        ? {
+            notice: await codedNotice(
+              env,
+              `⚠️ สลิปของ ${target.name} ใช้ไม่ได้ · ให้ส่งใหม่ · บิล ${billLabel(bill)}`,
+              bill.club,
+              'resubmit',
+              { billId: bill.id, payerId: target.id },
+            ),
+          }
+        : {}),
+    });
   }
   return fail('ไม่พบคำสั่ง');
 }
 
+const plainNotice = (env, text) => ({ text, liffId: env.LINE_LIFF_ID || '' });
+// Text plus " #code" so Badbot answers it; if no code can be made the text still goes out.
+async function codedNotice(env, text, club, kind, payload) {
+  try {
+    text += ' #' + (await createNotice(env.DB, { club, kind, payload }));
+  } catch (error) {
+    logError('billing:notice', error);
+  }
+  return plainNotice(env, text);
+}
 const billLabel = bill =>
   noticeClub(bill.club) +
   ' ' +
@@ -824,19 +892,9 @@ async function paymentNotice(env, bill, payload, target) {
     paid +
     '/' +
     count;
-  if (paid === count)
-    try {
-      text +=
-        ' #' +
-        (await createNotice(env.DB, {
-          club: bill.club,
-          kind: 'paid',
-          payload: { billId: bill.id },
-        }));
-    } catch (error) {
-      logError('billing:notice', error);
-    }
-  return { text, liffId: env.LINE_LIFF_ID || '' };
+  return paid === count
+    ? await codedNotice(env, text, bill.club, 'paid', { billId: bill.id })
+    : plainNotice(env, text);
 }
 // Posted by the organizer's LIFF page when a bill opens; Badbot answers the code
 // with who still owes on that court (the same reply as "badbot bill <club>").
@@ -850,12 +908,39 @@ async function openedNotice(env, club, dateKey, billId) {
     ' คน · รวม ' +
     money(bill.payers.reduce((total, p) => total + p.amount, 0)) +
     ' บ.';
-  try {
-    text += ' #' + (await createNotice(env.DB, { club, kind: 'bill', payload: { billId } }));
-  } catch (error) {
-    logError('billing:notice', error);
-  }
-  return { text, liffId: env.LINE_LIFF_ID || '' };
+  return await codedNotice(env, text, club, 'bill', { billId });
+}
+// Badbot's reply to a resend-slip notice: tag that payer (or name them if they
+// cannot be tagged) with their pay link. Nothing if they have already resent.
+export async function resubmitMessages(env, groupId, { billId, payerId }) {
+  await prepare(env.DB);
+  const bill = await readBill(env.DB, billId),
+    payer = bill?.payers.find(p => p.id === payerId);
+  if (!bill || bill.cancelled || payer?.status !== 'rejected') return null;
+  await prepareMembers(env.DB);
+  const playerId = payer.payerKey?.startsWith('member:') ? payer.payerKey.slice(7) : null,
+    link = playerId
+      ? await env.DB.prepare(
+          "SELECT user_id FROM member_links WHERE status='approved' AND club=? AND player_id=?",
+        )
+          .bind(bill.club, playerId)
+          .first()
+      : null,
+    target = link ? await groupMentionTarget(env, groupId, link.user_id) : null,
+    suffix =
+      'กรุณาส่งสลิปใหม่' +
+      (memberMode(env) && env.LINE_LIFF_ID
+        ? 'ที่ ' + liffUrl(env, bill.club, 'pay', bill.id)
+        : ' ในหน้าบิล');
+  return target?.reason === 'mention_ready'
+    ? [
+        mentionGroupMessage(
+          [{ userId: target.userId, risk: mentionNameRisk(target.displayName) }],
+          '⚠️ ',
+          suffix,
+        ),
+      ]
+    : [{ type: 'text', text: '⚠️ ' + payer.name + ' ' + suffix }];
 }
 // Badbot's reply to a paid-in-full notice: read the bill as it is now.
 export async function paidSummaryText(env, billId) {
