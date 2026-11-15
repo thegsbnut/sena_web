@@ -1041,7 +1041,7 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
   assert.equal(
     textOf(f.calls[0]),
     [
-      'ได้รับยอดครบถ้วนแล้วค่าาา\nไว้มาเล่นกันใหม่อีกน้าาา 🥰🎉',
+      'ได้รับยอดครบถ้วนแล้วค่า ไว้มาเล่นกันใหม่อีกน้า 🥰🎉',
       '✅ บิล SENA ส. 14 พ.ย. · 📲 โอน 1 · 💵 เงินสด 1',
       'ได้รับแล้ว',
       '฿175 ครบแล้ว ✓',

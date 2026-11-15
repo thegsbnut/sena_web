@@ -43,8 +43,8 @@ export const KHUN_NGERN_LINES = {
   open: 'เปิดบิลแล้วค่าาา ใครพร้อมโอนยกมือขึ้นนน 🙋‍♀️✨',
   // Reminders and a summary that is not yet complete.
   remind: 'แงงง ขุนเงินแอบเหงา บิลยังรอคนโอนอยู่น้าาา',
-  // Too long for one line at a readable size (≈282px at 11px): two balanced lines.
-  full: 'ได้รับยอดครบถ้วนแล้วค่าาา\nไว้มาเล่นกันใหม่อีกน้าาา 🥰🎉',
+  // ≈257-260px at 11px, so it needs the 11px size to stay on one line.
+  full: 'ได้รับยอดครบถ้วนแล้วค่า ไว้มาเล่นกันใหม่อีกน้า 🥰🎉',
 };
 
 const money = cents => (cents / 100).toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -76,9 +76,9 @@ const hero = url => ({
   aspectMode: 'cover',
 });
 // Centered, no name tag above it: the mascot and her coin already say who is talking.
-// 12px keeps the two short lines on one line; the long "full" line breaks in two.
+// 12px keeps open/remind on one line; the longer "full" line takes 11px. Side padding is
+// small so the text has ≈270px (box 276px minus border).
 const speech = (line, t, size = '12px') =>
-  // Not through text(): that would collapse the intentional line break.
   vbox(
     [
       {
@@ -98,8 +98,8 @@ const speech = (line, t, size = '12px') =>
       borderColor: t.line,
       paddingTop: 'md',
       paddingBottom: 'md',
-      paddingStart: 'sm',
-      paddingEnd: 'sm',
+      paddingStart: 'xs',
+      paddingEnd: 'xs',
     },
   );
 const pill = (label, color, background, size = 'xxs') =>
@@ -269,7 +269,7 @@ export function paidBubble(info, roster, origin) {
     hero: hero(mascot(origin, info.full ? 'hero-done.jpg' : 'hero-remind.jpg')),
     body: vbox(
       [
-        info.full ? speech(KHUN_NGERN_LINES.full, t, '12px') : speech(KHUN_NGERN_LINES.remind, t),
+        info.full ? speech(KHUN_NGERN_LINES.full, t, '11px') : speech(KHUN_NGERN_LINES.remind, t),
         priceTag(
           (info.full ? '✅ บิล ' : '💸 บิล ') + info.label + ways.map(w => ' · ' + w).join(''),
           'ได้รับแล้ว',
