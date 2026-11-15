@@ -10,14 +10,10 @@ import {
 import { memberMode, liffUrl, prepareMembers } from './member.js';
 import { NOTICE_CODE, claimNotice, releaseNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
-import {
-  billingLineText,
-  billingLineMessages,
-  paidSummaryText,
-  resubmitMessages,
-} from './billing.js';
+import { billingLineText, billingLineMessages, paidSummary, resubmitMessages } from './billing.js';
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
+import { paidAlt, paidBubble } from './line-bill-card.js';
 import {
   emptyBubble,
   flexFallback,
@@ -584,9 +580,17 @@ export async function replyToGroupCommand(event, env) {
         if (!chase) return;
         messages.push(...chase);
       } else if (notice.kind === 'paid') {
-        const text = await paidSummaryText(env, notice.payload.billId);
-        if (!text) return;
-        messages.push(...textMessages(text));
+        const info = await paidSummary(env, notice.payload.billId);
+        if (!info) return;
+        // Badges and the latest 🥇/💩 come from the booking roster; if it cannot be
+        // read the card still goes out, just without them.
+        const roster = (await bookingData(env, info.club))?.roster ?? [];
+        messages.push(
+          flexMessage(
+            [paidBubble(info, roster, new URL(courtUrl(env, info.club)).origin)],
+            paidAlt(info),
+          ),
+        );
       } else return;
     } else if (action.kind === 'round') {
       const card = await rosterCard(env, action.club, now, { sessionId: action.sessionId });
