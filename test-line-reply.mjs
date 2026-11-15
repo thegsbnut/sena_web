@@ -95,7 +95,7 @@ function fixture(t) {
     false,
     ['sign'],
   );
-  async function hook(events, { invalid = false } = {}) {
+  async function hook(events, { invalid = false, ctx } = {}) {
     const raw = JSON.stringify({ events });
     const signature = Buffer.from(
       await crypto.subtle.sign('HMAC', await key, new TextEncoder().encode(invalid ? '{}' : raw)),
@@ -107,6 +107,7 @@ function fixture(t) {
         body: raw,
       }),
       env,
+      ctx,
     );
   }
   const event = (text = 'badbot', extra = {}) => ({
@@ -196,6 +197,30 @@ const textOf = call =>
     .filter(m => m.type === 'text' || m.type === 'flex')
     .map(m => (m.type === 'text' ? m.text : flexText(m.contents)))
     .join('\n');
+
+test('in production the webhook answers LINE at once and finishes the reply in the background', async t => {
+  // LINE cancels a webhook after ~2 s and a reply takes 1-2 s: the card must not
+  // depend on the request staying open (15 Nov 2026: bill opened, nothing came up).
+  const f = fixture(t);
+  const sent = f.calls;
+  let release;
+  const gate = new Promise(resolve => (release = resolve));
+  const fetchOnce = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    await gate;
+    return fetchOnce(url, options);
+  });
+  const background = [];
+  const response = await f.hook([f.event('badbot')], {
+    ctx: { waitUntil: promise => background.push(promise) },
+  });
+  assert.equal(response.status, 200, 'LINE is answered before the reply is sent');
+  assert.equal(sent.length, 0);
+  assert.equal(background.length, 1);
+  release();
+  await Promise.all(background);
+  assert.equal(sent.length, 1, 'the reply goes out in the background');
+});
 
 test('signed bill webhook sends a real LINE mention object all the way to the reply API', async t => {
   const f = fixture(t),
