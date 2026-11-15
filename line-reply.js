@@ -668,15 +668,10 @@ export async function replyToGroupCommand(event, env) {
       mentionDiagnostics = [];
     if (action.kind === 'notice') {
       notice = await claimNotice(db, action.code, +now);
+      // Any linked group may answer, whichever club the code is for: people open
+      // the other club's LIFF page from their own group (an 88 booking posted in
+      // the Sena group). The code is one-time, so it cannot be answered twice.
       if (!notice) return;
-      const sameClub = await db
-        .prepare('SELECT 1 FROM line_groups WHERE group_id=? AND club=?')
-        .bind(group, notice.club)
-        .first();
-      if (!sameClub) {
-        await releaseNotice(db, action.code);
-        return;
-      }
       if (notice.kind === 'book')
         messages.push(...(await bookMessages(env, notice.club, notice.payload, now)));
       else if (notice.kind === 'withdraw')

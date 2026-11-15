@@ -1001,7 +1001,7 @@ test('a paid-in-full code replies with the bill summary and who paid cash', asyn
   );
 });
 
-test('notice codes answer only in the group linked to that club, and survive a failed reply', async t => {
+test("notice codes answer in any linked group (not only their club's), and survive a failed reply", async t => {
   const f = fixture(t);
   f.db.exec(
     'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0, created_at INTEGER)',
@@ -1019,9 +1019,12 @@ test('notice codes answer only in the group linked to that club, and survive a f
     kind: 'paid',
     payload: { billId: 'd'.repeat(32) },
   });
-  await f.hook([f.event('x #' + other)]);
-  assert.equal(f.calls.length, 0, 'this group is linked to Sena only');
-  f.db.prepare('INSERT INTO line_groups (club,group_id) VALUES (?,?)').run('88', group);
+  // A chat no club is linked to gets nothing, and the code stays usable.
+  const stranger = f.event('x #' + other);
+  stranger.source = { ...stranger.source, groupId: 'C' + 'b'.repeat(32) };
+  await f.hook([stranger]);
+  assert.equal(f.calls.length, 0);
+  // 2026-11-15: an 88 booking posted in the Sena group got no reply; it should.
   f.status(503);
   assert.equal((await f.hook([f.event('x #' + other)])).status, 503);
   f.status(200);
