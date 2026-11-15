@@ -78,7 +78,7 @@ export function paidBubble(info, roster, origin) {
           color: '#FFFFFF',
           wrap: true,
         }),
-        text(`${info.paid.length}/${info.total} คน` + rest.map(r => ' · ' + r).join(''), {
+        text(`${info.paidPeople}/${info.totalPeople} คน` + rest.map(r => ' · ' + r).join(''), {
           size: 'xs',
           color: '#FFFFFFD9',
         }),
@@ -120,7 +120,7 @@ export const paidAlt = info =>
   (info.full ? '✅ บิล ' : '💸 บิล ') +
   info.label +
   (info.full ? ' จ่ายครบ ' : ' จ่ายแล้ว ') +
-  `${info.paid.length}/${info.total} · รวม ${money(info.paidSum)} บ.`;
+  `${info.paidPeople}/${info.totalPeople} · รวม ${money(info.paidSum)} บ.`;
 
 // Outstanding-bills card ("badbot bill", or when a bill is opened): one bubble
 // per bill. Everyone still owing is listed by name, so people the bot cannot tag
@@ -143,7 +143,19 @@ function owedRows(unpaid) {
     vbox(
       [
         hbox([
-          text(p.name, { size: 'sm', wrap: true, flex: 1 }),
+          {
+            type: 'text',
+            text: clean(p.name),
+            contents: [
+              { type: 'span', text: clean(p.name) },
+              ...(p.people > 1
+                ? [{ type: 'span', text: ` (รวม ${p.people} คน)`, size: 'xs', color: GREY }]
+                : []),
+            ],
+            size: 'sm',
+            wrap: true,
+            flex: 1,
+          },
           text(money(p.amount) + ' บ.', {
             size: 'sm',
             weight: 'bold',
@@ -196,7 +208,7 @@ export function owedBubble(b, note) {
         ),
         ...(b.unpaid.length
           ? [
-              text('ยังไม่จ่าย ' + b.unpaid.length + ' คน', {
+              text('ยังไม่จ่าย ' + b.unpaid.reduce((n, p) => n + (p.people || 1), 0) + ' คน', {
                 size: 'xs',
                 weight: 'bold',
                 color: RED,
@@ -244,7 +256,15 @@ export function owedMessage(bills, { heading, note }) {
     altText: (
       heading +
       ' · ' +
-      bills.map(b => b.title.replace(/^บิล /, '') + ' ค้าง ' + b.unpaid.length + ' คน').join(' · ')
+      bills
+        .map(
+          b =>
+            b.title.replace(/^บิล /, '') +
+            ' ค้าง ' +
+            b.unpaid.reduce((n, p) => n + (p.people || 1), 0) +
+            ' คน',
+        )
+        .join(' · ')
     ).slice(0, 400),
     contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles },
   };

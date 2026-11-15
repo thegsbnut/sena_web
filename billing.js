@@ -138,6 +138,11 @@ async function updateBill(db, bill, payload) {
   return Boolean(result.meta.changes);
 }
 const paidCount = bill => bill.payers.filter(p => p.status === 'paid').length;
+// A bill line can cover several people (a guest or friend paid with the host), so
+// LINE messages count people, not lines: "11/12 คน" matches who actually played.
+const peopleIn = payers =>
+  payers.reduce((n, p) => n + Math.max(1, Array.isArray(p.shares) ? p.shares.length : 1), 0);
+const paidPeople = bill => peopleIn(bill.payers.filter(p => p.status === 'paid'));
 const outstanding = bill =>
   bill.payers.reduce((total, p) => total + (p.status === 'paid' ? 0 : p.amount), 0);
 function summary(bill) {
@@ -778,7 +783,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
           ? {
               notice: plainNotice(
                 env,
-                `↩️ ยกเลิกรับเงินสดของ ${target.name} · บิล ${billLabel(bill)} จ่ายแล้ว ${paidCount(payload)}/${payload.payers.length}`,
+                `↩️ ยกเลิกรับเงินสดของ ${target.name} · บิล ${billLabel(bill)} จ่ายแล้ว ${paidPeople(payload)}/${peopleIn(payload.payers)}`,
               ),
             }
           : {}),
@@ -814,7 +819,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
       ok: true,
       notice: await codedNotice(
         env,
-        `✏️ บิล ${billLabel(bill)} แก้ยอดแล้ว · ${next.payers.length} คน · รวม ${money(next.payers.reduce((total, p) => total + p.amount, 0))} บ.`,
+        `✏️ บิล ${billLabel(bill)} แก้ยอดแล้ว · ${peopleIn(next.payers)} คน · รวม ${money(next.payers.reduce((total, p) => total + p.amount, 0))} บ.`,
         bill.club,
         'bill',
         { billId: bill.id },
@@ -878,8 +883,8 @@ const billLabel = bill =>
 // Text the LIFF page posts into the LINE group after a payment is recorded.
 // The payment that completes the bill gets a code so Badbot replies with a summary.
 async function paymentNotice(env, bill, payload, target) {
-  const paid = paidCount(payload),
-    count = payload.payers.length;
+  const paid = paidPeople(payload),
+    count = peopleIn(payload.payers);
   let text =
     (target.method === 'cash' ? '💵 ' : '💸 ') +
     target.name +
@@ -893,7 +898,7 @@ async function paymentNotice(env, bill, payload, target) {
     paid +
     '/' +
     count;
-  return paid === count
+  return paidCount(payload) === payload.payers.length
     ? await codedNotice(env, text, bill.club, 'paid', { billId: bill.id })
     : plainNotice(env, text);
 }
@@ -905,7 +910,7 @@ async function openedNotice(env, club, dateKey, billId) {
     '🧾 เปิดบิล ' +
     billLabel({ club, session_date: dateKey }) +
     ' · ' +
-    bill.payers.length +
+    peopleIn(bill.payers) +
     ' คน · รวม ' +
     money(bill.payers.reduce((total, p) => total + p.amount, 0)) +
     ' บ.';
@@ -960,6 +965,8 @@ export async function paidSummary(env, billId) {
     label: billLabel(bill),
     full: paid.length === bill.payers.length,
     total: bill.payers.length,
+    paidPeople: peopleIn(paid),
+    totalPeople: peopleIn(bill.payers),
     paid,
     owing: bill.payers.filter(p => p.status !== 'paid'),
     paidSum: sum(paid),
@@ -1005,8 +1012,8 @@ export async function billingLineText(env, scope, origin) {
         money(outstanding(bill)) +
         ' บ.',
       ...entries,
-      ...(unpaid.length > 8 ? ['… ยังไม่จ่ายอีก ' + (unpaid.length - 8) + ' คน'] : []),
-      ...(reviewing.length ? ['รอตรวจสลิป/เงินสด ' + reviewing.length + ' คน'] : []),
+      ...(unpaid.length > 8 ? ['… ยังไม่จ่ายอีก ' + peopleIn(unpaid.slice(8)) + ' คน'] : []),
+      ...(reviewing.length ? ['รอตรวจสลิป/เงินสด ' + peopleIn(reviewing) + ' คน'] : []),
       'ชำระเงินผ่านลิงก์ด้านล่าง 👇',
       billLink(origin, bill),
     ].join('\n');
@@ -1166,7 +1173,7 @@ export async function billingLineMessages(
         append('• ' + p.name + ' ' + money(p.amount) + ' บ.');
       } else append('• ' + p.name + ' ' + money(p.amount) + ' บ. · ' + tagFailure(reason));
     }
-    const reviewing = pending.length - unpaid.length;
+    const reviewing = peopleIn(pending) - peopleIn(unpaid);
     if (reviewing) append('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
     const payUrl = liffUrl(env, bill.club, 'pay', bill.id);
     append('ชำระเงินของคุณผ่านลิงก์ด้านล่าง 👇\n' + payUrl);
@@ -1174,11 +1181,12 @@ export async function billingLineMessages(
       title: 'บิล ' + clubName(bill.club) + ' · ' + noticeDay(billDate(bill)),
       extra: bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '',
       owed: outstanding(bill),
-      paidCount: bill.payers.length - pending.length,
-      total: bill.payers.length,
+      paidCount: peopleIn(bill.payers) - peopleIn(pending),
+      total: peopleIn(bill.payers),
       unpaid: entries.map(({ p, userId, reason }) => ({
         name: p.name,
         amount: p.amount,
+        people: peopleIn([p]),
         note: userId ? '' : tagFailure(reason),
       })),
       reviewing,
