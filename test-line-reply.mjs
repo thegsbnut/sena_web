@@ -1378,7 +1378,23 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
       'รวม 480 บ.',
     ].join('\n'),
   );
-  assert.equal(bubble.header.backgroundColor, '#263238');
+  assert.equal(bubble.header.backgroundColor, '#168B42', 'Sena is green');
+  // Headers fade from a deep to a lighter shade of the club's colour.
+  assert.deepEqual(bubble.header.background, {
+    type: 'linearGradient',
+    angle: '135deg',
+    startColor: '#0E6B31',
+    endColor: '#2FB35A',
+  });
+  assert.equal(
+    paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.background.endColor,
+    '#3F7FD6',
+  );
+  assert.equal(
+    paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.backgroundColor,
+    '#1F4E9A',
+    '88 is blue',
+  );
   assert.deepEqual(JSON.stringify(bubble).match(/https:\/\/x\.test\/badges\/[\w-]+\.png/g), [
     'https://x.test/badges/red-3-2.png',
     'https://x.test/badges/green-1.png',
@@ -1471,6 +1487,9 @@ test('table cards: schedule cap and rest marks, podium order, shared first place
       '3. E / F 1/4 · 50–70',
     ].join('\n'),
   );
+  // The leaderboard keeps its gold fade; the schedule takes the club's gradient.
+  assert.equal(board.header.background.startColor, '#B8860B');
+  assert.equal(schedule.header.background.startColor, '#0E6B31');
   for (const b of [schedule, board, small, cup]) assert.deepEqual(flexProblems(b), []);
 });
 
@@ -1490,6 +1509,7 @@ test('table shortcuts with nothing to show still answer in plain text', async t 
 
 test('outstanding-bill cards list each person owing, tag failures and cash waiting; oversize falls back', () => {
   const bill = (title, unpaid, extra = {}) => ({
+    club: extra.club || 'sena',
     title,
     extra: '',
     owed: unpaid.reduce((n, p) => n + p.amount, 0),
@@ -1512,6 +1532,7 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
       ),
       bill('บิล 88 · อา. 15 พ.ย.', [{ name: 'หมิว', amount: 15000, note: '' }], {
         extra: 'บิลเพิ่มเติม',
+        club: '88',
       }),
     ],
     { heading: '💸 บิลค้าง · ทุกสนาม', note: 'แสดง 3 บิลเก่าสุดต่อสนาม · ดูบิลอื่นกับผู้จัด' },
@@ -1522,6 +1543,12 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   );
   assert.deepEqual(flexProblems(card.contents), []);
   const [sena, other] = card.contents.contents;
+  const colors = b => [
+    b.header.backgroundColor,
+    b.footer.contents[0].action && b.footer.contents[0].color,
+  ];
+  assert.deepEqual(colors(sena), ['#168B42', '#168B42']);
+  assert.deepEqual(colors(other), ['#1F4E9A', '#1F4E9A'], 'an 88 bill is blue throughout');
   assert.equal(
     flexText(sena),
     [

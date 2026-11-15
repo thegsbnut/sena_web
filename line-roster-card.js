@@ -6,6 +6,18 @@ import { clubOf } from './clubs.js';
 import { noticeDay } from './line-notices.js';
 
 const COLORS = { sena: '#168B42', 88: '#1F4E9A' };
+// Sena green, 88 blue: every card tells the clubs apart by this colour.
+export const clubColor = club => COLORS[club] || COLORS.sena;
+// Card header fill: a diagonal gradient in the club's colour. `backgroundColor` stays
+// as the plain fallback for LINE versions that do not draw gradients.
+const GRADIENTS = { sena: ['#0E6B31', '#2FB35A'], 88: ['#17386F', '#3F7FD6'] };
+export const clubHeaderStyle = club => {
+  const [startColor, endColor] = GRADIENTS[club] || GRADIENTS.sena;
+  return {
+    backgroundColor: clubColor(club),
+    background: { type: 'linearGradient', angle: '135deg', startColor, endColor },
+  };
+};
 const GREY = '#8A8F98',
   AMBER = '#B26A00',
   RED = '#C62828',
@@ -111,7 +123,7 @@ function header(club, title, subtitle) {
       text(title, { weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }),
       ...(subtitle ? [text(subtitle, { size: 'xs', color: '#FFFFFFD9', wrap: true })] : []),
     ],
-    { backgroundColor: COLORS[club] || COLORS.sena, paddingAll: 'lg', spacing: 'xs' },
+    { ...clubHeaderStyle(club), paddingAll: 'lg', spacing: 'xs' },
   );
 }
 
