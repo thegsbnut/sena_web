@@ -18,8 +18,9 @@ const clean = value =>
     .replace(/\s+/g, ' ')
     .trim();
 const text = (value, props = {}) => ({ type: 'text', text: clean(value) || ' ', ...props });
-const vbox = (contents, props = {}) => ({ type: 'box', layout: 'vertical', contents, ...props });
-const hbox = (contents, props = {}) => ({ type: 'box', layout: 'horizontal', contents, ...props });
+const box = (layout, contents, props = {}) => ({ type: 'box', layout, contents, ...props });
+const vbox = (contents, props) => box('vertical', contents, props);
+const hbox = (contents, props) => box('horizontal', contents, props);
 const separator = () => ({ type: 'separator', margin: 'md', color: TRACK });
 
 function row(payer, roster, origin, owing) {
@@ -41,7 +42,9 @@ function row(payer, roster, origin, owing) {
     : payer.method === 'cash'
       ? { text: '💵 เงินสด', color: AMBER }
       : { text: '📲 โอน', color: GREEN };
-  return hbox(
+  // Baseline: LINE accepts an icon only inside a baseline box.
+  return box(
+    'baseline',
     [
       { type: 'icon', url: badgeImage(origin, player?.badge), size: '18px' },
       { type: 'text', text: clean(payer.name), contents: spans, size: 'sm', wrap: true, flex: 1 },
@@ -54,7 +57,7 @@ function row(payer, roster, origin, owing) {
         ...(owing ? { color: RED } : {}),
       }),
     ],
-    { spacing: 'sm', alignItems: 'center', margin: 'sm' },
+    { spacing: 'sm', margin: 'sm' },
   );
 }
 

@@ -165,6 +165,29 @@ const flexText = node => {
       .join(node.layout === 'vertical' ? '\n' : ' ');
   return '';
 };
+// The structure rules LINE enforces that a text-only reading cannot see: an icon
+// or a span-less text may sit in a baseline box, and a baseline box holds only
+// text, icon and filler ("invalid box content type" otherwise).
+const flexProblems = (node, parent = null, at = 'root') => {
+  if (!node || typeof node !== 'object') return [];
+  const problems = [];
+  if (node.type === 'icon' && parent?.layout !== 'baseline')
+    problems.push(at + ': icon outside a baseline box');
+  if (node.type === 'box' && node.layout === 'baseline')
+    for (const child of node.contents)
+      if (!['text', 'icon', 'filler'].includes(child.type))
+        problems.push(at + ': ' + child.type + ' inside a baseline box');
+  if (node.type === 'bubble')
+    for (const part of ['header', 'hero', 'body', 'footer'])
+      problems.push(...flexProblems(node[part], node, at + '.' + part));
+  if (node.type === 'carousel')
+    node.contents.forEach((b, i) => problems.push(...flexProblems(b, node, at + '[' + i + ']')));
+  if (node.type === 'box')
+    node.contents.forEach((c, i) =>
+      problems.push(...flexProblems(c, node, at + '.contents[' + i + ']')),
+    );
+  return problems;
+};
 // The bill summary as text, whether it came as a Flex card or plain text.
 const summaryOf = m => (m.type === 'flex' ? flexText(m.contents) : m.text);
 const textOf = call =>
@@ -1223,6 +1246,7 @@ test('roster cards show badges, only the latest Cup 🥇 and 💩, guests and wh
     'https://x.test/badges/pink-3-0.png',
   ]);
   assert.equal(bubble.footer.contents[0].action.uri, 'https://x.test/court#booking');
+  assert.deepEqual(flexProblems(bubble), []);
 });
 
 test('a roster card LINE rejects is resent once as plain text; an expired token is not', async t => {
@@ -1263,6 +1287,49 @@ test('a roster card LINE rejects is resent once as plain text; an expired token 
   assert.equal(bodies.length, 3);
 });
 
+test('a summary card LINE rejects with its real error shape is resent as plain text', async t => {
+  const f = fixture(t);
+  f.db.exec(
+    'CREATE TABLE bills(id TEXT PRIMARY KEY,club TEXT,session_date TEXT,revision INTEGER,payload TEXT,closed_at INTEGER,slips_removed INTEGER DEFAULT 0, created_at INTEGER)',
+  );
+  const id = 'd'.repeat(32);
+  f.db.prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES(?,?,?,0,?)').run(
+    id,
+    'sena',
+    '2026-11-14',
+    JSON.stringify({
+      payers: [
+        { name: 'Bua', amount: 9000, status: 'paid', method: 'cash', paidAt: 1, shares: [] },
+      ],
+    }),
+  );
+  const code = await createNotice(f.env.DB, {
+    club: 'sena',
+    kind: 'paid',
+    payload: { billId: id },
+  });
+  const bodies = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    // What LINE answered in production (2026-11-15): the index is only in the
+    // message, the property is relative to the flex contents.
+    if (body.messages.some(m => m.type === 'flex'))
+      return Response.json(
+        {
+          message: 'A message (messages[0]) in the request body is invalid',
+          details: [{ property: '/body/contents/3', message: 'invalid box content type' }],
+        },
+        { status: 400 },
+      );
+    return Response.json({});
+  });
+  assert.equal((await f.hook([f.event('💵 Bua จ่ายบิล … #' + code)])).status, 200);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[1].messages[0].type, 'text');
+  assert.match(bodies[1].messages[0].text, /จ่ายครบ[\s\S]*Bua/);
+});
+
 test('bill summary cards show each person with badge, latest 🥇/💩, amount and how they paid', () => {
   const roster = [
     { id: 'p1', name: 'Champ', award: '🥇', badge: { line: 'red', plays: 95 } },
@@ -1292,6 +1359,8 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
     cash: { count: 1, sum: 24000 },
   };
   const bubble = paidBubble(info, roster, 'https://x.test');
+  // LINE refused the first real card: badge icons sat in horizontal boxes.
+  assert.deepEqual(flexProblems(bubble), []);
   assert.equal(
     flexText(bubble),
     [
@@ -1399,6 +1468,7 @@ test('table cards: schedule cap and rest marks, podium order, shared first place
       '3. E / F 1/4 · 50–70',
     ].join('\n'),
   );
+  for (const b of [schedule, board, small, cup]) assert.deepEqual(flexProblems(b), []);
 });
 
 test('table shortcuts with nothing to show still answer in plain text', async t => {
@@ -1447,6 +1517,7 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
     card.altText,
     '💸 บิลค้าง · ทุกสนาม · Sena · ส. 14 พ.ย. ค้าง 2 คน · 88 · อา. 15 พ.ย. ค้าง 1 คน',
   );
+  assert.deepEqual(flexProblems(card.contents), []);
   const [sena, other] = card.contents.contents;
   assert.equal(
     flexText(sena),

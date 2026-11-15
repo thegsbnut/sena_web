@@ -793,13 +793,21 @@ export async function replyToGroupCommand(event, env) {
     // A Flex card LINE refuses must not leave the group without an answer: when
     // LINE points at a flex message (validation details), send the same reply
     // once more with the cards flattened to text. An expired token has no details.
+    // LINE names the message either in each detail's property
+    // ("messages[0].contents.body") or only in the error message, with properties
+    // relative to the card ("A message (messages[0]) …" + "/body/contents/3").
     const flexAt = new Set(
       messages.flatMap((m, i) => (m.type === 'flex' ? ['messages[' + i + ']'] : [])),
     );
-    if (
-      response?.status === 400 &&
-      evidence.error?.details?.some(d => flexAt.has(d.property.split('.')[0]))
-    ) {
+    const named = /^messages\[\d+\]/;
+    const rejected = evidence?.error?.details?.length
+      ? evidence.error.details.map(d =>
+          named.test(d.property || '')
+            ? named.exec(d.property)[0]
+            : /messages\[\d+\]/.exec(evidence.error.message || '')?.[0],
+        )
+      : [];
+    if (response?.status === 400 && rejected.some(at => flexAt.has(at))) {
       logError('line-reply:flex-rejected', evidence.error?.message, {
         command: action.kind,
         details: evidence.error?.details,

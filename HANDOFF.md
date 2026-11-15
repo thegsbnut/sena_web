@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
+- 2026-11-15 · Claude · **แก้บั๊ก: จ่ายครบแล้วบอทไม่ส่งการ์ดสรุป (branch `claude/fervent-lovelace-y5aztk`, ยังไม่ merge)** — log production: LINE ตอบ 400 `invalid box content type` ที่ `/body/contents/3..5` เพราะ `icon` อยู่ในกล่อง horizontal (LINE รับ icon เฉพาะกล่อง `baseline`) → แถวใน `paidBubble` เป็น baseline แล้ว; และ fallback ข้อความล้วนไม่ทำงานเพราะ LINE บอกเลข message แค่ใน `error.message` ส่วน property เป็น `/body/...` → `line-reply.js` อ่านจากทั้งสองที่; เทสเพิ่ม `flexProblems()` ตรวจโครงสร้างการ์ดทุกแบบ; ดู log ผ่าน API: `POST /accounts/<id>/workers/observability/telemetry/query`
 - 2026-11-15 · Claude · **LINE นับ "คน" เป็นจำนวนคนจริงแล้ว (host + แขก/เพื่อนที่จ่ายรวม = หลายคนในบรรทัดบิลเดียว)** — `peopleIn()` ใน `billing.js` ใช้ในข้อความ/การ์ดทุกใบ (จ่ายแล้ว x/y, เปิดบิล, แก้ยอด, ยกเลิกเงินสด, สรุปจ่ายครบ, บิลค้าง); หน้าเว็บยังนับเป็น "บิล" (บรรทัด) ตามเดิม; การเช็กว่าจ่ายครบยังเทียบจำนวนบรรทัด
 - 2026-11-15 · Claude · **มือถือรายงานผลการส่งข้อความเข้ากลุ่มลง log (PR #45, ขึ้น production)** — สร้างบิลแล้วบางครั้งไม่เด้งเข้ากลุ่ม (log: 1 ใน 3 ครั้งไม่มี webhook ตามมา = `liff.sendMessages` ไม่ได้ส่ง) ยังไม่รู้สาเหตุ; `line-notice.js` รายงาน `stage` + error ของ LINE ไป `POST /api/line/notice-report` → log `line-notice:client` (เกิดแล้วดูใน Cloudflare Workers logs, `noticeReport` ใน `line-notices.js`); **ต่อไป: รอเจอครั้งที่ไม่เด้ง แล้วดู log ว่าพังขั้นไหน (`no-credentials` / `not-group` / `no-permission` / `failed`)**
 - 2026-11-15 · Claude · **บิลค้างจ่ายเป็นการ์ด Flex (mockup 05) merge เข้า main แล้ว (PR #44)** — `owedMessage` ใน `line-bill-card.js`, เรียกจาก `billingLineMessages` (`billing.js`); แท็ก @ ยังเป็นข้อความตามหลัง; การ์ดใหญ่เกิน → สรุปข้อความล้วนเดิม; หน้าแอดมินตรวจแท็ก (`mentionDiagnostics`) ยิง validate ของ LINE กับการ์ดด้วย ใช้เช็กการ์ดใน production ได้; **ยังไม่ได้ลองใน LINE จริง**; mockup ครบทุกข้อแล้ว
@@ -36,7 +37,7 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- `npm test` 224/224 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- `npm test` 225/225 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)
