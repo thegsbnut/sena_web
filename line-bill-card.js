@@ -1,7 +1,7 @@
 // Flex card for the "bill paid" summary Badbot posts when the last person pays.
 // Pure: takes billing.js `paidSummary()` plus the public booking roster (for
 // badges and the latest Cup's 🥇/💩) and returns one LINE bubble.
-import { badgeImage, clubColor } from './line-roster-card.js';
+import { badgeImage, clubColor, clubHeaderStyle } from './line-roster-card.js';
 
 const GREEN = '#2E7D32',
   GREY = '#8A8F98',
@@ -85,7 +85,7 @@ export function paidBubble(info, roster, origin) {
           color: '#FFFFFFD9',
         }),
       ],
-      { backgroundColor: clubColor(info.club), paddingAll: 'lg', spacing: 'xs' },
+      { ...clubHeaderStyle(info.club), paddingAll: 'lg', spacing: 'xs' },
     ),
     body: vbox(
       [
@@ -187,7 +187,7 @@ export function owedBubble(b, note) {
           color: '#FFFFFFD9',
         }),
       ],
-      { backgroundColor: color, paddingAll: 'lg', spacing: 'xs' },
+      { ...clubHeaderStyle(b.club), paddingAll: 'lg', spacing: 'xs' },
     ),
     body: vbox(
       [

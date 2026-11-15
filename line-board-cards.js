@@ -2,8 +2,8 @@
 // Cup), the leaderboard and the latest Cup result. Pure: callers pass plain
 // rows, so nothing here reads the database.
 import { clubOf } from './clubs.js';
+import { clubHeaderStyle } from './line-roster-card.js';
 
-const COLORS = { sena: '#168B42', 88: '#1F4E9A' };
 const GOLD = '#B8860B',
   GREY = '#8A8F98',
   AMBER = '#B26A00',
@@ -42,7 +42,7 @@ const clubHeader = (club, title, subtitle) =>
       text(title, { weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }),
       ...(subtitle ? [text(subtitle, { size: 'xs', color: '#FFFFFFD9', wrap: true })] : []),
     ],
-    { backgroundColor: COLORS[club] || COLORS.sena, paddingAll: 'lg', spacing: 'xs' },
+    { ...clubHeaderStyle(club), paddingAll: 'lg', spacing: 'xs' },
   );
 const linkButton = (label, uri) =>
   vbox(

@@ -1379,6 +1379,17 @@ test('bill summary cards show each person with badge, latest 🥇/💩, amount a
     ].join('\n'),
   );
   assert.equal(bubble.header.backgroundColor, '#168B42', 'Sena is green');
+  // Headers fade from a deep to a lighter shade of the club's colour.
+  assert.deepEqual(bubble.header.background, {
+    type: 'linearGradient',
+    angle: '135deg',
+    startColor: '#0E6B31',
+    endColor: '#2FB35A',
+  });
+  assert.equal(
+    paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.background.endColor,
+    '#3F7FD6',
+  );
   assert.equal(
     paidBubble({ ...info, club: '88' }, roster, 'https://x.test').header.backgroundColor,
     '#1F4E9A',
@@ -1476,6 +1487,9 @@ test('table cards: schedule cap and rest marks, podium order, shared first place
       '3. E / F 1/4 · 50–70',
     ].join('\n'),
   );
+  // The leaderboard keeps its gold fade; the schedule takes the club's gradient.
+  assert.equal(board.header.background.startColor, '#B8860B');
+  assert.equal(schedule.header.background.startColor, '#0E6B31');
   for (const b of [schedule, board, small, cup]) assert.deepEqual(flexProblems(b), []);
 });
 
