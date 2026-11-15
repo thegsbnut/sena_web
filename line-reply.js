@@ -10,7 +10,12 @@ import {
 import { memberMode, liffUrl, prepareMembers } from './member.js';
 import { NOTICE_CODE, claimNotice, releaseNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
-import { billingLineText, billingLineMessages, paidSummaryText } from './billing.js';
+import {
+  billingLineText,
+  billingLineMessages,
+  paidSummaryText,
+  resubmitMessages,
+} from './billing.js';
 import { bookingRoute } from './booking.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 
@@ -570,6 +575,10 @@ export async function replyToGroupCommand(event, env) {
         );
         if (!owed) return;
         messages.push(...owed);
+      } else if (notice.kind === 'resubmit') {
+        const chase = await resubmitMessages(env, group, notice.payload);
+        if (!chase) return;
+        messages.push(...chase);
       } else if (notice.kind === 'paid') {
         const text = await paidSummaryText(env, notice.payload.billId);
         if (!text) return;

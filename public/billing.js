@@ -129,8 +129,9 @@
     if (payer) url.searchParams.set('payer', payer);
     return url;
   }
-  // Upload and cash confirmations answer with a LINE group notice (line-notice.js).
-  const notifying = action => ['upload', 'cash'].includes(action);
+  // Payments and organizer bill changes answer with a LINE group notice (line-notice.js).
+  const notifying = action =>
+    ['upload', 'cash', 'review', 'cancel', 'restore', 'edit'].includes(action);
   function noticeFrom(action, value) {
     if (notifying(action) && value?.notice)
       setTimeout(() => window.SenaLineNotice?.send(value.notice));

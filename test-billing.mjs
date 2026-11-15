@@ -520,7 +520,10 @@ test('payments return a group notice; the payment that completes the bill carrie
     cookie,
     payload: { payer: bua.id, received: false, revision: 2 },
   });
-  assert.equal((await r.json()).notice, undefined);
+  assert.equal(
+    (await r.json()).notice.text,
+    `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 1/2`,
+  );
 });
 
 test('opening a bill returns a group notice with a code; reopening the same day does not', async t => {
@@ -539,4 +542,89 @@ test('opening a bill returns a group notice with a code; reopening the same day 
   });
   r = await f.request('/api/billing', { method: 'POST', payload: draft, cookie });
   assert.equal((await r.json()).notice, undefined);
+});
+
+test('organizer changes to a bill announce themselves: edit, cancel and restore', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const path = '/api/billing?bill=' + id,
+    day = noticeDay(draft.date);
+  const read = async () => (await f.request(path, { cookie })).json();
+  const act = async (action, payload) =>
+    (await f.request(path + '&action=' + action, { method: 'POST', cookie, payload })).json();
+  let body = await act('edit', { ...draft, court: 90000, revision: (await read()).revision });
+  const edited = new RegExp(
+    `^✏️ บิล SENA ${day} แก้ยอดแล้ว · 2 คน · รวม ([\\d,]+) บ\\. #([a-z0-9]{5})$`,
+  ).exec(body.notice.text);
+  assert.ok(edited, body.notice.text);
+  assert.deepEqual((await claimNotice(f.env.DB, edited[2])).kind, 'bill');
+  body = await act('cancel', { revision: (await read()).revision });
+  assert.equal(body.notice.text, `🚫 บิล SENA ${day} ถูกยกเลิก ไม่ต้องโอน`);
+  body = await act('restore', { revision: (await read()).revision });
+  const restored = new RegExp(
+    `^♻️ บิล SENA ${day} เปิดใหม่อีกครั้ง · ค้าง 2 คน #([a-z0-9]{5})$`,
+  ).exec(body.notice.text);
+  assert.ok(restored, body.notice.text);
+  assert.deepEqual(await claimNotice(f.env.DB, restored[1]), {
+    club: 'sena',
+    kind: 'bill',
+    payload: { billId: id },
+  });
+});
+
+test('organizer changes after payments announce themselves: PromptPay, undo cash, resend slip', async t => {
+  const f = fixture(t),
+    cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const path = '/api/billing?bill=' + id,
+    day = noticeDay(draft.date);
+  const read = async () => (await f.request(path, { cookie })).json();
+  const act = async (action, payload) =>
+    (await f.request(path + '&action=' + action, { method: 'POST', cookie, payload })).json();
+  const [nut, bua] = (await read()).payers;
+  await f.request(path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount, {
+    method: 'POST',
+    body: slip,
+  });
+  let body = await act('cash', {
+    payer: bua.id,
+    received: true,
+    revision: (await read()).revision,
+  });
+  assert.match(body.notice.text, /\(เงินสด\) · จ่ายแล้ว 2\/2 #/);
+  const account = { transfer: '1111111111', revision: (await read()).revision };
+  body = await act('edit', account);
+  assert.equal(
+    body.notice.text,
+    `✏️ บิล SENA ${day} เปลี่ยนบัญชีรับเงิน · ใครยังไม่โอนให้เปิดบิลเพื่อดู QR ใหม่`,
+  );
+  assert.equal(
+    (await act('edit', { ...account, revision: (await read()).revision })).notice,
+    undefined,
+    'same account, nothing changed',
+  );
+  body = await act('cash', { payer: bua.id, received: false, revision: (await read()).revision });
+  assert.equal(body.notice.text, `↩️ ยกเลิกรับเงินสดของ Bua · บิล SENA ${day} จ่ายแล้ว 1/2`);
+  const view = await read();
+  body = await act('review', {
+    payer: nut.id,
+    status: 'rejected',
+    note: 'ยอดไม่ตรงกับบิลของ Bua',
+    receiptId: view.payers[0].receiptId,
+  });
+  const rejected = new RegExp(
+    `^⚠️ สลิปของ Nut ใช้ไม่ได้ · ให้ส่งใหม่ · บิล SENA ${day} #([a-z0-9]{5})$`,
+  ).exec(body.notice.text);
+  assert.ok(rejected, body.notice.text);
+  assert.doesNotMatch(body.notice.text, /Bua|ยอดไม่ตรง/, 'the reason stays in the app');
+  assert.deepEqual(await claimNotice(f.env.DB, rejected[1]), {
+    club: 'sena',
+    kind: 'resubmit',
+    payload: { billId: id, payerId: nut.id },
+  });
 });
