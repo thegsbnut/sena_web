@@ -680,6 +680,15 @@ test('roster buttons return scoped text only and old menu actions still work', a
   await f.hook([f.event('', { type: 'postback', postback: { data: 'badbot:menu' } })]);
   assert.equal(f.calls.at(-1).messages.length, 1);
   assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 8);
+  // The menu header fades green, like Sena's cards.
+  const menuHeader = f.calls.at(-1).messages[0].contents.header;
+  assert.equal(menuHeader.backgroundColor, '#168B42');
+  assert.deepEqual(menuHeader.background, {
+    type: 'linearGradient',
+    angle: '135deg',
+    startColor: '#0E6B31',
+    endColor: '#2FB35A',
+  });
 });
 
 test('typed roster shortcuts select Sena, เสนา, 88 or all courts', async t => {
