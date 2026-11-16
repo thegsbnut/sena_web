@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>SENA Court launch clip</title>
+<style>
+@font-face{font-family:P;font-weight:400;src:url(a/prompt-thai-400-normal.woff2);unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:P;font-weight:600;src:url(a/prompt-thai-600-normal.woff2);unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:P;font-weight:800;src:url(a/prompt-thai-800-normal.woff2);unicode-range:U+0E01-0E5B,U+200C-200D,U+25CC}
+@font-face{font-family:P;font-weight:400;src:url(a/prompt-latin-400-normal.woff2)}
+@font-face{font-family:P;font-weight:600;src:url(a/prompt-latin-600-normal.woff2)}
+@font-face{font-family:P;font-weight:800;src:url(a/prompt-latin-800-normal.woff2)}
+:root{--g1:#0E6B31;--g2:#2FB35A;--b1:#17386F;--b2:#3F7FD6}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1080px;height:1920px;overflow:hidden;background:#DDF4EA}
+body{font-family:P,'Noto Color Emoji',sans-serif;color:#163024}
+#stage{position:absolute;inset:0;overflow:hidden;background:linear-gradient(170deg,#EAFBF3 0%,#CFF0E2 55%,#BFE7DA 100%)}
+.blob{position:absolute;border-radius:50%;filter:blur(2px);opacity:.55}
+.abs{position:absolute}
+/* captions */
+#cap{position:absolute;left:40px;right:40px;top:56px;height:270px}
+.capset{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}
+.capset .k{font-weight:800;font-size:64px;line-height:1.15;color:var(--g1)}
+.capset .s{font-weight:600;font-size:38px;color:#2C5E45;background:#fff;padding:6px 28px;border-radius:999px;box-shadow:0 6px 18px rgba(14,107,49,.12)}
+/* intro */
+#intro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#introIcon{width:420px;height:420px;border-radius:50%;box-shadow:0 30px 70px rgba(14,107,49,.35)}
+.it{font-weight:800;text-align:center;line-height:1.1}
+#it1{font-size:120px;color:var(--g1);margin-top:60px}
+#it2{font-size:72px;color:#2C5E45;margin-top:18px}
+#it3{font-size:110px;margin-top:30px;color:#fff;background:linear-gradient(90deg,#06C755,#19A84A);padding:6px 56px 16px;border-radius:40px;box-shadow:0 18px 40px rgba(6,199,85,.35)}
+#pills,#lp{display:flex;gap:24px;margin-top:56px}
+.pill{font-weight:800;font-size:48px;color:#fff;padding:10px 44px;border-radius:999px}
+/* phone */
+#phone{position:absolute;left:175px;top:338px;width:730px;height:1547px;border-radius:78px;background:#111a16;padding:14px;box-shadow:0 40px 90px rgba(10,60,35,.38)}
+#scr{position:absolute;left:14px;top:14px;width:390px;height:844px;transform-origin:0 0;transform:scale(1.8);border-radius:36px;overflow:hidden;background:#fff;
+  font-family:'Noto Sans','Noto Sans Thai','Noto Color Emoji',sans-serif;color:#111}
+.status{position:absolute;left:0;right:0;top:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:6px 26px 0 34px;font-size:15px;font-weight:700;z-index:30}
+.status .ic{display:flex;gap:6px;align-items:center;font-size:12px}
+.bat{width:24px;height:12px;border:1.6px solid currentColor;border-radius:4px;position:relative;opacity:.9}
+.bat:after{content:'';position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:15px;background:currentColor;border-radius:1.5px}
+#lhdr{position:absolute;left:0;right:0;top:47px;height:52px;background:#fff;display:flex;align-items:center;padding:0 12px;gap:6px;z-index:6;border-bottom:1px solid #e9ecef}
+#lhdr .bk{font-size:30px;line-height:1;color:#222;width:22px;margin-top:-4px}
+#lhdr .gn{font-size:17px;font-weight:700;flex:1}
+#lhdr .gn small{font-weight:400;color:#777}
+#lhdr .ri{display:flex;gap:16px;font-size:18px;color:#333}
+#chat{position:absolute;left:0;right:0;top:99px;height:661px;background:#8EA9D3;overflow:hidden}
+#chatCol{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;padding:0 10px 10px}
+.grow{overflow:hidden;flex:none}
+.msg{display:flex;gap:8px;align-items:flex-start;padding-top:12px}
+.msg.me{justify-content:flex-end;align-items:flex-end}
+.msg .av{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;background-size:cover;background-position:center}
+.msg .nm{font-size:11px;color:#2c3e55;margin:0 0 4px 2px}
+.bb{background:#fff;border-radius:18px;padding:8px 12px;font-size:15px;line-height:1.4;max-width:252px;word-break:break-word}
+.me .bb{background:#A5E57D}
+.meta{font-size:10px;color:#34495e;line-height:1.25;margin:0 2px 2px;text-align:right;white-space:nowrap}
+.side{display:flex;align-items:flex-end;gap:4px}
+.pillmsg{align-self:center;margin-top:14px;background:rgba(0,0,0,.22);color:#fff;font-size:11px;padding:3px 12px;border-radius:12px}
+#lbar{position:absolute;left:0;right:0;bottom:0;height:84px;background:#fff;z-index:6;border-top:1px solid #e9ecef}
+#lbar .row{height:50px;display:flex;align-items:center;gap:12px;padding:0 12px;font-size:20px;color:#444}
+#lbar .fld{flex:1;height:36px;border-radius:18px;background:#F1F3F5;display:flex;align-items:center;padding:0 14px;font-size:15px;color:#9aa3ad}
+#lbar .fld.typed{color:#111}
+#caret{display:inline-block;width:1.5px;height:18px;background:#06C755;margin-left:1px;vertical-align:middle}
+#send{font-size:20px;color:#06C755;font-weight:700}
+.home{position:absolute;left:50%;bottom:8px;width:134px;height:5px;border-radius:3px;background:#111;transform:translateX(-50%);z-index:40}
+/* LIFF */
+#liff{position:absolute;left:0;right:0;top:0;height:844px;background:#fff;z-index:20}
+#liffHdr{position:absolute;left:0;right:0;top:47px;height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #eee;background:#fff}
+#liffHdr .x{font-size:24px;color:#333;width:24px}
+#liffHdr .t{text-align:center;line-height:1.2}
+#liffHdr .t b{display:block;font-size:14px}
+#liffHdr .t small{font-size:10.5px;color:#888}
+#liffWeb{position:absolute;left:0;top:95px;width:390px;height:749px;background:#0f2a22;overflow:hidden}
+#webImg{width:390px;height:749px;display:block}
+#liffLoad{position:absolute;left:0;top:95px;height:3px;background:#06C755}
+/* native overlays */
+#picker{position:absolute;left:0;right:0;bottom:0;height:520px;background:#fff;border-radius:22px 22px 0 0;z-index:25;box-shadow:0 -10px 30px rgba(0,0,0,.25);padding:14px 14px 0}
+#picker .gb{width:36px;height:4px;border-radius:2px;background:#ccc;margin:0 auto 12px}
+#picker h4{font-size:17px;margin:0 4px 4px}
+#picker p{font-size:12px;color:#777;margin:0 4px 12px}
+#pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+#pgrid div{aspect-ratio:1;border-radius:6px;background-size:cover;background-position:center top}
+#dim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:24}
+#alert{position:absolute;left:44px;right:44px;top:300px;background:#fff;border-radius:26px;z-index:26;padding:22px 22px 10px}
+#alert .h{font-size:13px;color:#555;margin-bottom:8px}
+#alert .m{font-size:16px;line-height:1.45;color:#111}
+#alert .bt{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+#alert .bt span{font-size:15px;font-weight:700;color:#0B57D0;padding:10px 14px;border-radius:18px}
+.tap{position:absolute;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:3.5px solid rgba(255,255,255,.95);background:rgba(255,255,255,.35);box-shadow:0 3px 12px rgba(0,0,0,.3);z-index:50;opacity:0}
+#confetti{position:absolute;inset:0;pointer-events:none;z-index:60}
+/* outro */
+#outro{position:absolute;inset:0;background:linear-gradient(170deg,#FFF7E0 0%,#E6F8EF 60%,#CDEFE2 100%)}
+.mframe{position:absolute;left:60px;top:400px;width:960px;height:528px;border-radius:48px;overflow:hidden;box-shadow:0 30px 70px rgba(14,107,49,.28);border:10px solid #fff}
+.mframe img{width:100%;height:100%;object-fit:cover}
+.say{position:absolute;left:80px;right:80px;text-align:center;font-weight:800;line-height:1.25}
+#say1{top:1040px;font-size:70px;color:var(--g1)}
+#say2{top:1160px;font-size:58px;color:#2C5E45}
+#say3{top:1360px;font-size:80px;color:#C2410C}
+#logo{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(170deg,#FFF7E0 0%,#E6F8EF 60%,#CDEFE2 100%)}
+#coin{width:600px;height:600px;border-radius:50%;padding:26px;background:conic-gradient(from 200deg,#F2B705,#FFE08A,#E09A00,#FFE08A,#F2B705);box-shadow:0 30px 80px rgba(178,106,0,.35)}
+#coin div{width:100%;height:100%;border-radius:50%;background:url(../../public/mascot/hero-open.jpg) 50% 30%/165% auto no-repeat;border:8px solid #fff}
+#lname{margin-top:40px;font-weight:800;font-size:62px;color:#B26A00;background:#fff;padding:6px 40px;border-radius:999px;box-shadow:0 8px 24px rgba(178,106,0,.18)}
+#lt{margin-top:40px;font-weight:800;font-size:132px;color:var(--g1);letter-spacing:-2px}
+#ls{margin-top:6px;font-weight:600;font-size:46px;color:#2C5E45}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="blob" style="width:520px;height:520px;left:-160px;top:-120px;background:#BDEFD5"></div>
+  <div class="blob" style="width:440px;height:440px;right:-140px;top:260px;background:#FFF1C2"></div>
+  <div class="blob" style="width:600px;height:600px;right:-200px;bottom:-220px;background:#B7E3F0"></div>
+
+  <div id="intro">
+    <img id="introIcon" src="../../public/shuttle-spirit-512.png">
+    <div class="it" id="it1">จองตีแบด</div>
+    <div class="it" id="it2">ดูคู่ · จ่ายบิล</div>
+    <div class="it" id="it3">จบในไลน์</div>
+    <div id="pills"><span class="pill" style="background:linear-gradient(90deg,var(--g1),var(--g2))">ก๊วน Sena</span><span class="pill" style="background:linear-gradient(90deg,var(--b1),var(--b2))">ก๊วน 88</span></div>
+  </div>
+
+  <div id="cap"></div>
+
+  <div id="phone"><div id="scr">
+    <div class="status" id="st"><span>21:48</span><span class="ic">▂▄▆█ <span style="font-size:13px">📶</span><span class="bat"></span></span></div>
+    <div id="lhdr"><span class="bk">‹</span><span class="gn">ก๊วนแบด Sena <small>(24)</small></span><span class="ri"><span>🔍</span><span>☰</span></span></div>
+    <div id="chat"><div id="chatCol"></div></div>
+    <div id="lbar"><div class="row"><span>＋</span><span>📷</span><span>🖼️</span><div class="fld" id="fld">Aa</div><span id="send">😊</span></div></div>
+    <div id="liff">
+      <div class="status" style="background:#fff"><span>21:48</span><span class="ic">▂▄▆█ <span class="bat"></span></span></div>
+      <div id="liffHdr"><span class="x">✕</span><span class="t"><b>SENA Court</b><small>sena-web.thegsbnut.workers.dev</small></span><span style="font-size:20px;color:#333">⋯</span></div>
+      <div id="liffWeb"><img id="webImg"></div>
+      <div id="liffLoad"></div>
+      <div id="dim"></div>
+      <div id="picker"><div class="gb"></div><h4>เลือกรูปภาพ</h4><p>รูปล่าสุด</p><div id="pgrid"></div></div>
+      <div id="alert"><div class="h">sena-web.thegsbnut.workers.dev</div><div class="m" id="alertMsg"></div><div class="bt"><span>ยกเลิก</span><span id="alertOk">ตกลง</span></div></div>
+    </div>
+    <div class="home"></div>
+    <div class="tap" id="tap"></div>
+  </div></div>
+
+  <div id="outro">
+    <div class="mframe"><img id="m1" src="../../public/mascot/hero-open.jpg" class="abs" style="inset:0"><img id="m2" src="../../public/mascot/hero-remind.jpg" class="abs" style="inset:0"></div>
+    <div class="say" id="say1">หนูชื่อน้องขุนเงินค่ะ</div>
+    <div class="say" id="say2">ขออนุญาตรับหน้าที่แทน<br>พี่ขุนทองนะคะ</div>
+    <div class="say" id="say3">ให้โอกาสหนูหน่อยน้าา 🥺</div>
+    <div id="logo">
+      <div id="coin"><div></div></div>
+      <div id="lname">น้องขุนเงิน</div>
+      <div id="lt">SENA Court</div>
+      <div id="ls">จอง · ดูคู่ · จ่ายบิล จบในไลน์</div>
+      <div id="lp"><span class="pill" style="background:linear-gradient(90deg,var(--g1),var(--g2))">Sena</span><span class="pill" style="background:linear-gradient(90deg,var(--b1),var(--b2))">88</span></div>
+    </div>
+  </div>
+  <canvas id="confetti" width="1080" height="1920"></canvas>
+</div>
+
+<script src="flex.js"></script>
+<script src="build/flexdata.js"></script>
+<script src="build/recdata.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const p = (t, t0, d) => cl((t - t0) / d);
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+const eio = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const back = (x) => { const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const win = (t, a, b, d = 0.35) => Math.min(p(t, a, d), 1 - p(t, b - d, d));
+function popIn(el, t, t0, from = 0.6, d = 0.45) { const x = p(t, t0, d); el.style.opacity = cl(x * 2.2); el.style.transform = `scale(${from + (1 - from) * back(x)})`; }
+function rise(el, t, t0, dy = 60, d = 0.5) { const x = eo(p(t, t0, d)); el.style.opacity = x; el.style.transform = `translateY(${(1 - x) * dy}px)`; }
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const SCALE = 1.8;
+const siteUrl = (u) => u.replace('https://site.local/', '../../public/');
+
+// ---------------- timeline constants ----------------
+const T = {
+  phoneIn: 3.2, typeA: 4.4, typeB: 5.1, sendTap: 5.35, sendMsg: 5.5, menu: 6.2, tapSena: 7.4,
+  liffA: 7.7, recA: 8.5, liffAOut: 16.15,
+  bookMsg: 16.55, roster: 17.3,
+  billMsg: 20.2, owed: 21.0, owedScroll0: 22.1, owedScroll1: 24.0, tapPay: 24.5,
+  liffB: 24.8, recB: 25.6, recBCut: 9.75, // seconds of recording B to play
+};
+T.liffBOut = T.recB + T.recBCut;
+T.payMsg = T.liffBOut + 0.45;
+T.skip = T.payMsg + 0.7;
+T.others = [0, 1, 2, 3].map((i) => T.skip + 0.4 + i * 0.3);
+T.paid = T.others[3] + 0.7;
+T.paidScroll0 = T.paid + 1.1; T.paidScroll1 = T.paid + 2.9;
+T.phoneOut = T.paid + 3.6;
+T.outro = T.phoneOut + 0.3;
+const O = T.outro; // outro offsets below are relative to the old 24.4 start
+T.end = O + 9.1;
+window.TIMELINE = T;
+// sound-effect cue list for sfx3.py
+const ev = (seg, type) => REC[seg].events.filter((e) => e.type === type);
+const pk = ev('B', 'picker')[0], al = ev('B', 'alert')[0], at = ev('B', 'alertTap')[0];
+window.SFX = [
+  ...[0.4, 1.0, 1.6].map((t) => ['pop', t]), ['pop', 2.2],
+  ['whoosh', T.phoneIn - 0.2],
+  ...[0, 1, 2, 3, 4, 5].map((i) => ['key', T.typeA + (i + 0.5) * (T.typeB - T.typeA) / 6]),
+  ['click', T.sendTap], ['pop', T.sendMsg], ['pop', T.menu],
+  ['click', T.tapSena], ['whoosh', T.liffA],
+  ...ev('A', 'tap').map((e) => ['click', T.recA + e.t]),
+  ['chime', T.recA + ev('A', 'tap')[2].t + 0.5],
+  ['whoosh', T.liffAOut], ['pop', T.bookMsg], ['pop', T.roster],
+  ['pop', T.billMsg], ['pop', T.owed], ['click', T.tapPay], ['whoosh', T.liffB],
+  ...ev('B', 'tap').map((e) => ['click', T.recB + e.t]),
+  ['whoosh', T.recB + pk.t0], ['click', T.recB + pk.t1 - 0.45], ['pop', T.recB + al.t0], ['click', T.recB + at.t],
+  ['chime', T.recB + at.t + 0.9],
+  ['whoosh', T.liffBOut], ['pop', T.payMsg], ['pop', T.skip], ...T.others.map((t) => ['pop', t]),
+  ['pop', T.paid], ['confetti', T.paid + 0.2],
+  ['whoosh', T.phoneOut], ['pop', O + 0.5], ['aww', O + 3.85], ['whoosh', O + 6.0], ['sparkle', O + 6.2], ['chime3', O + 6.9],
+];
+
+// captions
+const CAPS = [
+  [T.phoneIn + 0.3, T.tapSena, 'พิมพ์ badbot ในกลุ่ม', 'เมนูของ Badbot เด้งขึ้นทันที'],
+  [T.tapSena, T.liffAOut + 0.2, 'กดจอง → เข้าเว็บใน LINE', 'เลือกวัน · ยืนยัน · จบ'],
+  [T.liffAOut + 0.2, T.billMsg - 0.2, 'ลงชื่อปุ๊บ รายชื่อขึ้นกลุ่มปั๊บ', 'Badbot ส่งการ์ดรายชื่อให้เอง'],
+  [T.billMsg - 0.2, T.tapPay, 'ตีเสร็จ ผู้จัดเปิดบิล', 'น้องขุนเงินมาเรียกเก็บเอง'],
+  [T.tapPay, T.liffBOut + 0.2, 'สแกน QR · แนบสลิป', 'จ่ายเสร็จในหน้าเดียว ไม่ต้องรอผู้จัด'],
+  [T.liffBOut + 0.2, T.phoneOut + 0.3, 'ครบทุกคน น้องขุนเงินแจ้งให้เอง', 'ผู้จัดไม่ต้องไล่ทวงอีกต่อไป'],
+];
+$('cap').innerHTML = CAPS.map((c, i) => `<div class="capset" id="cap${i}"><div class="k">${c[2]}</div><div class="s">${c[3]}</div></div>`).join('');
+
+// ---------------- chat messages ----------------
+const people = { 'ต้น': '#E8590C', 'แพร': '#D6336C', 'พี่ปุ้ม (ผู้จัด)': '#7048E8', 'กอล์ฟ': '#1C7ED6', 'นุ่น': '#0CA678', 'พีท': '#F59F00', 'ปุ๊ก': '#AE3EC9' };
+const av = (n) => n === 'Badbot' ? `<div class="av" style="background-image:url(../../public/shuttle-spirit-512.png)"></div>` : `<div class="av" style="background:${people[n]}">${esc([...n][0])}</div>`;
+const left = (n, inner, time) => `<div class="msg">${av(n)}<div><div class="nm">${esc(n)}</div><div class="side">${inner}<div class="meta">${time}</div></div></div></div>`;
+const right = (text, time, read) => `<div class="msg me"><div class="meta">${read ? 'อ่านแล้ว ' + read + '<br>' : ''}${time}</div><div class="bb">${esc(text)}</div></div>`;
+const flex = (k) => Flex.render(FLEX[k], siteUrl);
+const payOther = (n, k) => `💸 ${n} จ่ายบิล SENA ส. 21 พ.ย. 120 บ. สำเร็จ · จ่ายแล้ว ${k}/12`;
+const MSGS = [
+  { t: -1, html: left('ต้น', '<div class="bb">เสาร์นี้ใครไปบ้าง 🏸</div>', '21:40') },
+  { t: -1, html: left('แพร', '<div class="bb">ไปจ้าาา จองแล้ว</div>', '21:41') },
+  { t: T.sendMsg, html: right('badbot', '21:48', 6) },
+  { t: T.menu, html: left('Badbot', flex('menu'), '21:48'), id: 'menu' },
+  { t: T.bookMsg, html: right(REC.A.notices[0], '21:49', 8) },
+  { t: T.roster, html: left('Badbot', flex('roster'), '21:49') },
+  { t: T.billMsg, html: left('พี่ปุ้ม (ผู้จัด)', `<div class="bb">${esc(REC.billOpen)}</div>`, '22:15') },
+  { t: T.owed, html: left('Badbot', flex('owed'), '22:15'), id: 'owed', tall: [T.owedScroll0, T.owedScroll1] },
+  { t: T.payMsg, html: right(REC.B.notices[0], '22:18', 9) },
+  { t: T.skip, html: '<div class="pillmsg">· · · ผ่านไปสักพัก · · ·</div>' },
+  ...['กอล์ฟ', 'นุ่น', 'พีท', 'ปุ๊ก'].map((n, i) => ({ t: T.others[i], html: left(n, `<div class="bb">${esc(payOther(n, 9 + i))}</div>`, '22:4' + (i + 1)) })),
+  { t: T.paid, html: left('Badbot', flex('paid'), '22:45'), id: 'paid', tall: [T.paidScroll0, T.paidScroll1] },
+];
+$('chatCol').innerHTML = MSGS.map((m, i) => `<div class="grow" id="g${i}"${m.id ? ` data-id="${m.id}"` : ''}>${m.html}</div>`).join('');
+const grows = MSGS.map((m, i) => ({ ...m, el: $('g' + i), h: 0 }));
+
+// photo picker grid: the slip + neutral placeholders
+$('pgrid').innerHTML = '<div id="pslip" style="background-image:url(slip.png);outline:3px solid #06C755"></div>' +
+  ['#cfd8dc', '#b0bec5', '#d7ccc8', '#c8e6c9', '#bbdefb', '#ffe0b2', '#e1bee7', '#f8bbd0'].map((c) => `<div style="background:linear-gradient(135deg,${c},#fff)"></div>`).join('');
+
+// recordings
+const recImgs = { A: [], B: [] };
+function frameAt(seg, r) {
+  const fr = REC[seg].frames;
+  let lo = 0;
+  for (let i = 0; i < fr.length; i++) { if (fr[i].t <= r) lo = i; else break; }
+  return `build/rec/${seg}/${fr[lo].f}`;
+}
+
+// confetti
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const conf = Array.from({ length: 120 }, () => ({ x: rnd() * 1080, v: 380 + rnd() * 520, w: 14 + rnd() * 16, h: 8 + rnd() * 10, r: rnd() * 6, vr: (rnd() - 0.5) * 10, sway: rnd() * 60, ph: rnd() * 6, c: ['#F2B705', '#2FB35A', '#3F7FD6', '#F472B6', '#F97316', '#22D3EE'][Math.floor(rnd() * 6)], d: rnd() * 0.5 }));
+function confetti(t, t0, t1) {
+  const c = $('confetti').getContext('2d'); c.clearRect(0, 0, 1080, 1920);
+  if (t < t0 || t > t1 + 2) return;
+  for (const q of conf) { const tt = t - t0 - q.d; if (tt < 0) continue; const y = -40 + q.v * tt, x = q.x + Math.sin(tt * 3 + q.ph) * q.sway; if (y > 1960) continue;
+    c.save(); c.translate(x, y); c.rotate(q.r + q.vr * tt); c.fillStyle = q.c; c.globalAlpha = 1 - p(t, t1, 1.5); c.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); c.restore(); }
+}
+
+// taps in screen units
+function unitCenter(el) {
+  const s = $('scr').getBoundingClientRect(), r = el.getBoundingClientRect();
+  return [(r.left + r.width / 2 - s.left) / SCALE, (r.top + r.height / 2 - s.top) / SCALE];
+}
+function tapAt(t, t0, x, y) {
+  if (t < t0 - 0.3 || t > t0 + 0.55) return false;
+  const tp = $('tap');
+  const a = p(t, t0 - 0.3, 0.3), b = p(t, t0, 0.5);
+  tp.style.left = x + 'px'; tp.style.top = y + 'px';
+  tp.style.opacity = t < t0 ? a : 1 - b;
+  tp.style.transform = `scale(${t < t0 ? 1.4 - 0.4 * eo(a) : 1 - 0.25 * Math.sin(Math.PI * b)})`;
+  return true;
+}
+function pressBtn(el, t, t0) { const k = Math.sin(Math.PI * p(t, t0, 0.25)); el.style.filter = `brightness(${1 - 0.18 * k})`; }
+
+const findBtn = (gid, label) => [...document.querySelectorAll(`[data-id="${gid}"] .fx-btn`)].find((b) => b.dataset.label.includes(label));
+
+async function render(t) {
+  // intro
+  const iv = win(t, -1, 3.5, 0.45);
+  $('intro').style.opacity = iv; $('intro').style.display = iv > 0 ? 'flex' : 'none';
+  if (iv > 0) {
+    const ic = $('introIcon'), x = p(t, 0.05, 0.7);
+    ic.style.opacity = cl(x * 2);
+    ic.style.transform = `scale(${0.3 + 0.7 * back(x)}) rotate(${(1 - eo(x)) * -40 + Math.sin(t * 2.5) * 4}deg) translateY(${Math.sin(t * 3) * 10}px)`;
+    popIn($('it1'), t, 0.4, 0.5); popIn($('it2'), t, 1.0, 0.5); popIn($('it3'), t, 1.6, 0.4, 0.5); rise($('pills'), t, 2.2, 80);
+  }
+  // phone
+  const ph = $('phone');
+  const pin = eo(p(t, T.phoneIn - 0.2, 0.7)), pout = eio(p(t, T.phoneOut, 0.6));
+  ph.style.transform = `translateY(${(1 - pin) * 1600 + pout * 1700}px) rotate(${(1 - pin) * 6}deg)`;
+  ph.style.display = t > T.phoneIn - 0.3 && t < T.phoneOut + 0.7 ? 'block' : 'none';
+  // captions
+  CAPS.forEach((c, i) => { const el = $('cap' + i), v = win(t, c[0], c[1], 0.3); el.style.opacity = v; el.style.display = v > 0 ? 'flex' : 'none'; el.style.transform = `translateY(${(1 - eo(p(t, c[0], 0.45))) * 36}px)`; });
+
+  $('st').firstElementChild.textContent = t < T.billMsg ? '21:48' : t < T.skip ? '22:15' : '22:45';
+  document.querySelector('#liff .status span').textContent = t < T.billMsg ? '21:49' : '22:17';
+  // typing
+  const typed = 'badbot';
+  const n = Math.floor(cl((t - T.typeA) / (T.typeB - T.typeA)) * typed.length + 0.0001);
+  const fld = $('fld');
+  if (t >= T.typeA - 0.3 && t < T.sendMsg) { fld.classList.add('typed'); fld.innerHTML = esc(typed.slice(0, n)) + '<span id="caret"></span>'; $('send').textContent = n ? '➤' : '😊'; }
+  else { fld.classList.remove('typed'); fld.textContent = 'Aa'; $('send').textContent = '😊'; }
+
+  // chat grows + scroll offset
+  let offset = 0;
+  const vh = 661;
+  for (const g of grows) {
+    const x = g.t < 0 ? 1 : p(t, g.t, 0.38);
+    g.el.style.height = (g.h * eo(x)) + 'px';
+    const inner = g.el.firstElementChild;
+    inner.style.opacity = cl(x * 2);
+    inner.style.transform = `scale(${0.82 + 0.18 * back(x)})`;
+    inner.style.transformOrigin = inner.classList.contains('me') ? 'right bottom' : 'left bottom';
+    if (g.tall && t >= g.t && t < g.tall[1] + 0.1) {
+      // keep the card's top in view, then scroll down to its end
+      const hold = Math.max(0, g.h * eo(x) - (vh - 70));
+      offset = hold * (1 - eio(p(t, g.tall[0], g.tall[1] - g.tall[0])));
+    }
+  }
+  $('chatCol').style.transform = `translateY(${offset}px)`;
+
+  // button presses on cards
+  const bSena = findBtn('menu', 'Sena'), bPay = findBtn('owed', 'จ่าย');
+  pressBtn(bSena, t, T.tapSena); pressBtn(bPay, t, T.tapPay);
+  if (t >= T.sendTap - 0.1 && t < T.sendTap + 0.2) $('send').style.transform = 'scale(.85)'; else $('send').style.transform = '';
+
+  // LIFF A / B
+  const liff = $('liff');
+  let lv = 0, seg = null, r0 = 0;
+  if (t >= T.liffA && t < T.liffAOut + 0.45) { seg = 'A'; lv = eo(p(t, T.liffA, 0.4)) * (1 - eio(p(t, T.liffAOut, 0.4))); r0 = T.recA; }
+  if (t >= T.liffB && t < T.liffBOut + 0.45) { seg = 'B'; lv = eo(p(t, T.liffB, 0.4)) * (1 - eio(p(t, T.liffBOut, 0.4))); r0 = T.recB; }
+  liff.style.display = lv > 0 ? 'block' : 'none';
+  liff.style.transform = `translateY(${(1 - lv) * 860}px)`;
+  let tapped = false;
+  if (seg) {
+    const r = t - r0;
+    const loading = r < 0;
+    $('liffLoad').style.display = loading ? 'block' : 'none';
+    $('liffLoad').style.width = (eo(p(t, r0 - 0.8, 0.8)) * 100) + '%';
+    const img = $('webImg');
+    if (loading) { img.style.visibility = 'hidden'; }
+    else {
+      img.style.visibility = 'visible';
+      const src = frameAt(seg, Math.min(r, seg === 'B' ? T.recBCut : 99));
+      if (!img.src.endsWith(src)) { img.src = src; await img.decode().catch(() => {}); }
+    }
+    for (const e of REC[seg].events) if (e.type === 'tap') tapped = tapAt(t, r0 + e.t, e.x, 95 + e.y) || tapped;
+    // native picker / confirm for B
+    const pk = REC.B.events.find((e) => e.type === 'picker'), al = REC.B.events.find((e) => e.type === 'alert'), at = REC.B.events.find((e) => e.type === 'alertTap');
+    let pv = 0, av2 = 0;
+    if (seg === 'B') {
+      pv = eo(p(r, pk.t0, 0.3)) * (1 - eio(p(r, pk.t1 - 0.05, 0.3)));
+      av2 = p(r, al.t0, 0.2) * (1 - p(r, at.t + 0.15, 0.2));
+      if (pv > 0) tapped = tapAt(t, r0 + pk.t1 - 0.45, ...unitCenter($('pslip'))) || tapped;
+      if (av2 > 0) { $('alertMsg').textContent = al.text; tapped = tapAt(t, r0 + at.t, ...unitCenter($('alertOk'))) || tapped; }
+    }
+    $('picker').style.display = pv > 0 ? 'block' : 'none';
+    $('picker').style.transform = `translateY(${(1 - pv) * 540}px)`;
+    $('alert').style.display = av2 > 0 ? 'block' : 'none';
+    $('alert').style.opacity = av2; $('alert').style.transform = `scale(${0.92 + 0.08 * av2})`;
+    $('dim').style.opacity = Math.max(pv * 0.8, av2);
+    $('dim').style.display = pv > 0 || av2 > 0 ? 'block' : 'none';
+  }
+  // chat taps
+  if (!seg || lv < 1) {
+    tapped = tapAt(t, T.sendTap, ...unitCenter($('send'))) || tapped;
+    tapped = tapAt(t, T.tapSena, ...unitCenter(bSena)) || tapped;
+    tapped = tapAt(t, T.tapPay, ...unitCenter(bPay)) || tapped;
+  }
+  if (!tapped) $('tap').style.opacity = 0;
+
+  confetti(t, T.paid + 0.2, T.paid + 1.6);
+
+  // outro (same choreography as v2, shifted)
+  const o = $('outro'), ov = p(t, O - 0.1, 0.5);
+  o.style.display = ov > 0 ? 'block' : 'none'; o.style.opacity = ov;
+  if (ov > 0) {
+    const mf = document.querySelector('.mframe'), mx = p(t, O, 0.7);
+    mf.style.opacity = cl(mx * 2);
+    mf.style.transform = `scale(${0.8 + 0.2 * back(mx)}) translateY(${Math.sin(t * 2.2) * 10}px) rotate(${Math.sin(t * 1.7) * 1.2}deg)`;
+    $('m2').style.opacity = p(t, O + 3.9, 0.35);
+    popIn($('say1'), t, O + 0.5, 0.6); rise($('say2'), t, O + 1.6, 50); popIn($('say3'), t, O + 4.0, 0.5, 0.5);
+    const shake = t > O + 4.0 && t < O + 5.2 ? Math.sin(t * 40) * 3 * (1 - p(t, O + 4.0, 1.2)) : 0;
+    $('say3').style.transform += ` rotate(${shake}deg)`;
+    const lg = $('logo'), lgv = p(t, O + 6.0, 0.5);
+    lg.style.display = lgv > 0 ? 'flex' : 'none'; lg.style.opacity = lgv;
+    if (lgv > 0) {
+      const cx = p(t, O + 6.1, 0.7);
+      $('coin').style.transform = `scale(${0.4 + 0.6 * back(cx)}) rotate(${(1 - eo(cx)) * -200}deg) translateY(${Math.sin(t * 2.4) * 8}px)`;
+      popIn($('lname'), t, O + 6.6, 0.5); rise($('lt'), t, O + 6.9, 70); rise($('ls'), t, O + 7.2, 50); rise($('lp'), t, O + 7.5, 50);
+    }
+  }
+}
+window.render = render;
+window.ready = document.fonts.ready
+  .then(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))))
+  .then(() => {
+    $('phone').style.display = 'block';
+    for (const g of grows) { g.el.style.height = 'auto'; }
+    for (const g of grows) g.h = g.el.getBoundingClientRect().height / SCALE;
+    return render(0);
+  })
+  .then(() => true);
+</script>
+</body>
+</html>

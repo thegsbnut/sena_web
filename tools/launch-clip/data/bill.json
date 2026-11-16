@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-21",
+  "court": 96000,
+  "shuttle": 48000,
+  "transfer": "0000000000",
+  "attendees": [
+    { "name": "ต้น", "payer": "ต้น", "payerKey": "member:p0" },
+    { "name": "มิ้นท์", "payer": "มิ้นท์", "payerKey": "member:p1" },
+    { "name": "โอ๊ต", "payer": "โอ๊ต", "payerKey": "member:p2" },
+    { "name": "แพร", "payer": "แพร", "payerKey": "member:p3" },
+    { "name": "บอส", "payer": "บอส", "payerKey": "member:p4" },
+    { "name": "ฝน", "payer": "ฝน", "payerKey": "member:p5" },
+    { "name": "เจ", "payer": "เจ", "payerKey": "member:p6" },
+    { "name": "กอล์ฟ", "payer": "กอล์ฟ", "payerKey": "member:p7" },
+    { "name": "นุ่น", "payer": "นุ่น", "payerKey": "member:p8" },
+    { "name": "พีท", "payer": "พีท", "payerKey": "member:p9" },
+    { "name": "ปุ๊ก", "payer": "ปุ๊ก", "payerKey": "member:p10" },
+    { "name": "เบียร์", "payer": "เบียร์", "payerKey": "member:p11" }
+  ]
+}
