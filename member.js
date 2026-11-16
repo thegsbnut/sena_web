@@ -170,6 +170,22 @@ async function roster(db, club) {
       : { players: [], selected: [], rounds: 10, locks: [], result: null, cup: null },
   };
 }
+// Approved members of a club with the name currently on the roster (shared by the
+// custom-bill form and its server-side checks). Only people with a LINE link: the
+// bill must be able to tag and be paid by them.
+export async function approvedMembers(db, club) {
+  const links = await db
+    .prepare("SELECT user_id,player_id,name FROM member_links WHERE club=? AND status='approved'")
+    .bind(club)
+    .all();
+  const { state } = await roster(db, club);
+  const names = new Map(state.players.map(p => [p.id, p.name]));
+  return links.results.map(r => ({
+    playerId: r.player_id,
+    userId: r.user_id,
+    name: names.get(r.player_id) || r.name,
+  }));
+}
 export async function memberRoute(req, env, admin, club) {
   try {
     return await route(req, env, admin, club);

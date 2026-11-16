@@ -7,10 +7,11 @@ import {
   planMentionMessages,
   mentionGroupMessage,
 } from './line-mentions.js';
-import { memberMode, memberFor, liffUrl, prepareMembers } from './member.js';
+import { memberMode, memberFor, liffUrl, prepareMembers, approvedMembers } from './member.js';
 import qrcode from 'qrcode-generator';
 import { slipAiEnabled, checkSlip, slipChecksFor } from './slip-check.js';
 import { owedMessage } from './line-bill-card.js';
+import './public/custom-split.js';
 
 const day = 86400000;
 const maxSlipBytes = 1024 * 1024;
@@ -46,6 +47,11 @@ export function billIdFromCode(code) {
 }
 // Keep the first bill's date key intact; supplemental bills append a unique suffix.
 const billDate = bill => bill.session_date.slice(0, 10);
+// The short tag after a bill's date: a custom bill shows its own title, a second
+// badminton bill on the same day shows "บิลเพิ่มเติม", the first bill shows nothing.
+const billTag = bill =>
+  bill.kind === 'custom' ? bill.title : bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '';
+const tagSuffix = bill => (billTag(bill) ? ' · ' + billTag(bill) : '');
 const displayDate = date =>
   new Intl.DateTimeFormat('th-TH', {
     dateStyle: 'medium',
@@ -151,7 +157,8 @@ function summary(bill) {
     club: bill.club,
     date: billDate(bill),
     total: bill.total,
-    additional: bill.session_date.length > 10,
+    additional: bill.kind !== 'custom' && bill.session_date.length > 10,
+    ...(bill.kind === 'custom' ? { kind: 'custom', title: bill.title } : {}),
     collection: bill.payers.reduce((total, p) => total + p.amount, 0),
     count: bill.payers.length,
     paid: paidCount(bill),
@@ -193,6 +200,9 @@ function billView(bill, admin, payer) {
     court: bill.court,
     shuttle: bill.shuttle,
     people: bill.people,
+    ...(bill.kind === 'custom'
+      ? { mode: bill.mode, items: bill.items, receiver: bill.receiver }
+      : {}),
     ...(admin || (!bill.cancelled && (payer || promptPayPattern.test(bill.transfer)))
       ? { transfer: bill.transfer }
       : {}),
@@ -436,6 +446,155 @@ function imageType(bytes) {
 // runtime offers waitUntil, and never let them fail the request.
 const background = (ctx, work) => (ctx?.waitUntil ? ctx.waitUntil(work) : void work);
 
+// ---- custom bills (not tied to a badminton session) ----
+const MAX_OPEN_CUSTOM = 5;
+const thaiDay = (offsetDays = 0) =>
+  new Date(Date.now() + 7 * 3600000 + offsetDays * day).toISOString().slice(0, 10);
+// Everything the form may send is re-derived here: member names come from the roster,
+// never from the client, and every member must be an approved LINE member of this club.
+function readCustomInput(input, members) {
+  const bad = message => ({ error: message });
+  if (!input || typeof input !== 'object') return bad('ข้อมูลบิลไม่ถูกต้อง');
+  const title = clean(input.title),
+    transfer = typeof input.transfer === 'string' ? input.transfer.trim() : '';
+  if (!title || title.length > 40) return bad('ชื่อบิลต้องยาว 1–40 ตัวอักษร');
+  if (!validDate(input.date) || input.date < thaiDay(-30) || input.date > thaiDay(1))
+    return bad('วันที่ต้องอยู่ในช่วง 30 วันที่ผ่านมาถึงพรุ่งนี้');
+  if (!promptPayPattern.test(transfer)) return bad('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก');
+  if (!Array.isArray(input.people) || input.people.length > 40)
+    return bad('รายชื่อผู้ร่วมจ่ายไม่ถูกต้อง');
+  const byKey = new Map(members.map(m => [`member:${m.playerId}`, m]));
+  const people = [],
+    seenMembers = new Set(),
+    seenNames = new Set();
+  const seeName = name => {
+    const key = name.normalize('NFC').toLowerCase();
+    if (seenNames.has(key)) return false;
+    seenNames.add(key);
+    return true;
+  };
+  for (const item of input.people) {
+    if (item?.guestOf !== undefined) continue;
+    const member = typeof item?.payerKey === 'string' ? byKey.get(item.payerKey) : null;
+    if (!member || seenMembers.has(item.payerKey))
+      return bad('มีผู้ร่วมจ่ายที่ไม่ใช่สมาชิกที่ผูก LINE หรือเลือกซ้ำ');
+    seenMembers.add(item.payerKey);
+    if (!seeName(member.name)) return bad('ชื่อซ้ำกันในบิล: ' + member.name);
+  }
+  // Keep the client's order (it decides who gets the odd satang), members and guests alike.
+  seenNames.clear();
+  for (const item of input.people) {
+    if (item?.guestOf !== undefined) {
+      const name = clean(item.name);
+      if (!name || name.length > 40) return bad('ชื่อ guest ต้องยาว 1–40 ตัวอักษร');
+      if (typeof item.guestOf !== 'string' || !seenMembers.has(item.guestOf))
+        return bad('guest "' + name + '" ต้องมากับสมาชิกที่ร่วมจ่ายในบิล');
+      if (!seeName(name)) return bad('ชื่อซ้ำกันในบิล: ' + name);
+      people.push({ name, payerKey: item.guestOf, guest: true });
+    } else {
+      const member = byKey.get(item.payerKey);
+      seeName(member.name);
+      people.push({ name: member.name, payerKey: item.payerKey });
+    }
+  }
+  const draft = { mode: input.mode, people, receiver: input.receiver };
+  if (input.mode === 'even') draft.total = input.total;
+  else if (input.mode === 'manual') draft.amounts = input.amounts;
+  else if (input.mode === 'items')
+    draft.items = Array.isArray(input.items)
+      ? input.items.map(i => ({ name: clean(i?.name), price: i?.price, people: i?.people }))
+      : input.items;
+  const split = globalThis.SenaCustomSplit.split(draft);
+  if (split.error) return bad(split.error);
+  return { title, transfer, date: input.date, draft, split };
+}
+function customPayers(split, existing = []) {
+  const previous = new Map(existing.map(p => [p.payerKey, p]));
+  return split.payers.map(row => {
+    const old = previous.get(row.payerKey);
+    return {
+      id: old?.id ?? randomId(),
+      token: old?.token ?? token(),
+      payerKey: row.payerKey,
+      name: row.name,
+      shares: row.shares,
+      amount: row.amount,
+      ...(row.owner
+        ? { status: 'paid', method: 'owner', paidAt: new Date().toISOString() }
+        : { status: 'unpaid' }),
+    };
+  });
+}
+const customItems = draft =>
+  draft.mode === 'items'
+    ? draft.items.map(i => ({
+        name: i.name,
+        price: i.price,
+        names: i.people.map(index => draft.people[index].name),
+      }))
+    : undefined;
+async function customRoute(req, env, admin, club, action) {
+  const db = env.DB;
+  const member = memberMode(env) ? await memberFor(req, env, club) : null;
+  const approved = member?.link?.status === 'approved';
+  if (!admin && !approved) return fail('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว', 401);
+  const members = await approvedMembers(db, club);
+  if (action === 'people') {
+    if (req.method !== 'GET') return fail('Method not allowed', 405);
+    return json({
+      members: members
+        .map(m => ({ payerKey: 'member:' + m.playerId, name: m.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'th')),
+      me: approved ? 'member:' + member.link.player_id : null,
+    });
+  }
+  if (req.method !== 'POST') return fail('Method not allowed', 405);
+  if (!env.SLIPS_DB) return fail('ยังไม่พร้อมรับสลิป กรุณาติดต่อผู้จัดระบบ', 503);
+  const read = readCustomInput(await readLimitedJson(req), members);
+  if (read.error) return fail(read.error);
+  const createdBy = {
+    userId: member?.userId ?? null,
+    name: members.find(m => m.userId === member?.userId)?.name ?? 'ผู้จัด',
+  };
+  if (!admin) {
+    const open = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload,'$.cancelled'),0)=0 AND json_extract(payload,'$.kind')='custom' AND json_extract(payload,'$.createdBy.userId')=?",
+      )
+      .bind(createdBy.userId)
+      .first();
+    if (open.n >= MAX_OPEN_CUSTOM)
+      return fail(
+        'มีบิลที่ยังเก็บเงินไม่ครบ ' + MAX_OPEN_CUSTOM + ' ใบแล้ว กรุณาปิดบิลเดิมก่อน',
+        409,
+      );
+  }
+  const billId = randomId(),
+    dateKey = read.date + '/' + randomId();
+  const payload = {
+    kind: 'custom',
+    title: read.title,
+    mode: read.draft.mode,
+    total: read.split.total,
+    transfer: read.transfer,
+    people: read.draft.people.length,
+    receiver: read.draft.receiver,
+    createdBy,
+    draft: read.draft,
+    ...(customItems(read.draft) ? { items: customItems(read.draft) } : {}),
+    payers: customPayers(read.split),
+  };
+  await db
+    .prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES (?,?,?,0,?)')
+    .bind(billId, club, dateKey, JSON.stringify(payload))
+    .run();
+  return json({
+    id: billId,
+    existing: false,
+    notice: await openedNotice(env, club, dateKey, billId),
+  });
+}
+
 export async function billingRoute(req, env, admin, club, ctx) {
   if (!env.DB) return fail('ระบบบิลยังไม่พร้อม', 503);
   const url = new URL(req.url),
@@ -445,6 +604,8 @@ export async function billingRoute(req, env, admin, club, ctx) {
   const supplied = req.headers.get('X-Bill-Token') || '';
   if (id && !idPattern.test(id)) return fail('ไม่พบบิล', 404);
   await prepare(db);
+  if (!id && (action === 'people' || action === 'custom'))
+    return await customRoute(req, env, admin, club, action);
   if (!id) {
     if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
     if (req.method === 'GET') {
@@ -875,11 +1036,7 @@ async function codedNotice(env, text, club, kind, payload) {
   }
   return plainNotice(env, text);
 }
-const billLabel = bill =>
-  noticeClub(bill.club) +
-  ' ' +
-  noticeDay(billDate(bill)) +
-  (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '');
+const billLabel = bill => noticeClub(bill.club) + ' ' + noticeDay(billDate(bill)) + tagSuffix(bill);
 // Text the LIFF page posts into the LINE group after a payment is recorded.
 // The payment that completes the bill gets a code so Badbot replies with a summary.
 async function paymentNotice(env, bill, payload, target) {
@@ -908,7 +1065,7 @@ async function openedNotice(env, club, dateKey, billId) {
   const bill = await readBill(env.DB, billId);
   let text =
     '🧾 เปิดบิล ' +
-    billLabel({ club, session_date: dateKey }) +
+    billLabel(bill) +
     ' · ' +
     peopleIn(bill.payers) +
     ' คน · รวม ' +
@@ -1008,7 +1165,7 @@ export async function billingLineText(env, scope, origin) {
       clubName(bill.club) +
         ' · ' +
         displayDate(billDate(bill)) +
-        (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '') +
+        tagSuffix(bill) +
         ' · ค้าง ' +
         money(outstanding(bill)) +
         ' บ.',
@@ -1173,7 +1330,7 @@ export async function billingLineMessages(
         clubName(bill.club) +
         ' · ' +
         displayDate(billDate(bill)) +
-        (bill.session_date.length > 10 ? ' · บิลเพิ่มเติม' : '') +
+        tagSuffix(bill) +
         ' · ค้าง ' +
         money(outstanding(bill)) +
         ' บ.',
@@ -1196,7 +1353,7 @@ export async function billingLineMessages(
       id: bill.id,
       club: bill.club,
       title: 'บิล ' + clubName(bill.club) + ' · ' + noticeDay(billDate(bill)),
-      extra: bill.session_date.length > 10 ? 'บิลเพิ่มเติม' : '',
+      extra: billTag(bill),
       owed: outstanding(bill),
       paidCount: peopleIn(bill.payers) - peopleIn(pending),
       total: peopleIn(bill.payers),
