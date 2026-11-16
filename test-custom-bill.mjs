@@ -180,12 +180,12 @@ function fixture(t) {
       name: 'LINE name',
     });
   });
-  const request = (path, body, cookie = '', method) =>
+  const request = (path, body, cookie = '', method, extra = {}) =>
     worker.fetch(
       new Request(origin + path, {
         method: method ?? (body ? 'POST' : 'GET'),
-        headers: { Origin: origin, Cookie: cookie },
-        ...(body ? { body: JSON.stringify(body) } : {}),
+        headers: { Origin: origin, Cookie: cookie, ...extra },
+        ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
       }),
       env,
     );
@@ -338,4 +338,148 @@ test('custom bill: ป้ายใช้ชื่อบิลแทน "บิ�
   assert.equal(listed.title, 'ข้าวหลังตี');
   assert.match(await billingLineText(f.env, 'sena', origin), /ข้าวหลังตี/);
   assert.doesNotMatch(await billingLineText(f.env, 'sena', origin), /บิลเพิ่มเติม/);
+});
+
+// ---- creator permissions ----
+const slipBytes = Uint8Array.of(255, 216, 255, 224, 0, 0, 0, 0, 0, 0, 255, 217);
+async function setup(t) {
+  const f = fixture(t);
+  const a = await f.login(users.a, 'p0'),
+    b = await f.login(users.b, 'p1'),
+    c = await f.login(users.c, 'p2');
+  const { id } = await (await f.create(a, base())).json();
+  const path = '/api/billing?club=sena&bill=' + id;
+  const view = async (cookie, token) =>
+    (await f.request(path, null, cookie, 'GET', token ? { 'X-Bill-Token': token } : {})).json();
+  const act = (cookie, action, body) => f.request(path + '&action=' + action, body, cookie);
+  return { f, a, b, c, id, path, view, act };
+}
+
+test('creator manages own custom bill: sees all rows, cash, undo, cancel, restore, no AI results', async t => {
+  const { a, view, act } = await setup(t);
+  let v = await view(a);
+  assert.equal(v.viewer, 'creator');
+  assert.equal(v.payers.length, 2);
+  assert(Number.isInteger(v.revision));
+  assert(v.payers.every(p => !('aiCheck' in p)));
+  const pete = v.payers.find(p => p.name === 'Pete');
+  assert.equal(
+    (await act(a, 'cash', { payer: pete.id, revision: v.revision, received: true })).status,
+    200,
+  );
+  v = await view(a);
+  assert.equal(v.canUndoCash, true);
+  assert.equal(
+    (await act(a, 'cash', { payer: pete.id, revision: v.revision, received: false })).status,
+    200,
+  );
+  v = await view(a);
+  assert.equal((await act(a, 'cancel', { revision: v.revision })).status, 200);
+  v = await view(a);
+  assert.equal(v.cancelled, true);
+  assert.equal((await act(a, 'restore', { revision: v.revision })).status, 200);
+});
+
+test("other members and strangers cannot manage a creator's bill; creators cannot manage organizer bills or run AI checks", async t => {
+  const { f, a, b, c, view, act } = await setup(t);
+  const v = await view(a);
+  const pete = v.payers.find(p => p.name === 'Pete');
+  const mine = await view(b, pete.token);
+  assert.equal(mine.payers.length, 1);
+  assert.equal(mine.revision, undefined);
+  const publicView = await view(b);
+  assert.equal(publicView.revision, undefined);
+  assert(publicView.payers.every(p => !p.token));
+  const attempts = [
+    ['cash', { payer: pete.id, revision: v.revision, received: true }],
+    ['edit', { revision: v.revision, transfer: '0899999999' }],
+    ['cancel', { revision: v.revision }],
+    ['restore', { revision: v.revision }],
+    ['slip-check', { payer: pete.id }],
+  ];
+  for (const cookie of [b, c, ''])
+    for (const [action, body] of attempts)
+      assert.equal((await act(cookie, action, body)).status, 401, action);
+  assert.equal((await act(a, 'slip-check', { payer: pete.id })).status, 401);
+  const organizer = await f.admin();
+  const other = await (await f.create(organizer, base())).json();
+  const res = await f.request(
+    '/api/billing?club=sena&action=cancel&bill=' + other.id,
+    { revision: 0 },
+    a,
+  );
+  assert.equal(res.status, 401);
+});
+
+test('owner row does not block edit; a real payment does (only PromptPay changes then)', async t => {
+  const { a, b, view, act } = await setup(t);
+  let v = await view(a);
+  assert.equal(v.editable, true);
+  const pete = v.payers.find(p => p.name === 'Pete');
+  const edited = {
+    title: 'ข้าวใหม่',
+    transfer: '0812345678',
+    receiver: 'member:p0',
+    mode: 'items',
+    items: [
+      { name: 'หมู', price: 60000, people: [0, 1, 2] },
+      { name: 'เบียร์', price: 30000, people: [1, 2] },
+    ],
+    people: base().people,
+    revision: v.revision,
+  };
+  assert.equal((await act(a, 'edit', edited)).status, 200);
+  v = await view(a);
+  const after = v.payers.find(p => p.name === 'Pete');
+  assert.equal(after.token, pete.token);
+  assert.equal(after.amount, 70000);
+  assert.equal(v.title, 'ข้าวใหม่');
+  const upload = await act(b, 'upload&payer=' + after.id + '&amount=' + after.amount, slipBytes);
+  assert.equal(upload.status, 200);
+  v = await view(a);
+  assert.equal(v.editable, false);
+  assert.equal((await act(a, 'edit', { ...edited, revision: v.revision })).status, 409);
+  assert.equal(
+    (await act(a, 'edit', { revision: v.revision, transfer: '0899999999' })).status,
+    200,
+  );
+});
+
+test('creator can view and reject slips on own bill, other members cannot view them, owner row is untouchable', async t => {
+  const { a, b, c, view, act, path, f } = await setup(t);
+  let v = await view(a);
+  const pete = v.payers.find(p => p.name === 'Pete'),
+    owner = v.payers.find(p => p.name === 'Nut');
+  assert.equal(
+    (await act(b, 'upload&payer=' + pete.id + '&amount=' + pete.amount, slipBytes)).status,
+    200,
+  );
+  const slipPath = path + '&action=slip&payer=' + pete.id;
+  const seen = await f.request(slipPath, null, a);
+  assert.equal(seen.status, 200);
+  assert.equal(seen.headers.get('Content-Type'), 'image/jpeg');
+  assert.equal((await f.request(slipPath, null, c)).status, 403);
+  v = await view(a);
+  const withSlip = v.payers.find(p => p.name === 'Pete');
+  assert.equal(
+    (
+      await act(a, 'review', {
+        payer: withSlip.id,
+        status: 'rejected',
+        note: 'ยอดไม่ตรง',
+        receiptId: withSlip.receiptId,
+      })
+    ).status,
+    200,
+  );
+  v = await view(a);
+  assert.equal(
+    (await act(a, 'review', { payer: owner.id, status: 'rejected', note: 'x', receiptId: 'x' }))
+      .status,
+    409,
+  );
+  assert.equal(
+    (await act(a, 'cash', { payer: owner.id, revision: v.revision, received: false })).status,
+    409,
+  );
 });

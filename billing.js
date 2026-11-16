@@ -144,6 +144,9 @@ async function updateBill(db, bill, payload) {
   return Boolean(result.meta.changes);
 }
 const paidCount = bill => bill.payers.filter(p => p.status === 'paid').length;
+// Has anyone really paid or submitted? The organizer's own row on a custom bill is
+// recorded as paid from the start (method 'owner') and never counts.
+const started = p => p.method !== 'owner' && Boolean(p.submittedAt || p.status === 'paid');
 // A bill line can cover several people (a guest or friend paid with the host), so
 // LINE messages count people, not lines: "11/12 คน" matches who actually played.
 const peopleIn = payers =>
@@ -209,7 +212,7 @@ function billView(bill, admin, payer) {
     ...(admin
       ? {
           revision: bill.revision,
-          editable: !bill.cancelled && !bill.payers.some(p => p.submittedAt || p.status === 'paid'),
+          editable: !bill.cancelled && !bill.payers.some(started),
           canUndoCash: !bill.cancelled && !bill.slips_removed,
         }
       : {}),
@@ -452,13 +455,16 @@ const thaiDay = (offsetDays = 0) =>
   new Date(Date.now() + 7 * 3600000 + offsetDays * day).toISOString().slice(0, 10);
 // Everything the form may send is re-derived here: member names come from the roster,
 // never from the client, and every member must be an approved LINE member of this club.
-function readCustomInput(input, members) {
+function readCustomInput(input, members, { editing = false } = {}) {
   const bad = message => ({ error: message });
   if (!input || typeof input !== 'object') return bad('ข้อมูลบิลไม่ถูกต้อง');
   const title = clean(input.title),
     transfer = typeof input.transfer === 'string' ? input.transfer.trim() : '';
   if (!title || title.length > 40) return bad('ชื่อบิลต้องยาว 1–40 ตัวอักษร');
-  if (!validDate(input.date) || input.date < thaiDay(-30) || input.date > thaiDay(1))
+  if (
+    !validDate(input.date) ||
+    (!editing && (input.date < thaiDay(-30) || input.date > thaiDay(1)))
+  )
     return bad('วันที่ต้องอยู่ในช่วง 30 วันที่ผ่านมาถึงพรุ่งนี้');
   if (!promptPayPattern.test(transfer)) return bad('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก');
   if (!Array.isArray(input.people) || input.people.length > 40)
@@ -533,6 +539,42 @@ const customItems = draft =>
         names: i.people.map(index => draft.people[index].name),
       }))
     : undefined;
+// Recalculate an unpaid custom bill from the same form fields; payer ids and pay links
+// stay the same for anyone still in the bill. Only the title and PromptPay may change
+// besides the split: the date and the creator are fixed.
+async function editCustom(env, bill, payload, input) {
+  if (input?.revision !== bill.revision) return fail('ข้อมูลบิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  const read = readCustomInput(
+    { ...input, date: billDate(bill) },
+    await approvedMembers(env.DB, bill.club),
+    { editing: true },
+  );
+  if (read.error) return fail(read.error);
+  const { items: _old, ...rest } = payload;
+  const next = {
+    ...rest,
+    title: read.title,
+    mode: read.draft.mode,
+    total: read.split.total,
+    transfer: read.transfer,
+    people: read.draft.people.length,
+    receiver: read.draft.receiver,
+    draft: read.draft,
+    ...(customItems(read.draft) ? { items: customItems(read.draft) } : {}),
+    payers: customPayers(read.split, bill.payers),
+  };
+  if (!(await updateBill(env.DB, bill, next))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  return json({
+    ok: true,
+    notice: await codedNotice(
+      env,
+      `✏️ บิล ${billLabel({ ...bill, title: next.title })} แก้ยอดแล้ว · ${peopleIn(next.payers)} คน · รวม ${money(next.payers.reduce((total, p) => total + p.amount, 0))} บ.`,
+      bill.club,
+      'bill',
+      { billId: bill.id },
+    ),
+  });
+}
 async function customRoute(req, env, admin, club, action) {
   const db = env.DB;
   const member = memberMode(env) ? await memberFor(req, env, club) : null;
@@ -719,6 +761,10 @@ export async function billingRoute(req, env, admin, club, ctx) {
   const member = memberMode(env) ? await memberFor(req, env, bill.club) : null;
   const owns = p =>
     member?.link?.status === 'approved' && p.payerKey === 'member:' + member.link.player_id;
+  // The organizer manages every bill; whoever created a custom bill manages that one.
+  const manager =
+    admin ||
+    (bill.kind === 'custom' && Boolean(member) && bill.createdBy?.userId === member.userId);
   const payer = tokenPattern.test(supplied) ? bill.payers.find(p => p.token === supplied) : null;
   if (memberMode(env) && !admin && payer && !owns(payer))
     return fail('กรุณาเข้าสู่ระบบ LINE ของเจ้าของบิล', 403);
@@ -745,8 +791,9 @@ export async function billingRoute(req, env, admin, club, ctx) {
       });
     }
     if (action !== 'slip') {
-      if (bill.cancelled && !admin) return json({ cancelled: true });
-      const view = billView(bill, admin && !payer, payer);
+      if (bill.cancelled && !manager) return json({ cancelled: true });
+      const view = billView(bill, manager && !payer, payer);
+      if (manager && !payer) view.viewer = admin ? 'admin' : 'creator';
       if (admin && !payer && !bill.slips_removed && slipAiEnabled(env)) {
         try {
           const checks = await slipChecksFor(db, bill.payers.map(p => p.slipKey).filter(Boolean));
@@ -761,7 +808,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
       return json(view);
     }
     const target =
-      payer || (admin ? bill.payers.find(p => p.id === url.searchParams.get('payer')) : null);
+      payer || (manager ? bill.payers.find(p => p.id === url.searchParams.get('payer')) : null);
     if (!target) return fail('ไม่มีสิทธิ์ดูสลิป', 403);
     if (bill.slips_removed || !target.slipKey || !env.SLIPS_DB) return fail('ไม่พบสลิป', 404);
     const slip = await env.SLIPS_DB.prepare('SELECT content_type, body FROM bill_slips WHERE key=?')
@@ -868,9 +915,11 @@ export async function billingRoute(req, env, admin, club, ctx) {
         .catch(error => logError('billing:delete-old-slip', error));
     return json({ ok: true, notice: await paymentNotice(env, bill, payload, target) });
   }
-  if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
+  if (!manager) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
   const input = await readLimitedJson(req);
   if (action === 'slip-check') {
+    // AI results are for the organizer only; a creator who is just a player never sees them.
+    if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
     if (!slipAiEnabled(env)) return fail('ยังไม่เปิดใช้การตรวจสลิปด้วย AI', 503);
     const target = payload.payers.find(p => p.id === input?.payer);
     const stored =
@@ -951,10 +1000,12 @@ export async function billingRoute(req, env, admin, club, ctx) {
     });
   }
   if (action === 'edit') {
-    if (bill.payers.some(p => p.submittedAt || p.status === 'paid')) {
+    if (bill.kind === 'custom' && !bill.payers.some(started))
+      return await editCustom(env, bill, payload, input);
+    if (bill.payers.some(started)) {
       if (input?.revision !== bill.revision || !promptPayPattern.test(input?.transfer || ''))
         return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
-      if ('court' in input || 'shuttle' in input || 'attendees' in input)
+      if ('court' in input || 'shuttle' in input || 'attendees' in input || 'people' in input)
         return fail('มีการชำระแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
       const accountChanged = payload.transfer !== input.transfer;
       payload.transfer = input.transfer;
