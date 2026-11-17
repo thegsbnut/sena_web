@@ -164,37 +164,3 @@ test('splitLines explains the split and who the amount covers', () => {
   );
   assert.deepEqual(splitLines({}, {}, money), []);
 });
-
-test('billableSessions hides dates that already have a bill and rounds older than 30 days, but keeps the requested date', () => {
-  const { billableSessions } = globalThis.BillingOverview;
-  const s = date => ({ date, time: '20:00–22:00' });
-  const sessions = [
-    s('2026-11-20'), // future booking
-    s('2026-11-15'), // recent, no bill yet
-    s('2026-11-10'), // recent, already billed
-    s('2026-11-08'), // recent, billed then cancelled (still holds the date)
-    s('2026-11-05'), // recent, only a custom bill that day (does not count)
-    s('2026-10-01'), // older than 30 days, no bill
-  ];
-  const bills = [
-    { club: 'sena', date: '2026-11-10' },
-    { club: 'sena', date: '2026-11-08', cancelled: true },
-    { club: 'sena', date: '2026-11-05', kind: 'custom' },
-    { club: 'sena', date: '2026-11-15', additional: true }, // an extra bill is not the day's bill
-    { club: '88', date: '2026-11-15' }, // other club
-  ];
-  const dates = list => list.map(x => x.date);
-  assert.deepEqual(dates(billableSessions(sessions, bills, 'sena', '2026-11-16')), [
-    '2026-11-20',
-    '2026-11-15',
-    '2026-11-05',
-  ]);
-  // A link that names a date keeps it, even when billed or old.
-  assert.deepEqual(dates(billableSessions(sessions, bills, 'sena', '2026-11-16', '2026-11-10')), [
-    '2026-11-20',
-    '2026-11-15',
-    '2026-11-10',
-    '2026-11-05',
-  ]);
-  assert.deepEqual(billableSessions([], [], 'sena', '2026-11-16'), []);
-});

@@ -99,28 +99,6 @@
     return lines;
   }
 
-  // Rounds offered by the court-bill form ("เลือกรอบที่จองไว้"): not the ones that already
-  // have the day's bill (a second one is a supplemental bill, which the date field still
-  // allows), and nothing older than 30 days. `keep` is a date the page was opened for.
-  const RECENT_DAYS = 30;
-  function billableSessions(sessions, bills, club, today, keep) {
-    const cutoff = new Date(Date.parse(today + 'T00:00:00Z') - RECENT_DAYS * 86400000)
-      .toISOString()
-      .slice(0, 10);
-    const billed = new Set(
-      bills.filter(b => b.club === club && !b.additional && b.kind !== 'custom').map(b => b.date),
-    );
-    return sessions.filter(s => s.date === keep || (s.date >= cutoff && !billed.has(s.date)));
-  }
-
-  root.BillingOverview = {
-    owing,
-    reminderText,
-    progress,
-    reviewRows,
-    slipRows,
-    splitLines,
-    billableSessions,
-  };
+  root.BillingOverview = { owing, reminderText, progress, reviewRows, slipRows, splitLines };
   if (typeof module !== 'undefined') module.exports = root.BillingOverview;
 })(typeof window === 'undefined' ? globalThis : window);
