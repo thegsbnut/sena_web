@@ -672,8 +672,9 @@ export async function billingRoute(req, env, admin, club, ctx) {
       }
       const rows = await db
         .prepare(
-          "SELECT * FROM bills ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200",
+          "SELECT * FROM bills WHERE club=? ORDER BY COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC LIMIT 200",
         )
+        .bind(club)
         .all();
       const parsed = rows.results.map(r => ({ ...r, ...JSON.parse(r.payload) }));
       // AI slip checks for the bills still open (bounded), so the home list can flag them.

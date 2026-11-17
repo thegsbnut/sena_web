@@ -977,15 +977,20 @@ async function codeSuffix(env, club, kind, payload) {
   }
 }
 export async function scheduledBookings(env, now = new Date()) {
+  // One club failing must not skip the others: log it and carry on.
   for (const club of CLUB_IDS) {
-    const { doc, players } = await mutateBooking(env, club, null, now);
-    await recordAttendance(
-      env.DB,
-      club,
-      doc,
-      players,
-      bangkokDate(now),
-      /^\d{4}-\d{2}-\d{2}$/.test(env.ATTENDANCE_START || '') ? env.ATTENDANCE_START : '',
-    );
+    try {
+      const { doc, players } = await mutateBooking(env, club, null, now);
+      await recordAttendance(
+        env.DB,
+        club,
+        doc,
+        players,
+        bangkokDate(now),
+        /^\d{4}-\d{2}-\d{2}$/.test(env.ATTENDANCE_START || '') ? env.ATTENDANCE_START : '',
+      );
+    } catch (error) {
+      logError('cron:bookings-club', error, { club });
+    }
   }
 }
