@@ -483,3 +483,27 @@ test('creator can view and reject slips on own bill, other members cannot view t
     409,
   );
 });
+
+// ---- member bills list ----
+test('member bills include title and the bills I created', async t => {
+  const { f, a, b, c, id } = await setup(t);
+  const mine = await (await f.request('/api/member/bills?club=sena', null, b)).json();
+  assert.equal(mine.bills.length, 1);
+  assert.equal(mine.bills[0].title, 'ข้าวหลังตี');
+  assert.equal(mine.bills[0].amount, 60000);
+  assert.deepEqual(mine.created, []);
+  const creator = await (await f.request('/api/member/bills?club=sena', null, a)).json();
+  assert.equal(creator.created.length, 1);
+  const made = creator.created[0];
+  assert.equal(made.id, id);
+  assert.equal(made.title, 'ข้าวหลังตี');
+  assert.equal(made.date, today());
+  assert.equal(made.cancelled, false);
+  assert.equal(made.count, 2);
+  assert.equal(made.paid, 1);
+  assert.equal(made.outstanding, 60000);
+  assert.equal(made.url, `/billing.html?manage=1&club=sena&bill=${id}`);
+  const other = await (await f.request('/api/member/bills?club=sena', null, c)).json();
+  assert.deepEqual(other.created, []);
+  assert.deepEqual(other.bills, []);
+});

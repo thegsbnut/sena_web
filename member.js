@@ -361,13 +361,13 @@ async function route(req, env, admin, club) {
   }
   if (req.method === 'GET' && action === 'bills') {
     if (!member) return json({ error: 'กรุณาเข้าสู่ระบบ LINE' }, 401);
-    if (member.link?.status !== 'approved') return json({ bills: [] });
+    if (member.link?.status !== 'approved') return json({ bills: [], created: [] });
     await prepareBills(env.DB);
     // Only this member's payer entries leave the database: the filter runs in
     // SQL instead of reading and parsing up to 200 whole bills per request.
     const only = url.searchParams.get('bill');
     const rows = await env.DB.prepare(
-      "SELECT b.id,b.session_date,b.slips_removed,p.value AS payer FROM bills b, json_each(b.payload,'$.payers') p WHERE b.club=? AND COALESCE(json_extract(b.payload,'$.cancelled'),0)=0 AND json_extract(p.value,'$.payerKey')=?" +
+      "SELECT b.id,b.session_date,b.slips_removed,json_extract(b.payload,'$.title') AS title,p.value AS payer FROM bills b, json_each(b.payload,'$.payers') p WHERE b.club=? AND COALESCE(json_extract(b.payload,'$.cancelled'),0)=0 AND json_extract(p.value,'$.payerKey')=?" +
         (only === null ? '' : ' AND b.id=?') +
         ' ORDER BY b.session_date DESC, p.key LIMIT 200',
     )
@@ -382,6 +382,7 @@ async function route(req, env, admin, club) {
       return {
         id: row.id,
         date: row.session_date.slice(0, 10),
+        ...(row.title ? { title: row.title } : {}),
         name: p.name,
         amount: p.amount,
         status: p.status,
@@ -390,7 +391,29 @@ async function route(req, env, admin, club) {
         url: link.href,
       };
     });
-    return json({ bills });
+    // Custom bills this member opened (one query, newest first), for the manage links.
+    const made =
+      only === null
+        ? await env.DB.prepare(
+            "SELECT id,session_date,payload FROM bills WHERE club=? AND json_extract(payload,'$.kind')='custom' AND json_extract(payload,'$.createdBy.userId')=? ORDER BY session_date DESC LIMIT 20",
+          )
+            .bind(club, member.userId)
+            .all()
+        : { results: [] };
+    const created = made.results.map(row => {
+      const bill = JSON.parse(row.payload);
+      return {
+        id: row.id,
+        date: row.session_date.slice(0, 10),
+        title: bill.title,
+        count: bill.payers.length,
+        paid: bill.payers.filter(p => p.status === 'paid').length,
+        outstanding: bill.payers.reduce((n, p) => n + (p.status === 'paid' ? 0 : p.amount), 0),
+        cancelled: Boolean(bill.cancelled),
+        url: `/billing.html?manage=1&club=${club}&bill=${row.id}`,
+      };
+    });
+    return json({ bills, created });
   }
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);
   const raw = await req.text();
