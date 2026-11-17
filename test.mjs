@@ -250,7 +250,7 @@ test('leaderboard baseline exactly preserves supplied historical totals', () => 
       winPercent: (10 / 12) * 100,
     },
   );
-  assert.equal(rows.find(p => p.name === 'Bo').w, 9);
+  assert.equal(rows.find(p => p.name === 'Beau').w, 9);
   assert.equal(rows.find(p => p.name === 'Bua').w, 5);
   assert.equal(rows.find(p => p.name === 'Zong').crown, 1);
 });
@@ -332,7 +332,7 @@ test('history API is public read, admin only write and uses revision for retries
   assert.equal(result.canEdit, false);
   assert(!JSON.stringify(result).includes('"lv"'));
 });
-test('historical aliases merge with current Bo and Not without duplicate players', () => {
+test('historical aliases merge with current Beau and Not without duplicate players', () => {
   const old = {
     ...historyFixture(),
     sequence: 1,
@@ -343,11 +343,11 @@ test('historical aliases merge with current Bo and Not without duplicate players
   };
   const rows = leaderboardStandings([old]);
   assert.equal(rows.length, 15);
-  assert.equal(rows.find(p => p.name === 'Bo').w, 10);
+  assert.equal(rows.find(p => p.name === 'Beau').w, 10);
   assert.equal(rows.find(p => p.name === 'Not').w, 3);
-  assert(!rows.some(p => ['Beau', 'Nott'].includes(p.name)));
+  assert(!rows.some(p => ['Bo', 'Nott'].includes(p.name)));
   const cleaned = cleanCup(old);
-  assert.deepEqual(cleaned.teams[0], ['Bo', 'Not']);
+  assert.deepEqual(cleaned.teams[0], ['Beau', 'Not']);
   assert.throws(() =>
     cleanCup({
       ...old,
@@ -357,7 +357,7 @@ test('historical aliases merge with current Bo and Not without duplicate players
       ],
     }),
   );
-  assert.equal(leaderboardStandings([]).find(p => p.name === 'Bo').pf, 231);
+  assert.equal(leaderboardStandings([]).find(p => p.name === 'Beau').pf, 231);
 });
 
 test('session status exposes role only, checks signed cookies and shares login across clubs', async () => {

@@ -4,8 +4,8 @@ import './public/engine.js';
 const senaAliases = new Map([
   ['nott', 'Not'],
   ['not', 'Not'],
-  ['beau', 'Bo'],
-  ['bo', 'Bo'],
+  ['beau', 'Beau'],
+  ['bo', 'Beau'],
 ]);
 const aliasesByClub = { sena: senaAliases };
 const canonicalName = (name, club = DEFAULT_CLUB) =>
