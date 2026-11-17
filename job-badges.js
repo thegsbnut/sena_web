@@ -20,12 +20,14 @@ export async function prepareJobTables(db) {
 
 // Count confirmed roster players (not guests, not waitlist) of every session
 // that already happened. Idempotent, so reruns and missed nights are safe.
-export async function recordAttendance(db, club, doc, players, today) {
+// `since` (YYYY-MM-DD, optional) is the go-live date: older sessions are never counted,
+// so clearing the attendance table once does not let the nightly job refill it.
+export async function recordAttendance(db, club, doc, players, today, since = '') {
   await prepareJobTables(db);
   const roster = new Set(players.map(p => p.id));
   const rows = [];
   for (const s of doc.sessions) {
-    if (s.skipped || !(s.date < today)) continue;
+    if (s.skipped || !(s.date < today) || s.date < since) continue;
     for (const r of s.registrations.slice(0, s.capacity))
       if (!r.guest && roster.has(r.playerId)) rows.push([club, s.date, r.playerId]);
   }

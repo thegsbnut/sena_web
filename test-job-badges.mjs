@@ -108,6 +108,23 @@ test('cron records past confirmed roster players once, skipping guests, waitlist
   );
 });
 
+test('recordAttendance ignores sessions before the go-live date', async () => {
+  const { DB, rows } = fakeDb();
+  const doc = {
+    sessions: [
+      { date: '2026-11-12', capacity: 3, registrations: [reg('p0')] },
+      { date: '2026-11-17', capacity: 3, registrations: [reg('p0')] },
+    ],
+  };
+  assert.equal(await recordAttendance(DB, 'sena', doc, roster, '2026-11-18', '2026-11-17'), 1);
+  assert.deepEqual(
+    rows("SELECT session_date FROM attendance WHERE player_id='p0' ORDER BY session_date").map(
+      r => r.session_date,
+    ),
+    ['2026-11-17'],
+  );
+});
+
 test('scheduledBookings records attendance for each club separately', async () => {
   const { db, DB, rows } = fakeDb();
   db.exec(
