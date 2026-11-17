@@ -399,11 +399,20 @@
     document.body.classList.remove('home');
     const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
     const suppliedDate = params.get('date');
+    // The dropdown skips rounds that already have a bill and ones older than 30 days;
+    // `sessions` itself stays whole because picking a date by hand still fills its names.
+    const choices = window.BillingOverview.billableSessions(
+      sessions,
+      adminList?.bills || [],
+      club,
+      today,
+      /^\d{4}-\d{2}-\d{2}$/.test(suppliedDate || '') ? suppliedDate : undefined,
+    );
     const date = editing
       ? bill.date
       : /^\d{4}-\d{2}-\d{2}$/.test(suppliedDate || '')
         ? suppliedDate
-        : sessions.find(s => s.date <= today)?.date || today;
+        : choices.find(s => s.date <= today)?.date || today;
     const last = editing
       ? null
       : adminList.bills
@@ -420,7 +429,7 @@
        editing
          ? ''
          : `<label>เลือกรอบที่จองไว้<select id="source"><option value="">เลือกวันที่เอง</option>${[
-             ...sessions,
+             ...choices,
            ]
              .sort((a, b) => a.date.localeCompare(b.date))
              .map(
