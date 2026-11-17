@@ -19,7 +19,7 @@ const maxStoredSlipBytes = 250 * 1000 * 1000;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const idPattern = /^[a-f0-9]{32}$/;
 const tokenPattern = /^[a-f0-9]{64}$/;
-const promptPayPattern = /^[0-9]{10}$|^[0-9]{13}$/;
+const promptPayPattern = /^0[0-9]{9}$|^[0-9]{13}$/;
 const clubName = club => clubOf(club).label;
 const money = cents => (cents / 100).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const clean = value => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '');
@@ -467,7 +467,10 @@ function readCustomInput(input, members, { editing = false } = {}) {
     (!editing && (input.date < thaiDay(-30) || input.date > thaiDay(1)))
   )
     return bad('วันที่ต้องอยู่ในช่วง 30 วันที่ผ่านมาถึงพรุ่งนี้');
-  if (!promptPayPattern.test(transfer)) return bad('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก');
+  if (!promptPayPattern.test(transfer))
+    return bad(
+      'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+    );
   if (!Array.isArray(input.people) || input.people.length > 40)
     return bad('รายชื่อผู้ร่วมจ่ายไม่ถูกต้อง');
   const byKey = new Map(members.map(m => [`member:${m.playerId}`, m]));
@@ -717,7 +720,9 @@ export async function billingRoute(req, env, admin, club, ctx) {
     const input = await readLimitedJson(req);
     if (action === 'promptpay') {
       if (!promptPayPattern.test(input?.promptpay || ''))
-        return fail('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก');
+        return fail(
+          'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+        );
       await promptPaySettings(db);
       await db
         .prepare(

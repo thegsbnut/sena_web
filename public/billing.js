@@ -58,7 +58,7 @@
     sessions = [],
     attendees = [],
     editing = false;
-  const validPromptPay = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
+  const validPromptPay = value => /^(?:0[0-9]{9}|[0-9]{13})$/.test(value);
   const clubQuery = club === '88' ? '?club=88' : '';
   let embedded = false;
   try {
@@ -442,7 +442,7 @@
      ${!editing && last ? `<p class="muted">เติมค่าจากบิลล่าสุด (${dateLabel(last.date)}) ให้แล้ว — แก้ได้</p>` : ''}
      <label class="attendee"><input type="checkbox" name="perShuttle"> คิดจากจำนวนลูก × ราคาต่อลูก</label>
      <label id="countLabel" hidden>จำนวนลูก<input name="shuttleCount" type="number" min="1" max="999" step="1" value="1"></label>
-     <label>เลขพร้อมเพย์<input name="transfer" required inputmode="numeric" pattern="[0-9]{10}|[0-9]{13}" maxlength="13" value="${escape(editing ? bill.transfer : adminList.promptpay)}"></label>
+     <label>เลขพร้อมเพย์<input name="transfer" required inputmode="numeric" pattern="0[0-9]{9}|[0-9]{13}" maxlength="13" value="${escape(editing ? bill.transfer : adminList.promptpay)}"></label>
      ${editing ? '' : '<label class="attendee"><input type="checkbox" name="savePromptPay"> ใช้เลขนี้เป็นค่าเริ่มต้นสำหรับบิลถัดไป</label>'}
     </section>
     <section class="summary"><h2>3. ตรวจยอดก่อนเปิดบิล</h2><div id="preview"></div></section>
@@ -1262,7 +1262,10 @@
       const promptpay = prompt('เลขพร้อมเพย์เริ่มต้น 10 หรือ 13 หลัก', adminList.promptpay)?.trim();
       if (promptpay === undefined) return;
       if (!validPromptPay(promptpay)) {
-        message('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก', true);
+        message(
+          'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+          true,
+        );
         return;
       }
       return run(async () => {
@@ -1288,10 +1291,16 @@
           editing = true;
           showDraft();
         });
-      const transfer = prompt('เลขพร้อมเพย์ 10 หรือ 13 หลัก', bill.transfer)?.trim();
+      const transfer = prompt(
+        'พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+        bill.transfer,
+      )?.trim();
       if (transfer === undefined) return;
       if (!validPromptPay(transfer)) {
-        message('กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก', true);
+        message(
+          'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+          true,
+        );
         return;
       }
       return run(async () => {

@@ -597,7 +597,10 @@ test('organizer changes after payments announce themselves: PromptPay, undo cash
     revision: (await read()).revision,
   });
   assert.match(body.notice.text, /\(เงินสด\) · จ่ายแล้ว 3\/3 #/);
-  const account = { transfer: '1111111111', revision: (await read()).revision };
+  const account = { transfer: '0811111111', revision: (await read()).revision };
+  // PromptPay only: a bank account number (10 digits not starting with 0) is refused.
+  body = await act('edit', { transfer: '1111111111', revision: account.revision });
+  assert.match(body.error, /เลขพร้อมเพย์/);
   body = await act('edit', account);
   assert.equal(
     body.notice.text,

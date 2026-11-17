@@ -32,7 +32,7 @@
       /* private mode: just do not remember */
     }
   };
-  const promptPayOk = value => /^(?:[0-9]{10}|[0-9]{13})$/.test(value);
+  const promptPayOk = value => /^(?:0[0-9]{9}|[0-9]{13})$/.test(value);
 
   async function mount(root, opts) {
     const { fetchPeople, submit, cancel, run, message, initial } = opts;
@@ -252,7 +252,8 @@
       let problem = '';
       if (!state.title.trim()) problem = 'กรุณาใส่ชื่อบิล';
       else if (!promptPayOk(state.transfer.trim()))
-        problem = 'กรุณาใส่เลขพร้อมเพย์ 10 หรือ 13 หลัก';
+        problem =
+          'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร';
       if (!state.chosen.length) {
         box.innerHTML = '<p class="muted">เลือกผู้ร่วมจ่ายและใส่ยอดเพื่อดูยอดต่อคน</p>';
         $('#cbSubmit').disabled = true;
