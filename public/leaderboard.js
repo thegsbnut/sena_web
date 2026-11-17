@@ -58,6 +58,14 @@
       return await postBoard({ ...body, checkNames: true, acceptUnknown: true });
     }
   }
+  const changeText = value =>
+    value === 'NEW'
+      ? 'NEW'
+      : value === null || value === 0
+        ? '—'
+        : value > 0
+          ? '↑ ' + value
+          : '↓ ' + Math.abs(value);
   function draw() {
     const rows = data.standings;
     document.querySelector('#leaderboardRows').innerHTML = rows
