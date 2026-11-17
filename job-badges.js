@@ -3,7 +3,7 @@
 // the booking revision (a job change must not make someone else's booking 409).
 import './public/job-rules.js';
 import './public/engine.js';
-import { cupHistoryTable, cupPlayerKey } from './leaderboard.js';
+import { cupHistoryTable, cupPlayerKey, loadAliases } from './leaderboard.js';
 
 // A night that has a Cup counts as this many plays toward the badge level (normal night = 1).
 export const CUP_DAY_PLAYS = 3;
@@ -58,6 +58,7 @@ export async function recordAttendance(db, club, doc, players, today, since = ''
 export async function readBadgeSource(db, club) {
   await prepareJobTables(db);
   const table = await cupHistoryTable(db, club);
+  await loadAliases(db, club);
   const [plays, jobs, cups] = await Promise.all([
     db.prepare('SELECT player_id, session_date FROM attendance WHERE club=?').bind(club).all(),
     db.prepare('SELECT player_id, line FROM player_jobs WHERE club=?').bind(club).all(),

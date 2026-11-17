@@ -1,11 +1,126 @@
 import { clubOf, DEFAULT_CLUB } from './clubs.js';
 import { baseline } from './leaderboard-data.js';
 import './public/engine.js';
+// Name aliases: the built-in ones live in clubs.js; the organizer adds more in the app
+// (table player_aliases). The database ones are loaded per request into this per-club map
+// so the many synchronous callers of cupPlayerKey/canonicalName stay unchanged.
+const dbAliases = new Map();
+const aliasKey = name => name.trim().toLowerCase();
 const canonicalName = (name, club = DEFAULT_CLUB) => {
-  const aliases = clubOf(club).nameAliases,
-    lower = name.trim().toLowerCase();
-  return (Object.hasOwn(aliases, lower) && aliases[lower]) || name.trim();
+  const lower = aliasKey(name),
+    stored = dbAliases.get(club),
+    builtin = clubOf(club).nameAliases;
+  if (stored?.has(lower)) return stored.get(lower);
+  return (Object.hasOwn(builtin, lower) && builtin[lower]) || name.trim();
 };
+export async function loadAliases(db, club) {
+  await db
+    .prepare(
+      'CREATE TABLE IF NOT EXISTS player_aliases (club TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY (club, alias))',
+    )
+    .run();
+  const rows = await db
+    .prepare('SELECT alias,canonical FROM player_aliases WHERE club=?')
+    .bind(club)
+    .all();
+  dbAliases.set(club, new Map(rows.results.map(r => [r.alias, r.canonical])));
+}
+const MAX_ALIASES = 200;
+export function listAliases(club) {
+  const builtin = Object.entries(clubOf(club).nameAliases).map(([alias, canonical]) => ({
+    alias,
+    canonical,
+    builtin: true,
+  }));
+  const stored = [...(dbAliases.get(club) ?? [])].map(([alias, canonical]) => ({
+    alias,
+    canonical,
+    builtin: false,
+  }));
+  return [...builtin, ...stored];
+}
+// Returns an error message, or null after changing the table. `alias` always points
+// at a main name (never at another alias), so one lookup is enough.
+export async function changeAlias(db, club, action, input) {
+  const clean = v => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+  const alias = clean(input.alias),
+    lower = aliasKey(alias);
+  if (!alias || alias.length > 100) return 'กรอกชื่อที่ต้องการรวม 1–100 ตัวอักษร';
+  if (action === 'unalias') {
+    if (Object.hasOwn(clubOf(club).nameAliases, lower))
+      return 'ชื่อนี้เป็นค่าตั้งต้นของระบบ ลบจากหน้าเว็บไม่ได้';
+    await db.prepare('DELETE FROM player_aliases WHERE club=? AND alias=?').bind(club, lower).run();
+    return null;
+  }
+  const typed = clean(input.canonical);
+  if (!typed || typed.length > 100) return 'กรอกชื่อหลัก 1–100 ตัวอักษร';
+  const canonical = canonicalName(typed, club);
+  if (aliasKey(canonical) === lower) return 'สองชื่อนี้เป็นชื่อเดียวกันอยู่แล้ว';
+  if (listAliases(club).some(a => aliasKey(a.canonical) === lower))
+    return `“${alias}” เป็นชื่อหลักของชื่ออื่นอยู่ ลบชื่อที่ชี้มาที่มันก่อน`;
+  if (!dbAliases.get(club)?.has(lower) && listAliases(club).length >= MAX_ALIASES)
+    return 'มีรายการรวมชื่อมากเกินไป';
+  await db
+    .prepare(
+      'INSERT INTO player_aliases (club,alias,canonical) VALUES (?,?,?) ON CONFLICT(club,alias) DO UPDATE SET canonical=excluded.canonical',
+    )
+    .bind(club, lower, canonical)
+    .run();
+  return null;
+}
+// Names in a cup that match no roster player, no earlier cup and no starting-table name
+// (the organizer must confirm these), each with the closest known names as suggestions.
+const editDistance = (a, b) => {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++)
+      next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+};
+const close = (a, b) => {
+  if (a === b) return false;
+  const d = editDistance(a, b);
+  return (
+    d <= 2 ||
+    (Math.min(a.length, b.length) >= 2 && (a.includes(b) || b.includes(a))) ||
+    (a[0] === b[0] && d <= 3)
+  );
+};
+export async function unknownNames(db, club, cup, history) {
+  const known = new Map(),
+    add = name => {
+      if (typeof name === 'string' && name.trim())
+        known.set(key(name, club), canonicalName(name, club));
+    };
+  try {
+    const row = await db
+      .prepare(`SELECT payload FROM ${clubOf(club).stateTable} WHERE id=1`)
+      .first();
+    for (const p of row ? JSON.parse(row.payload).players : []) {
+      add(p.name);
+      add(p.thai);
+    }
+  } catch {
+    // A club without a roster table yet simply has no roster names.
+  }
+  if (clubOf(club).hasBaseline) for (const p of baseline) add(p.name);
+  for (const c of history) for (const team of c.teams) for (const name of team) add(name);
+  const unknown = [];
+  for (const name of cup.teams.flat()) {
+    const k = key(name, club);
+    if (known.has(k) || unknown.some(u => u.name === name)) continue;
+    const suggestions = [...known]
+      .filter(([other]) => close(k, other))
+      .sort((a, b) => editDistance(k, a[0]) - editDistance(k, b[0]))
+      .slice(0, 3)
+      .map(([, display]) => display);
+    unknown.push({ name, suggestions });
+  }
+  return unknown;
+}
 const key = (name, club = DEFAULT_CLUB) => canonicalName(name, club).toLowerCase();
 export { key as cupPlayerKey };
 export async function cupHistoryTable(db, club) {
@@ -139,12 +254,19 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
   if (req.method !== 'GET' && !isAdmin) return reply({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
   if (!env.DB) return reply({ error: 'ยังไม่ได้ตั้งค่าฐานข้อมูล' }, 503);
   const table = await cupHistoryTable(env.DB, club);
+  await loadAliases(env.DB, club);
   if (req.method === 'POST') {
     let input;
     try {
       const text = await req.text();
       if (text.length > 100000) throw Error('ข้อมูลใหญ่เกินไป');
       input = JSON.parse(text);
+      if (input?.action === 'alias' || input?.action === 'unalias') {
+        const problem = await changeAlias(env.DB, club, input.action, input);
+        if (problem) throw Error(problem);
+        await loadAliases(env.DB, club);
+        return reply({ ok: true, aliases: listAliases(club) });
+      }
       input.cup = cleanCup(input.cup, club);
       if (!clubOf(club).hasBaseline && input.cup.inBaseline)
         throw Error('ก๊วน 88 ยังไม่มียอดสะสมตั้งต้น กรุณานับรายการนี้เป็นผลใหม่');
@@ -157,6 +279,26 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
         throw Error('ข้อมูลรายการไม่ถูกต้อง');
     } catch (error) {
       return reply({ error: error.message }, 400);
+    }
+    // The organizer's screen asks for this check: unknown spellings are the usual cause of
+    // one player showing up twice (Bo/Beau). Unconfirmed names come back as a 409.
+    if (input.checkNames === true && input.acceptUnknown !== true) {
+      const rows = await env.DB.prepare(`SELECT payload FROM ${table}`).all();
+      const unknown = await unknownNames(
+        env.DB,
+        club,
+        input.cup,
+        rows.results.map(r => JSON.parse(r.payload)),
+      );
+      if (unknown.length)
+        return reply(
+          {
+            error: 'พบชื่อที่ไม่ตรงกับรายชื่อ: ' + unknown.map(u => u.name).join(', '),
+            code: 'UNKNOWN_NAMES',
+            unknown,
+          },
+          409,
+        );
     }
     const payload = JSON.stringify(input.cup);
     const result =
@@ -193,5 +335,10 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
       sequence: row.sequence,
     };
   });
-  return reply({ history, standings: standings(history, club), canEdit: isAdmin });
+  return reply({
+    history,
+    standings: standings(history, club),
+    canEdit: isAdmin,
+    ...(isAdmin ? { aliases: listAliases(club) } : {}),
+  });
 }
