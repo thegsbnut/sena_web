@@ -14,7 +14,7 @@ export const CLUB_LIST = [
     // Default Google Maps link of the venue; an organizer can override it in the app.
     venueMapUrl: 'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6',
     // Spelling variants (lower-case) of a player name that count as one person in Cup stats.
-    nameAliases: { nott: 'Not', not: 'Not', beau: 'Beau', bo: 'Beau' },
+    nameAliases: { nott: 'Nott', not: 'Nott', beau: 'Beau', bo: 'Beau' },
   },
   {
     id: '88',
