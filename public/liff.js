@@ -8,6 +8,7 @@
     } catch {}
   let club = 'sena',
     pay = false,
+    collect = false,
     bill = null;
   function readTarget() {
     let params = new URLSearchParams(location.search);
@@ -18,6 +19,7 @@
     }
     club = params.get('club') === '88' ? '88' : 'sena';
     pay = params.get('page') === 'pay';
+    collect = params.get('page') === 'collect';
     bill = params.get('bill');
   }
   const q = id => document.getElementById(id),
@@ -93,7 +95,7 @@
       button('เข้าสู่ระบบด้วย LINE', () => {
         const redirect = new URL('/liff.html', location.origin);
         redirect.searchParams.set('club', club);
-        redirect.searchParams.set('page', pay ? 'pay' : 'book');
+        redirect.searchParams.set('page', pay ? 'pay' : collect ? 'collect' : 'book');
         if (bill) redirect.searchParams.set('bill', bill);
         liff.login({ redirectUri: redirect.href });
       });
@@ -166,6 +168,11 @@
       };
       message('เลือกชื่อครั้งเดียว ใช้ได้ทั้ง Sena และ 88');
       q('mapping').showModal();
+      return;
+    }
+    // Badbot "เก็บเงิน": the bills tab opens straight on the collect page.
+    if (collect) {
+      location.replace('/court?' + (club === '88' ? 'club=88&' : '') + 'bills=collect#bills');
       return;
     }
     if (!pay) {

@@ -704,3 +704,80 @@ body.nxc.home .mine .copy-row {
   font-weight: 700;
   text-decoration: none;
 }
+
+/* custom bill form */
+.create-custom {
+  display: inline-block;
+  margin-bottom: 0.4rem;
+}
+.cb-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.2rem 0.6rem;
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0.5rem 0;
+}
+.cb-guest-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.3rem;
+}
+.cb-guest-add input {
+  flex: 1 1 8rem;
+}
+.cb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.2rem 0.3rem 0.2rem 0;
+  padding: 0.2rem 0.3rem 0.2rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 2rem;
+  background: var(--paper);
+}
+.cb-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.cb-modes button[aria-pressed='true'],
+.cb-pick[aria-pressed='true'] {
+  background: var(--green);
+  color: #fff;
+}
+.cb-item {
+  margin: 0.8rem 0;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--line);
+}
+.cb-who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.cb-sub {
+  display: block;
+}
+.collect-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.2rem;
+}
+.collect-tabs button {
+  flex: 1;
+}
+.collect-tabs button[aria-selected='true'] {
+  background: var(--green);
+  color: #fff;
+}
+#collectTabs {
+  margin-bottom: 0.4rem;
+}
+/* The collect page already shows the back link and title above its tabs. */
+body.collecting #billing > .back-link,
+body.collecting #billing > h1,
+body.collecting #billing > div > h1 {
+  display: none;
+}
