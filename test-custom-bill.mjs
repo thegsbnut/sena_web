@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from './worker.js';
 import { billingLineText } from './billing.js';
@@ -506,4 +507,36 @@ test('member bills include title and the bills I created', async t => {
   const other = await (await f.request('/api/member/bills?club=sena', null, c)).json();
   assert.deepEqual(other.created, []);
   assert.deepEqual(other.bills, []);
+});
+
+// ---- frontend wiring (file checks, like test-billing.mjs) ----
+const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+
+test('billing.html loads the splitter and the form before billing.js', () => {
+  const html = read('./public/billing.html');
+  const at = name => html.indexOf(name);
+  assert(at('/custom-split.js') > 0 && at('/billing-custom.js') > 0);
+  assert(at('/custom-split.js') < at('/billing.js'));
+  assert(at('/billing-custom.js') < at('/billing.js'));
+});
+
+test('billing.js opens the form from ?custom=new, fetches members and posts action=custom', () => {
+  const js = read('./public/billing.js');
+  assert.match(js, /params\.get\('custom'\) === 'new'/);
+  assert.match(js, /action=people/);
+  assert.match(js, /post\('custom'/);
+  assert.match(js, /custom=new&club=/);
+});
+
+test('billing-custom.js escapes every name it puts into innerHTML', () => {
+  const js = read('./public/billing-custom.js');
+  for (const [, expr] of js.matchAll(/\$\{([^}]*)\}/g))
+    if (/\b(name|title|value|transfer)\b/.test(expr) && !/esc\(|money\(|\.length/.test(expr))
+      assert.fail('unescaped interpolation: ' + expr);
+  for (const label of ['หารเท่ากัน', 'ใส่ยอดเอง', 'แยกรายการ', '+ เพิ่ม guest', 'เปิดบิล'])
+    assert(js.includes(label), label);
+});
+
+test('the build checks the new browser file', () => {
+  assert.match(read('./package.json'), /node --check public\/billing-custom\.js/);
 });

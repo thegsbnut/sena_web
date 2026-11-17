@@ -709,7 +709,13 @@
   }
   function showHome() {
     document.body.classList.add('home');
-    root.innerHTML = mineHtml() + (adminList ? adminOverviewHtml() : '');
+    const canCreate = Boolean(adminList) || memberSession?.link?.status === 'approved';
+    root.innerHTML =
+      (canCreate
+        ? `<div class="actions"><a class="button create-custom" href="/billing.html?custom=new&club=${club}">+ สร้างบิลอื่นๆ (เช่น ค่าข้าว)</a></div>`
+        : '') +
+      mineHtml() +
+      (adminList ? adminOverviewHtml() : '');
     const roster = document.querySelector('.next-tabbar [data-go=roster]');
     if (roster) roster.hidden = !adminList;
     message('');
@@ -728,6 +734,39 @@
     if (event.origin === location.origin && event.data === 'bills-refresh' && !id && !editing)
       run(load);
   });
+  // A bill that is not tied to a badminton session (dinner, snacks…): the form lives
+  // in billing-custom.js; here only the server calls and leaving the page.
+  function showCustom() {
+    document.body.classList.remove('home');
+    picker.hidden = true;
+    message('');
+    window.SenaCustomBill.mount(root, {
+      run,
+      message,
+      fetchPeople: async () => {
+        const response = await fetch('/api/billing?action=people&club=' + club, {
+          cache: 'no-store',
+        });
+        if (response.status === 401)
+          throw Error('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว หรือเข้าสู่ระบบผู้จัดก่อนสร้างบิล');
+        if (!response.ok) throw Error('โหลดรายชื่อสมาชิกไม่สำเร็จ');
+        return response.json();
+      },
+      submit: async data => {
+        window.SenaLineNotice?.preload();
+        const result = await post('custom', data);
+        id = result.id;
+        // Post "bill opened" to the group before leaving this page (at most 4 s).
+        if (result.notice && window.SenaLineNotice)
+          await Promise.race([
+            window.SenaLineNotice.send(result.notice),
+            new Promise(resolve => setTimeout(resolve, 4000)),
+          ]);
+        location.replace(linkToBill(id, true).href);
+      },
+      cancel: () => location.assign('/billing.html' + clubQuery),
+    });
+  }
   async function load() {
     document.body.classList.remove('home');
     picker.hidden = Boolean(id);
@@ -1302,6 +1341,10 @@
         (embedded ? window.top : window).location.replace(
           '/liff.html?page=pay&club=' + club + '&bill=' + encodeURIComponent(id),
         );
+        return;
+      }
+      if (!id && params.get('custom') === 'new') {
+        showCustom();
         return;
       }
       await load();
