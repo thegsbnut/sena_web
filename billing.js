@@ -1170,6 +1170,9 @@ export async function paidSummary(env, billId) {
       .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0)),
     sum = list => list.reduce((total, p) => total + p.amount, 0);
   const isCash = p => p.method === 'cash';
+  // On a custom bill the person who paid the restaurant is "paid" from the start; that
+  // row is listed but is not money anyone received.
+  const received = paid.filter(p => p.method !== 'owner');
   return {
     id: bill.id,
     club: bill.club,
@@ -1180,11 +1183,11 @@ export async function paidSummary(env, billId) {
     totalPeople: peopleIn(bill.payers),
     paid,
     owing: bill.payers.filter(p => p.status !== 'paid'),
-    paidSum: sum(paid),
-    cash: { count: paid.filter(isCash).length, sum: sum(paid.filter(isCash)) },
+    paidSum: sum(received),
+    cash: { count: received.filter(isCash).length, sum: sum(received.filter(isCash)) },
     transfer: {
-      count: paid.filter(p => !isCash(p)).length,
-      sum: sum(paid.filter(p => !isCash(p))),
+      count: received.filter(p => !isCash(p)).length,
+      sum: sum(received.filter(p => !isCash(p))),
     },
   };
 }

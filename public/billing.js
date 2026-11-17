@@ -774,12 +774,21 @@
     }
   });
   window.addEventListener('message', event => {
-    if (event.origin === location.origin && event.data === 'bills-refresh' && !id && !editing)
+    if (
+      event.origin === location.origin &&
+      event.data === 'bills-refresh' &&
+      !id &&
+      !editing &&
+      !customOpen
+    )
       run(load);
   });
   // A bill that is not tied to a badminton session (dinner, snacks…): the form lives
   // in billing-custom.js; here only the server calls and leaving the page.
+  // While the custom form is open a tab re-tap (bills-refresh) must not replace it.
+  let customOpen = false;
   function showCustom(initial) {
+    customOpen = true;
     document.body.classList.remove('home');
     picker.hidden = true;
     message('');
@@ -803,11 +812,11 @@
             // Editing: the server recalculates; payer ids and pay links stay the same.
             submit: async data => {
               await post('edit', { ...data, revision: bill.revision });
-              editing = false;
+              editing = customOpen = false;
               await load();
             },
             cancel: () => {
-              editing = false;
+              editing = customOpen = false;
               showBill();
             },
           }

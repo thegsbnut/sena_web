@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from './worker.js';
-import { billingLineText } from './billing.js';
+import { billingLineText, paidSummary } from './billing.js';
 import './public/custom-split.js';
 
 const { split } = globalThis.SenaCustomSplit ?? {};
@@ -581,4 +581,25 @@ test('people list works for the organizer even before any member table exists', 
   const res = await f.request('/api/billing?action=people&club=sena', null, organizer);
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).members, []);
+});
+
+test("paid summary card never counts the organizer's own row as money received", async t => {
+  const { f, a, id, view, act } = await setup(t);
+  const v = await view(a);
+  const pete = v.payers.find(p => p.name === 'Pete');
+  assert.equal(
+    (await act(a, 'cash', { payer: pete.id, revision: v.revision, received: true })).status,
+    200,
+  );
+  const info = await paidSummary(f.env, id);
+  assert.equal(info.full, true);
+  assert.equal(info.paidSum, 60000);
+  assert.deepEqual(info.cash, { count: 1, sum: 60000 });
+  assert.deepEqual(info.transfer, { count: 0, sum: 0 });
+});
+
+test('re-tapping the bills tab does not wipe the custom bill form', () => {
+  const js = read('./public/billing.js');
+  assert.match(js, /event\.data === 'bills-refresh' &&\s*!id &&\s*!editing &&\s*!customOpen/);
+  assert.match(js, /customOpen = true/);
 });
