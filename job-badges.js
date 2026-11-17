@@ -7,6 +7,8 @@ import { cupHistoryTable, cupPlayerKey } from './leaderboard.js';
 
 // A night that has a Cup counts as this many plays toward the badge level (normal night = 1).
 export const CUP_DAY_PLAYS = 3;
+// Only Cup nights on or after this date get the bonus; earlier ones are never recounted.
+export const CUP_DAY_SINCE = '2026-11-17';
 
 export async function prepareJobTables(db) {
   await db
@@ -63,7 +65,7 @@ export async function readBadgeSource(db, club) {
   ]);
   const cupList = cups.results.map(r => ({ sequence: r.sequence, cup: JSON.parse(r.payload) }));
   // Weighted at read time, so a Cup recorded after the nightly job still counts retroactively.
-  const cupDates = new Set(cupList.map(r => r.cup?.date));
+  const cupDates = new Set(cupList.map(r => r.cup?.date).filter(d => d >= CUP_DAY_SINCE));
   const totals = new Map();
   for (const r of plays.results)
     totals.set(
