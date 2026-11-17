@@ -396,3 +396,21 @@ test('latestCupOf picks the newest date, then the newest sequence, like latestCu
   );
   assert.equal(latestCupOf({ cups: [row(4, '2026-11-01'), row(7, '2026-11-01')] }).id, 7);
 });
+
+test('a night with a Cup counts as 3 plays, including a Cup recorded afterwards', async () => {
+  const f = bookingEnv();
+  await f.get();
+  const add = f.db.prepare("INSERT INTO attendance VALUES ('sena', ?, ?)");
+  for (let d = 1; d <= 4; d++) add.run('2026-09-0' + d, 'p1'); // 4 normal nights
+  add.run('2026-09-05', 'p1'); // Cup night
+  add.run('2026-09-05', 'p2');
+  f.db
+    .prepare('INSERT INTO cup_history VALUES (?,1,?,?)')
+    .run('c', 1, JSON.stringify({ date: '2026-09-05', teams: [['A', 'B']], matches: [] }));
+  const own = id =>
+    bookingRoute(new Request('https://example.com/api/booking'), f.env, false, 'sena', {
+      link: { status: 'approved', player_id: id },
+    }).then(r => r.json());
+  assert.equal((await own('p1')).roster[1].badge.plays, 4 + 3);
+  assert.equal((await own('p2')).roster[2].badge.plays, 3);
+});

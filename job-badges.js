@@ -5,6 +5,9 @@ import './public/job-rules.js';
 import './public/engine.js';
 import { cupHistoryTable, cupPlayerKey } from './leaderboard.js';
 
+// A night that has a Cup counts as this many plays toward the badge level (normal night = 1).
+export const CUP_DAY_PLAYS = 3;
+
 export async function prepareJobTables(db) {
   await db
     .prepare(
@@ -54,17 +57,23 @@ export async function readBadgeSource(db, club) {
   await prepareJobTables(db);
   const table = await cupHistoryTable(db, club);
   const [plays, jobs, cups] = await Promise.all([
-    db
-      .prepare('SELECT player_id, count(*) AS n FROM attendance WHERE club=? GROUP BY player_id')
-      .bind(club)
-      .all(),
+    db.prepare('SELECT player_id, session_date FROM attendance WHERE club=?').bind(club).all(),
     db.prepare('SELECT player_id, line FROM player_jobs WHERE club=?').bind(club).all(),
     db.prepare(`SELECT sequence, payload FROM ${table}`).all(),
   ]);
+  const cupList = cups.results.map(r => ({ sequence: r.sequence, cup: JSON.parse(r.payload) }));
+  // Weighted at read time, so a Cup recorded after the nightly job still counts retroactively.
+  const cupDates = new Set(cupList.map(r => r.cup?.date));
+  const totals = new Map();
+  for (const r of plays.results)
+    totals.set(
+      r.player_id,
+      (totals.get(r.player_id) || 0) + (cupDates.has(r.session_date) ? CUP_DAY_PLAYS : 1),
+    );
   return {
-    plays: plays.results,
+    plays: [...totals].map(([player_id, n]) => ({ player_id, n })),
     jobs: jobs.results,
-    cups: cups.results.map(r => ({ sequence: r.sequence, cup: JSON.parse(r.payload) })),
+    cups: cupList,
   };
 }
 
