@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { DatabaseSync } from 'node:sqlite';
 import worker from './worker.js';
 import { billingLineText, paidSummary } from './billing.js';
@@ -626,4 +627,52 @@ test('LIFF collect page lands on the bills tab in collect mode', () => {
   const shell = read('./public/next-shell.js');
   assert.match(shell, /get\('bills'\) === 'collect'/);
   assert.match(shell, /collect=1/);
+});
+
+// Run the real liff.js for an already logged-in, linked member and report where it sends them.
+async function liffLands(search, session = {}) {
+  const replaced = [];
+  const location = {
+    search,
+    hash: '',
+    origin: 'https://sena.example',
+    href: 'https://sena.example/liff.html' + search,
+    replace: url => replaced.push(url),
+  };
+  const element = () => ({ textContent: '', hidden: false, append() {}, replaceChildren() {} });
+  const sandbox = {
+    location,
+    URL,
+    URLSearchParams,
+    console,
+    sessionStorage: { setItem() {}, getItem() {} },
+    document: { getElementById: element, createElement: element },
+    fetch: async () =>
+      Response.json({
+        enabled: true,
+        configured: true,
+        loggedIn: true,
+        link: { status: 'approved' },
+        csrf: 'x',
+        ...session,
+      }),
+  };
+  sandbox.window = sandbox;
+  await vm.runInNewContext(read('./public/liff.js'), sandbox);
+  return replaced;
+}
+
+test('LIFF sends a logged-in member to the page they asked for (book, collect, pay)', async () => {
+  assert.deepEqual(await liffLands('?club=sena&page=book'), ['/court#booking']);
+  assert.deepEqual(await liffLands('?club=88&page=book'), ['/court?club=88#booking']);
+  assert.deepEqual(await liffLands('?club=sena&page=collect'), ['/court?bills=collect#bills']);
+  assert.deepEqual(await liffLands('?club=88&page=collect'), [
+    '/court?club=88&bills=collect#bills',
+  ]);
+  assert.deepEqual(await liffLands('?club=sena&page=pay'), ['/court#bills']);
+  // LINE hands the original query over as liff.state
+  assert.deepEqual(
+    await liffLands('?liff.state=' + encodeURIComponent('?club=sena&page=collect')),
+    ['/court?bills=collect#bills'],
+  );
 });

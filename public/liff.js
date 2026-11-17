@@ -78,8 +78,13 @@
       message('ระบบ LINE Login ยังไม่ได้เปิดใช้งาน กรุณาติดต่อผู้จัด');
       return;
     }
-    if (session.loggedIn && session.link?.status === 'approved' && !session.mappingError && !pay) {
-      location.replace('/court' + (club === '88' ? '?club=88' : '') + '#booking');
+    if (session.loggedIn && session.link?.status === 'approved' && !session.mappingError) {
+      const clubQuery = club === '88' ? 'club=88' : '';
+      // Badbot "เก็บเงิน": the bills tab opens straight on the collect page.
+      if (collect)
+        location.replace('/court?' + (clubQuery ? clubQuery + '&' : '') + 'bills=collect#bills');
+      else if (pay) location.replace('/court' + (clubQuery ? '?' + clubQuery : '') + '#bills');
+      else location.replace('/court' + (clubQuery ? '?' + clubQuery : '') + '#booking');
       return;
     }
     if (!session.loggedIn) {
