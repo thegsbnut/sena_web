@@ -214,6 +214,7 @@ function billView(bill, admin, payer) {
           revision: bill.revision,
           editable: !bill.cancelled && !bill.payers.some(started),
           canUndoCash: !bill.cancelled && !bill.slips_removed,
+          ...(bill.kind === 'custom' ? { draft: bill.draft } : {}),
         }
       : {}),
     payers: (payer ? [payer] : bill.payers).map(p =>
@@ -580,6 +581,7 @@ async function customRoute(req, env, admin, club, action) {
   const member = memberMode(env) ? await memberFor(req, env, club) : null;
   const approved = member?.link?.status === 'approved';
   if (!admin && !approved) return fail('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว', 401);
+  await prepareMembers(db);
   const members = await approvedMembers(db, club);
   if (action === 'people') {
     if (req.method !== 'GET') return fail('Method not allowed', 405);

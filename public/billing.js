@@ -224,6 +224,22 @@
     message('คัดลอกแล้ว');
   }
   let additionalKey, additionalDate, originalBillId;
+  const modeText = { even: 'หารเท่ากัน', manual: 'ใส่ยอดเอง', items: 'แยกรายการ' };
+  // Under the bill title: badminton bills show court + shuttle, custom bills show how
+  // they were split (and the items). Every name is escaped.
+  function costLine(b) {
+    if (b.kind !== 'custom')
+      return `<p>ค่าคอร์ต ${money(b.court)} + ค่าลูก ${money(b.shuttle)} บาท · จ่ายแล้ว ${b.paid}/${b.count} บิล</p>`;
+    const receiver = b.payers.find(p => p.payerKey === b.receiver)?.name;
+    return `<p>${modeText[b.mode] || ''}${receiver ? ' · คนออกเงิน ' + escape(receiver) : ''} · จ่ายแล้ว ${b.paid}/${b.count} บิล</p>${(
+      b.items || []
+    )
+      .map(
+        item =>
+          `<small class="cb-sub">${escape(item.name)} ${money(item.price)} บาท · ${item.names.length} คน</small>`,
+      )
+      .join('')}`;
+  }
   function showBill() {
     if (memberSession?.requireLogin && !manage && !payerToken) {
       (embedded ? window.top : window).location.replace(
@@ -232,8 +248,10 @@
       return;
     }
     const organizer = manage && Number.isInteger(bill.revision);
+    // The organizer sees everything; whoever opened a custom bill manages just that bill.
+    const isAdmin = organizer && bill.viewer === 'admin';
     const rosterTab = document.querySelector('.next-tabbar [data-go=roster]');
-    if (rosterTab) rosterTab.hidden = !organizer;
+    if (rosterTab) rosterTab.hidden = !isAdmin;
     const memberReadOnly = memberSession?.requireLogin && !memberSession.loggedIn && !organizer;
     if (bill.cancelled && !organizer) {
       root.innerHTML = '<h1>บิลนี้ถูกยกเลิกแล้ว</h1>';
@@ -246,12 +264,12 @@
     const promptpay = validPromptPay(bill.transfer);
     root.innerHTML = `
    ${organizer || payerToken ? `<a class="back-link" href="/billing.html?club=${escape(bill.club)}">← กลับหน้าบิลหลัก</a>` : ''}
-   ${organizer ? '<button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>' : ''}
-   <h1>${bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
+   ${isAdmin ? '<button type="button" data-action="mention-diagnostics">ตรวจแท็กบิล LINE</button>' : ''}
+   <h1>${bill.kind === 'custom' ? escape(bill.title) : bill.additional ? 'บิลเพิ่มเติม' : 'ค่าใช้จ่าย'} · ${clubName(bill.club)}</h1>
    <p class="muted">${dateLabel(bill.date)} · ผู้ถูกเรียกเก็บ ${bill.people} คน</p>
    <section class="summary">
     <div class="card-title"><h2>ยอดเรียกเก็บ ${money(bill.collection)} บาท</h2><strong class="${bill.outstanding ? 'due' : 'paid'}">${bill.outstanding ? 'ค้าง ' + money(bill.outstanding) + ' บ.' : 'จ่ายครบแล้ว'}</strong></div>
-    <p>ค่าคอร์ต ${money(bill.court)} + ค่าลูก ${money(bill.shuttle)} บาท · จ่ายแล้ว ${bill.paid}/${bill.count} บิล</p>
+    ${costLine(bill)}
     ${bill.collection > bill.total ? `<p class="muted">ปัดขึ้นรวม ${money(bill.collection - bill.total)} บาท</p>` : ''}
     ${flagged ? `<p class="ai-check warn">🤖 มีสลิปที่ควรตรวจ ${flagged} ใบ</p>` : ''}
    </section>
@@ -263,7 +281,7 @@
       .map(
         p => `
      <div class="row"><div><strong>${escape(p.name)}</strong>${p.shares > 1 ? ` <small>รวม ${p.shares} คน</small>` : ''}
-      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'cash' ? (p.status === 'paid' ? 'จ่ายเงินสดแล้ว' : 'แจ้งจ่ายเงินสด รอผู้จัดยืนยัน') : states[p.status]}</div>
+      <div class="${p.status === 'paid' ? 'paid' : 'due'}">${money(p.amount)} บาท · ${p.method === 'owner' ? 'คนออกเงิน ✓' : p.method === 'cash' ? (p.status === 'paid' ? 'จ่ายเงินสดแล้ว' : 'แจ้งจ่ายเงินสด รอผู้จัดยืนยัน') : states[p.status]}</div>
       ${organizer ? aiLines(p) : ''}
       ${organizer && p.withdrawals?.length ? p.withdrawals.map(r => `<small class="withdrawal-time">${escape(r.name)} · ถอน ${escape(withdrawalTime(r.withdrawnAt))}</small>`).join('') : ''}${p.note && p.status !== 'paid' ? `<small>${escape(p.note)}</small>` : ''}${p.names && p.shares > 1 ? `<small>${escape(p.names.join(', '))}</small>` : ''}</div>
       <div class="actions">
@@ -283,13 +301,22 @@
     <input type="file" id="paymentSlip" accept="image/*" hidden>
     ${!memberReadOnly && !bill.cancelled && promptpay && !who ? '<p class="muted">แนบสลิปในแถวชื่อของคุณ ระบบจะบันทึกว่าจ่ายแล้วทันที</p>' : ''}
    </section>
-   ${organizer ? `<div class="actions">${bill.cancelled ? '<button data-action="restore" type="button">เปิดบิลอีกครั้ง</button>' : `<button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button><button data-action="edit" type="button">${bill.editable ? 'แก้ไขบิล' : 'แก้เลขพร้อมเพย์'}</button><button data-action="cancel" type="button">ยกเลิกบิล</button>`}<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a></div>` : ''}`;
+   ${
+     organizer
+       ? `<div class="actions">${bill.cancelled ? '<button data-action="restore" type="button">เปิดบิลอีกครั้ง</button>' : `<button data-action="share" type="button">คัดลอกบิล / รายชื่อคนค้าง</button><button data-action="edit" type="button">${bill.editable ? 'แก้ไขบิล' : 'แก้เลขพร้อมเพย์'}</button><button data-action="cancel" type="button">ยกเลิกบิล</button>`}${
+           isAdmin
+             ? `<a class="button" href="/billing.html?manage=1&club=${club}">บิลทั้งหมด</a>`
+             : `<a class="button" href="/billing.html?club=${club}">บิลของฉัน</a>`
+         }</div>`
+       : ''
+   }`;
     message('');
   }
   function fillAttendees(date) {
     const previous =
-      adminList.bills.find(b => b.club === club && b.date === date && !b.additional)?.id ||
-      (date === params.get('date') ? originalBillId : undefined);
+      adminList.bills.find(
+        b => b.club === club && b.date === date && !b.additional && b.kind !== 'custom',
+      )?.id || (date === params.get('date') ? originalBillId : undefined);
     const notice = root.querySelector('#additionalNotice');
     notice.hidden = !previous;
     if (previous) notice.querySelector('a').href = linkToBill(previous, true).href;
@@ -482,7 +509,7 @@
        }</div>
        <a class="more" href="/billing.html?manage=1&club=${escape(r.club)}&bill=${escape(r.billId)}">รายละเอียดบิล</a></div>`;
     const billRow = b =>
-      `<a class="bill" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}"><span class="h"><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><span>จ่ายแล้ว ${b.paid}/${b.count}</span></span>
+      `<a class="bill" href="/billing.html?manage=1&club=${b.club}&bill=${b.id}"><span class="h"><strong>${clubName(b.club)} · ${dateLabel(b.date)}${b.title ? ' · ' + escape(b.title) : b.additional ? ' · บิลเพิ่มเติม' : ''}</strong><span>จ่ายแล้ว ${b.paid}/${b.count}</span></span>
        <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
        <small>${b.cancelled ? 'ยกเลิกแล้ว' : b.outstanding ? 'ค้าง ' + money(b.outstanding) + ' บาท' : 'รวม ' + money(b.collection) + ' บาท'}</small></a>`;
     const inner = `
@@ -539,7 +566,11 @@
       const data = await response.json();
       // A reply without a bills list is an error, never "no bills".
       if (!Array.isArray(data.bills)) return { state: 'error', bills: [] };
-      return { state: 'ok', bills: data.bills };
+      return {
+        state: 'ok',
+        bills: data.bills,
+        created: Array.isArray(data.created) ? data.created : [],
+      };
     } catch {
       return { state: 'error', bills: [] };
     }
@@ -622,6 +653,17 @@
     const unpaid = unpaidMine();
     return unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
   };
+  // Custom bills I opened, with a link to manage each (the organizer already has them all).
+  function createdHtml() {
+    if (adminList || !mine.created?.length) return '';
+    const rows = mine.created
+      .map(
+        c => `<a class="bill" href="${escape(c.url)}"><span class="h"><strong>${dateLabel(c.date)} · ${escape(c.title)}</strong><span>จ่ายแล้ว ${c.paid}/${c.count}</span></span>
+       <small>${c.cancelled ? 'ยกเลิกแล้ว' : c.outstanding ? 'ค้าง ' + money(c.outstanding) + ' บาท' : 'จ่ายครบแล้ว'}</small></a>`,
+      )
+      .join('');
+    return zone('created', 'บิลที่ฉันสร้าง', 'จัดการบิลของคุณ', rows);
+  }
   function mineChanged() {
     mineCache.clear();
     return load();
@@ -654,7 +696,7 @@
           : '<div class="status status-due"><b>บัญชี LINE นี้ยังไม่ได้ผูกกับชื่อผู้เล่น</b><small>กรุณาแจ้งผู้จัดให้ผูกชื่อให้</small></div>',
       );
     const open = openMineId();
-    const title = b => `${dateLabel(b.date)}`;
+    const title = b => dateLabel(b.date) + (b.title ? ' · ' + escape(b.title) : '');
     const slipButton = b =>
       b.hasSlip
         ? `<button type="button" class="pill2" data-action="mine-view-slip" data-bill="${b.id}">ดูสลิป</button>`
@@ -715,6 +757,7 @@
         ? `<div class="actions"><a class="button create-custom" href="/billing.html?custom=new&club=${club}">+ สร้างบิลอื่นๆ (เช่น ค่าข้าว)</a></div>`
         : '') +
       mineHtml() +
+      createdHtml() +
       (adminList ? adminOverviewHtml() : '');
     const roster = document.querySelector('.next-tabbar [data-go=roster]');
     if (roster) roster.hidden = !adminList;
@@ -736,35 +779,53 @@
   });
   // A bill that is not tied to a badminton session (dinner, snacks…): the form lives
   // in billing-custom.js; here only the server calls and leaving the page.
-  function showCustom() {
+  function showCustom(initial) {
     document.body.classList.remove('home');
     picker.hidden = true;
     message('');
-    window.SenaCustomBill.mount(root, {
+    const fetchPeople = async () => {
+      const response = await fetch(
+        '/api/billing?action=people&club=' + encodeURIComponent(initial ? bill.club : club),
+        { cache: 'no-store' },
+      );
+      if (response.status === 401)
+        throw Error('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว หรือเข้าสู่ระบบผู้จัดก่อนสร้างบิล');
+      if (!response.ok) throw Error('โหลดรายชื่อสมาชิกไม่สำเร็จ');
+      return response.json();
+    };
+    return window.SenaCustomBill.mount(root, {
       run,
       message,
-      fetchPeople: async () => {
-        const response = await fetch('/api/billing?action=people&club=' + club, {
-          cache: 'no-store',
-        });
-        if (response.status === 401)
-          throw Error('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว หรือเข้าสู่ระบบผู้จัดก่อนสร้างบิล');
-        if (!response.ok) throw Error('โหลดรายชื่อสมาชิกไม่สำเร็จ');
-        return response.json();
-      },
-      submit: async data => {
-        window.SenaLineNotice?.preload();
-        const result = await post('custom', data);
-        id = result.id;
-        // Post "bill opened" to the group before leaving this page (at most 4 s).
-        if (result.notice && window.SenaLineNotice)
-          await Promise.race([
-            window.SenaLineNotice.send(result.notice),
-            new Promise(resolve => setTimeout(resolve, 4000)),
-          ]);
-        location.replace(linkToBill(id, true).href);
-      },
-      cancel: () => location.assign('/billing.html' + clubQuery),
+      fetchPeople,
+      ...(initial
+        ? {
+            initial,
+            // Editing: the server recalculates; payer ids and pay links stay the same.
+            submit: async data => {
+              await post('edit', { ...data, revision: bill.revision });
+              editing = false;
+              await load();
+            },
+            cancel: () => {
+              editing = false;
+              showBill();
+            },
+          }
+        : {
+            submit: async data => {
+              window.SenaLineNotice?.preload();
+              const result = await post('custom', data);
+              id = result.id;
+              // Post "bill opened" to the group before leaving this page (at most 4 s).
+              if (result.notice && window.SenaLineNotice)
+                await Promise.race([
+                  window.SenaLineNotice.send(result.notice),
+                  new Promise(resolve => setTimeout(resolve, 4000)),
+                ]);
+              location.replace(linkToBill(id, true).href);
+            },
+            cancel: () => location.assign('/billing.html' + clubQuery),
+          }),
     });
   }
   async function load() {
@@ -1168,6 +1229,16 @@
       });
     }
     if (action === 'edit') {
+      if (bill.editable && bill.kind === 'custom')
+        return run(async () => {
+          editing = true;
+          await showCustom({
+            title: bill.title,
+            date: bill.date,
+            transfer: bill.transfer,
+            draft: bill.draft,
+          });
+        });
       if (bill.editable)
         return run(async () => {
           sessions = (await request('sessions')).sessions;
@@ -1277,7 +1348,11 @@
     }
     if (action === 'share') {
       const lines = [
-        '💸 ' + clubName(bill.club) + ' · ' + dateLabel(bill.date),
+        '💸 ' +
+          clubName(bill.club) +
+          ' · ' +
+          dateLabel(bill.date) +
+          (bill.title ? ' · ' + bill.title : ''),
         'ค้าง ' + money(bill.outstanding) + ' บาท',
       ];
       for (const p of bill.payers.filter(p => ['unpaid', 'rejected'].includes(p.status)))

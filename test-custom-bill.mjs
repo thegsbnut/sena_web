@@ -540,3 +540,45 @@ test('billing-custom.js escapes every name it puts into innerHTML', () => {
 test('the build checks the new browser file', () => {
   assert.match(read('./package.json'), /node --check public\/billing-custom\.js/);
 });
+
+// ---- bill page (Task 6) ----
+test('creator view carries the saved split for editing; a payer view does not', async t => {
+  const { a, b, view } = await setup(t);
+  const v = await view(a);
+  assert.equal(v.draft.mode, 'even');
+  assert.equal(v.draft.total, 90000);
+  assert.equal(v.draft.people.length, 3);
+  assert.equal(v.draft.receiver, 'member:p0');
+  assert.equal(v.mode, 'even');
+  const pete = v.payers.find(p => p.name === 'Pete');
+  const mine = await view(b, pete.token);
+  assert.equal(mine.draft, undefined);
+});
+
+test('bill page shows the title, hides organizer-only buttons from creators and handles owner rows', () => {
+  const js = read('./public/billing.js');
+  assert.match(js, /bill\.kind === 'custom'[\s\S]{0,80}escape\(bill\.title\)/);
+  assert.match(js, /const isAdmin = organizer && bill\.viewer === 'admin'/);
+  assert.match(js, /\$\{isAdmin \? '<button type="button" data-action="mention-diagnostics"/);
+  assert.match(js, /isAdmin\s*\?\s*`<a class="button" href="\/billing\.html\?manage=1&club=/);
+  assert.match(js, /p\.method === 'owner'/);
+  assert.match(js, /showCustom\(\{[\s\S]{0,160}draft: bill\.draft/);
+  assert.match(js, /post\('edit', \{ \.\.\.data, revision: bill\.revision \}\)/);
+});
+
+test("lists show the title, never mistake a custom bill for the day's badminton bill, and list my own bills", () => {
+  const js = read('./public/billing.js');
+  assert.match(js, /!b\.additional && b\.kind !== 'custom'/);
+  assert.match(js, /escape\(b\.title\)/);
+  assert.match(js, /data\.created/);
+  assert.match(js, /บิลที่ฉันสร้าง/);
+  assert.match(js, /bill\.title/);
+});
+
+test('people list works for the organizer even before any member table exists', async t => {
+  const f = fixture(t);
+  const organizer = await f.admin();
+  const res = await f.request('/api/billing?action=people&club=sena', null, organizer);
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).members, []);
+});

@@ -22,6 +22,7 @@
 | `line-roster-card.js`, `line-bill-card.js`, `line-board-cards.js` | การ์ด Flex รายชื่อผู้ตี / สรุปบิลจ่ายครบ / ตารางจัดคู่ อันดับ ผล Cup (badge PNG ใน `public/badges/`) |
 | `backups.js`, `leaderboard.js`, `booking-holidays.js` | backup state, ตารางคะแนน Cup, วันหยุด |
 | `public/engine.js` | อัลกอริทึมจัดคู่ (`globalThis.Sena.generate`) ใช้ทั้งในเบราว์เซอร์และ Worker |
+| `public/custom-split.js`, `public/billing-custom.js` | บิลอื่นๆ (ค่าข้าว ฯลฯ ไม่ผูกกับรอบตีแบด): ตัวคำนวณหาร 3 แบบ (`globalThis.SenaCustomSplit.split` ใช้ทั้งเบราว์เซอร์และ Worker) + ฟอร์มสร้าง/แก้; ฝั่ง Worker อยู่ใน `billing.js` (`action=custom` / `people`, สิทธิ์ `manager` = ผู้จัดหรือคนสร้างบิล) — spec `docs/superpowers/specs/2026-11-16-custom-bills-design.md` |
 
 ## ข้อตกลงสำคัญ
 - ก๊วนมีสองค่าเท่านั้น: `'sena'` (ค่าเริ่มต้น) และ `'88'` เลือกด้วย query `?club=` ข้อมูลแยกกัน (เช่น `club_state` / `club_state_88`)
