@@ -11,6 +11,10 @@ export const CLUB_LIST = [
     cupTable: 'cup_history',
     defaultCupWeek: 2,
     hasBaseline: true,
+    // Default Google Maps link of the venue; an organizer can override it in the app.
+    venueMapUrl: 'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6',
+    // Spelling variants (lower-case) of a player name that count as one person in Cup stats.
+    nameAliases: { nott: 'Not', not: 'Not', beau: 'Beau', bo: 'Beau' },
   },
   {
     id: '88',
@@ -21,6 +25,8 @@ export const CLUB_LIST = [
     cupTable: 'cup_history_88',
     defaultCupWeek: 4,
     hasBaseline: false,
+    venueMapUrl: 'https://maps.app.goo.gl/9AwoUgdYb4gjNw2w8',
+    nameAliases: {},
   },
 ];
 export const CLUB_IDS = CLUB_LIST.map(club => club.id);

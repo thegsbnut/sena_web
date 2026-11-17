@@ -1,15 +1,11 @@
 import { clubOf, DEFAULT_CLUB } from './clubs.js';
 import { baseline } from './leaderboard-data.js';
 import './public/engine.js';
-const senaAliases = new Map([
-  ['nott', 'Not'],
-  ['not', 'Not'],
-  ['beau', 'Beau'],
-  ['bo', 'Beau'],
-]);
-const aliasesByClub = { sena: senaAliases };
-const canonicalName = (name, club = DEFAULT_CLUB) =>
-  aliasesByClub[club]?.get(name.trim().toLowerCase()) || name.trim();
+const canonicalName = (name, club = DEFAULT_CLUB) => {
+  const aliases = clubOf(club).nameAliases,
+    lower = name.trim().toLowerCase();
+  return (Object.hasOwn(aliases, lower) && aliases[lower]) || name.trim();
+};
 const key = (name, club = DEFAULT_CLUB) => canonicalName(name, club).toLowerCase();
 export { key as cupPlayerKey };
 export async function cupHistoryTable(db, club) {

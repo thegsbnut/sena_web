@@ -606,9 +606,9 @@ async function customRoute(req, env, admin, club, action) {
   if (!admin) {
     const open = await db
       .prepare(
-        "SELECT COUNT(*) AS n FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload,'$.cancelled'),0)=0 AND json_extract(payload,'$.kind')='custom' AND json_extract(payload,'$.createdBy.userId')=?",
+        "SELECT COUNT(*) AS n FROM bills WHERE closed_at IS NULL AND COALESCE(json_extract(payload,'$.cancelled'),0)=0 AND json_extract(payload,'$.kind')='custom' AND club=? AND json_extract(payload,'$.createdBy.userId')=?",
       )
-      .bind(createdBy.userId)
+      .bind(club, createdBy.userId)
       .first();
     if (open.n >= MAX_OPEN_CUSTOM)
       return fail(

@@ -317,6 +317,20 @@ test('custom bill: สมาชิกมีบิลค้างได้ 5 ใ�
   for (let i = 0; i < 6; i++) assert.equal((await f.create(organizer, base())).status, 200);
 });
 
+test('custom bill: เพดาน 5 ใบนับแยกก๊วน บิลก๊วน 88 ไม่กินโควตา Sena', async t => {
+  const f = fixture(t),
+    a = await f.login(users.a, 'p0');
+  await f.login(users.b, 'p1');
+  assert.equal((await f.create(a, base())).status, 200); // creates the lazy bills table
+  const payload = JSON.stringify({ kind: 'custom', createdBy: { userId: users.a }, payers: [] });
+  for (let i = 0; i < 5; i++)
+    f.db
+      .prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES (?,?,?,0,?)')
+      .run('b'.repeat(31) + i, '88', '2026-11-17/' + i, payload);
+  for (let i = 0; i < 4; i++) assert.equal((await f.create(a, base())).status, 200);
+  assert.equal((await f.create(a, base())).status, 409);
+});
+
 test('custom bill: action=people คืนสมาชิก approved และ me', async t => {
   const f = fixture(t),
     a = await f.login(users.a, 'p0');

@@ -25,11 +25,7 @@ export class BookingError extends Error {
 const fail = (message, status = 400) => {
   throw new BookingError(message, status);
 };
-const defaultVenueMaps = {
-  sena: 'https://maps.app.goo.gl/Krmzhw3QxseJ4thW6',
-  88: 'https://maps.app.goo.gl/9AwoUgdYb4gjNw2w8',
-};
-const venueMapFor = (doc, club) => doc.venueMapUrl ?? defaultVenueMaps[club];
+const venueMapFor = (doc, club) => doc.venueMapUrl ?? clubOf(club).venueMapUrl;
 function validateVenueMap(value) {
   const link = typeof value === 'string' ? value.trim() : '';
   const url = link.length <= 2048 ? URL.parse(link) : null;
