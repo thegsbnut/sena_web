@@ -2,7 +2,7 @@ import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import { memberMode } from './member.js';
 import { once } from './schema-cache.js';
 import './public/engine.js';
-import { cupPlayerKey } from './leaderboard.js';
+import { cupMedals, identityFrom } from './leaderboard.js';
 import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
 import { createNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
@@ -383,8 +383,7 @@ export function publicBooking(
       id,
       name,
       thai,
-      award:
-        awards.get(cupPlayerKey(name, club)) || awards.get(cupPlayerKey(thai || '', club)) || '',
+      award: awards.get('id:' + id) || '',
       badge: badges.get(id) ?? {
         plays: 0,
         line: globalThis.SenaJobRules.defaultLine(id),
@@ -859,10 +858,10 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         now,
       ),
     ]);
-    const awards = new Map(
-      [...globalThis.Sena.cupAwards((badgeSource && latestCupOf(badgeSource)) ?? outcome.cup)].map(
-        ([name, award]) => [cupPlayerKey(name, club), award],
-      ),
+    // Medals of the latest cup, keyed by roster id ('id:<player id>').
+    const awards = cupMedals(
+      (badgeSource && latestCupOf(badgeSource)) ?? outcome.cup,
+      identityFrom(outcome.players, club, badgeSource?.legacy),
     );
     const badges = badgesFrom(badgeSource, club, outcome.players, awards);
     const view = publicBooking(

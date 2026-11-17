@@ -3,7 +3,7 @@
 // the booking revision (a job change must not make someone else's booking 409).
 import './public/job-rules.js';
 import './public/engine.js';
-import { cupHistoryTable, cupPlayerKey, loadAliases } from './leaderboard.js';
+import { cupHistoryTable, cupMedals, identityFrom, legacyNames } from './leaderboard.js';
 
 // A night that has a Cup counts as this many plays toward the badge level (normal night = 1).
 export const CUP_DAY_PLAYS = 3;
@@ -58,11 +58,11 @@ export async function recordAttendance(db, club, doc, players, today, since = ''
 export async function readBadgeSource(db, club) {
   await prepareJobTables(db);
   const table = await cupHistoryTable(db, club);
-  await loadAliases(db, club);
-  const [plays, jobs, cups] = await Promise.all([
+  const [plays, jobs, cups, legacy] = await Promise.all([
     db.prepare('SELECT player_id, session_date FROM attendance WHERE club=?').bind(club).all(),
     db.prepare('SELECT player_id, line FROM player_jobs WHERE club=?').bind(club).all(),
     db.prepare(`SELECT sequence, payload FROM ${table}`).all(),
+    legacyNames(db, club),
   ]);
   const cupList = cups.results.map(r => ({ sequence: r.sequence, cup: JSON.parse(r.payload) }));
   // Weighted at read time, so a Cup recorded after the nightly job still counts retroactively.
@@ -77,6 +77,7 @@ export async function readBadgeSource(db, club) {
     plays: [...totals].map(([player_id, n]) => ({ player_id, n })),
     jobs: jobs.results,
     cups: cupList,
+    legacy,
   };
 }
 
@@ -92,20 +93,18 @@ export function latestCupOf(source) {
   return best ? best.cup : null;
 }
 
-// Everything the booking card needs to draw each roster player's badge.
+// Everything the booking card needs to draw each roster player's badge. Titles and the
+// latest-champion flag follow the player's roster id, so a renamed player keeps them.
+// `latestAwards` is cupMedals() of the latest cup (keys 'id:<player id>').
 export function badgesFrom(source, club, players, latestAwards = new Map()) {
   const playCount = new Map(source.plays.map(r => [r.player_id, r.n]));
   const chosen = new Map(source.jobs.map(r => [r.player_id, r.line]));
+  const ident = identityFrom(players, club, source.legacy ?? new Map());
   const titles = new Map();
   for (const { cup } of source.cups)
-    for (const [name, award] of globalThis.Sena.cupAwards(cup))
-      if (award === '🥇') {
-        const k = cupPlayerKey(name, club);
-        titles.set(k, (titles.get(k) || 0) + 1);
-      }
+    for (const [slot, award] of cupMedals(cup, ident))
+      if (award === '🥇') titles.set(slot, (titles.get(slot) || 0) + 1);
   const { LINES, defaultLine } = globalThis.SenaJobRules;
-  const keysOf = p =>
-    [cupPlayerKey(p.name, club), p.thai && cupPlayerKey(p.thai, club)].filter(Boolean);
   return new Map(
     players.map(p => {
       const line = chosen.get(p.id);
@@ -115,8 +114,8 @@ export function badgesFrom(source, club, players, latestAwards = new Map()) {
           plays: playCount.get(p.id) || 0,
           line: LINES.includes(line) ? line : defaultLine(p.id),
           chosen: LINES.includes(line),
-          titles: Math.max(0, ...keysOf(p).map(k => titles.get(k) || 0)),
-          latestChamp: keysOf(p).some(k => latestAwards.get(k) === '🥇'),
+          titles: titles.get('id:' + p.id) || 0,
+          latestChamp: latestAwards.get('id:' + p.id) === '🥇',
         },
       ];
     }),

@@ -35,38 +35,29 @@
     return result;
   }
   // Saving a cup asks the server to check the names. A spelling it has never seen is
-  // usually a typo of a known player (Bo/Beau): offer to merge it, or confirm it is new.
+  // usually a typo of a known player (Bo/Beau): offer the close names to swap in, or
+  // confirm it is a new / former player. The swap edits the teams in place, so the
+  // live Cup and the history form keep the corrected name too.
   async function saveCup(body) {
     try {
       return await postBoard({ ...body, checkNames: true });
     } catch (error) {
       if (error.code !== 'UNKNOWN_NAMES') throw error;
       for (const { name, suggestions } of error.result.unknown) {
-        let merged = false;
-        for (const suggestion of suggestions)
-          if (
-            confirm(
-              `“${name}” ไม่อยู่ในรายชื่อ — เป็นคนเดียวกับ “${suggestion}” หรือไม่?\n\nตกลง = ใช่ รวมเป็น ${suggestion} (จำไว้ใช้ครั้งต่อไปด้วย)\nยกเลิก = ไม่ใช่`,
-            )
-          ) {
-            await postBoard({ action: 'alias', alias: name, canonical: suggestion });
-            merged = true;
-            break;
-          }
-        if (!merged && !confirm(`บันทึก “${name}” เป็นผู้เล่นใหม่/ผู้เล่นเก่าที่ไม่อยู่ในรายชื่อ?`))
+        const pick = suggestions.find(suggestion =>
+          confirm(
+            `“${name}” ไม่อยู่ในรายชื่อ — หมายถึง “${suggestion}” หรือไม่?\n\nตกลง = ใช่ เปลี่ยนเป็น ${suggestion}\nยกเลิก = ไม่ใช่`,
+          ),
+        );
+        if (pick)
+          for (const team of body.cup.teams)
+            team.forEach((value, i) => value === name && (team[i] = pick));
+        else if (!confirm(`บันทึก “${name}” เป็นผู้เล่นใหม่/ผู้เล่นเก่าที่ไม่อยู่ในรายชื่อ?`))
           throw Error('ยังไม่ได้บันทึก — แก้ชื่อ “' + name + '” ให้ตรงกับรายชื่อก่อน');
       }
-      return await postBoard({ ...body, acceptUnknown: true });
+      return await postBoard({ ...body, checkNames: true, acceptUnknown: true });
     }
   }
-  const changeText = value =>
-    value === 'NEW'
-      ? 'NEW'
-      : value === null || value === 0
-        ? '—'
-        : value > 0
-          ? '↑ ' + value
-          : '↓ ' + Math.abs(value);
   function draw() {
     const rows = data.standings;
     document.querySelector('#leaderboardRows').innerHTML = rows
@@ -76,7 +67,6 @@
       )
       .join('');
     document.querySelector('#manualHistory').hidden = !data.canEdit;
-    drawAliases();
     document.querySelector('#cupArchiveHint').textContent = data.canEdit
       ? 'กรอกคะแนนครบ แล้วกดจบการแข่งขันเพื่อบันทึกประวัติและอัปเดต Leaderboard ได้ทันที ไม่ต้องกดบันทึกออนไลน์'
       : 'ผู้จัดที่เข้าสู่ระบบสามารถบันทึกจบการแข่งขันได้';
@@ -94,43 +84,6 @@
         ? '<div class="panel">ยังไม่มีประวัติ 88 Cup • เริ่มบันทึกการแข่งขันแรกได้เลย</div>'
         : '<div class="panel">ยังไม่มีผลแยกรายการ • สถิติจากภาพเก็บเป็นยอดสะสมตั้งต้นแล้ว</div>';
   }
-  function drawAliases() {
-    const panel = document.querySelector('#aliasPanel');
-    panel.hidden = !data.canEdit;
-    document.querySelector('#aliasList').innerHTML = (data.aliases || [])
-      .map(
-        a =>
-          `<li>${esc(a.alias)} → <b>${esc(a.canonical)}</b> ${a.builtin ? '<small>(ค่าตั้งต้น)</small>' : `<button type="button" class="secondary" data-unalias="${esc(a.alias)}">ลบ</button>`}</li>`,
-      )
-      .join('');
-  }
-  document.querySelector('#aliasForm').onsubmit = async event => {
-    event.preventDefault();
-    const form = event.target;
-    try {
-      await postBoard({
-        action: 'alias',
-        alias: form.elements.alias.value,
-        canonical: form.elements.canonical.value,
-      });
-      form.reset();
-      await load();
-      status('รวมชื่อแล้ว ✓ Leaderboard อัปเดตแล้ว');
-    } catch (error) {
-      status(error.message);
-    }
-  };
-  document.querySelector('#aliasList').onclick = async event => {
-    const alias = event.target.closest('[data-unalias]')?.dataset.unalias;
-    if (!alias || !confirm(`เลิกรวมชื่อ “${alias}” หรือไม่? สถิติจะแยกเป็นอีกคนอีกครั้ง`)) return;
-    try {
-      await postBoard({ action: 'unalias', alias });
-      await load();
-      status('เลิกรวมชื่อแล้ว');
-    } catch (error) {
-      status(error.message);
-    }
-  };
   async function load() {
     const res = await venueFetch('/api/leaderboard', { cache: 'no-store' }),
       body = await res.json();

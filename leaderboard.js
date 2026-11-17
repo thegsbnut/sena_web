@@ -1,73 +1,142 @@
 import { clubOf, DEFAULT_CLUB } from './clubs.js';
 import { baseline } from './leaderboard-data.js';
 import './public/engine.js';
-// Name aliases: the built-in ones live in clubs.js; the organizer adds more in the app
-// (table player_aliases). The database ones are loaded per request into this per-club map
-// so the many synchronous callers of cupPlayerKey/canonicalName stay unchanged.
-const dbAliases = new Map();
-const aliasKey = name => name.trim().toLowerCase();
+// Built-in spelling aliases (clubs.js) only fold legacy names together: who a player
+// IS comes from their roster id, so renaming someone keeps their Cup history.
 const canonicalName = (name, club = DEFAULT_CLUB) => {
-  const lower = aliasKey(name),
-    stored = dbAliases.get(club),
+  const lower = name.trim().toLowerCase(),
     builtin = clubOf(club).nameAliases;
-  if (stored?.has(lower)) return stored.get(lower);
   return (Object.hasOwn(builtin, lower) && builtin[lower]) || name.trim();
 };
-export async function loadAliases(db, club) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS player_aliases (club TEXT NOT NULL, alias TEXT NOT NULL, canonical TEXT NOT NULL, PRIMARY KEY (club, alias))',
-    )
-    .run();
-  const rows = await db
-    .prepare('SELECT alias,canonical FROM player_aliases WHERE club=?')
-    .bind(club)
-    .all();
-  dbAliases.set(club, new Map(rows.results.map(r => [r.alias, r.canonical])));
-}
-const MAX_ALIASES = 200;
-export function listAliases(club) {
-  const builtin = Object.entries(clubOf(club).nameAliases).map(([alias, canonical]) => ({
-    alias,
-    canonical,
-    builtin: true,
-  }));
-  const stored = [...(dbAliases.get(club) ?? [])].map(([alias, canonical]) => ({
-    alias,
-    canonical,
-    builtin: false,
-  }));
-  return [...builtin, ...stored];
-}
-// Returns an error message, or null after changing the table. `alias` always points
-// at a main name (never at another alias), so one lookup is enough.
-export async function changeAlias(db, club, action, input) {
-  const clean = v => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
-  const alias = clean(input.alias),
-    lower = aliasKey(alias);
-  if (!alias || alias.length > 100) return 'กรอกชื่อที่ต้องการรวม 1–100 ตัวอักษร';
-  if (action === 'unalias') {
-    if (Object.hasOwn(clubOf(club).nameAliases, lower))
-      return 'ชื่อนี้เป็นค่าตั้งต้นของระบบ ลบจากหน้าเว็บไม่ได้';
-    await db.prepare('DELETE FROM player_aliases WHERE club=? AND alias=?').bind(club, lower).run();
-    return null;
+
+// ---- player identity ----
+// A Cup slot belongs to a roster player id: saved in the cup (`teamIds`) since Nov 2026;
+// older cups and the starting table go through `cup_name_ids`, a name→id map frozen once
+// per club from the roster of that day; anything else falls back to today's roster names.
+export function identityFrom(players, club = DEFAULT_CLUB, legacy = new Map()) {
+  const byName = new Map(),
+    nameOf = new Map(),
+    spelled = new Map();
+  for (const p of players || []) {
+    nameOf.set(p.id, p.name);
+    const keys = new Set(
+      [p.name, p.thai].filter(n => typeof n === 'string' && n.trim()).map(n => key(n, club)),
+    );
+    // Two players answering to one name: neither gets it.
+    for (const n of [p.name, p.thai])
+      if (typeof n === 'string' && n.trim()) spelled.set(key(n, club), n.trim());
+    for (const k of keys) byName.set(k, byName.has(k) && byName.get(k) !== p.id ? null : p.id);
   }
-  const typed = clean(input.canonical);
-  if (!typed || typed.length > 100) return 'กรอกชื่อหลัก 1–100 ตัวอักษร';
-  const canonical = canonicalName(typed, club);
-  if (aliasKey(canonical) === lower) return 'สองชื่อนี้เป็นชื่อเดียวกันอยู่แล้ว';
-  if (listAliases(club).some(a => aliasKey(a.canonical) === lower))
-    return `“${alias}” เป็นชื่อหลักของชื่ออื่นอยู่ ลบชื่อที่ชี้มาที่มันก่อน`;
-  if (!dbAliases.get(club)?.has(lower) && listAliases(club).length >= MAX_ALIASES)
-    return 'มีรายการรวมชื่อมากเกินไป';
+  return { club, byName, nameOf, spelled, legacy };
+}
+const nameId = (ident, name) => {
+  const k = key(name, ident.club);
+  return ident.legacy.get(k) || ident.byName.get(k) || null;
+};
+const slotId = (ident, cup, t, k) => cup.teamIds?.[t]?.[k] || nameId(ident, cup.teams[t][k]);
+export const slotKey = (ident, cup, t, k) => {
+  const id = slotId(ident, cup, t, k);
+  return id ? 'id:' + id : 'n:' + key(cup.teams[t][k], ident.club);
+};
+const shownName = (ident, id, name) =>
+  (id && ident.nameOf.get(id)) || canonicalName(name, ident.club);
+// The cup as people should read it: today's roster names, no internal ids.
+export function displayCup(cup, ident) {
+  const { teamIds: _ids, ...rest } = cup;
+  return {
+    ...rest,
+    teams: cup.teams.map((team, t) =>
+      team.map((name, k) => shownName(ident, slotId(ident, cup, t, k), name)),
+    ),
+  };
+}
+// 🥇 / 💩 of one cup, keyed by slotKey (so 'id:<player id>' for roster players).
+export function cupMedals(cup, ident) {
+  const byName = globalThis.Sena.cupAwards(cup),
+    medals = new Map();
+  cup?.teams?.forEach((team, t) =>
+    team.forEach((name, k) => {
+      const medal = byName.get(name.trim().toLowerCase());
+      if (medal) medals.set(slotKey(ident, cup, t, k), medal);
+    }),
+  );
+  return medals;
+}
+async function rosterOf(db, club) {
+  try {
+    const row = await db
+      .prepare(`SELECT payload FROM ${clubOf(club).stateTable} WHERE id=1`)
+      .first();
+    return row ? JSON.parse(row.payload).players : [];
+  } catch {
+    return []; // a club whose roster table does not exist yet
+  }
+}
+// The frozen name→id map. The first call per club builds it from the roster of the day
+// (marker row name_key=''), so renaming a player later cannot cut them off their history.
+export async function legacyNames(db, club) {
   await db
     .prepare(
-      'INSERT INTO player_aliases (club,alias,canonical) VALUES (?,?,?) ON CONFLICT(club,alias) DO UPDATE SET canonical=excluded.canonical',
+      'CREATE TABLE IF NOT EXISTS cup_name_ids (club TEXT NOT NULL, name_key TEXT NOT NULL, player_id TEXT NOT NULL, PRIMARY KEY (club, name_key))',
     )
-    .bind(club, lower, canonical)
     .run();
-  return null;
+  const read = async () =>
+    (await db.prepare('SELECT name_key,player_id FROM cup_name_ids WHERE club=?').bind(club).all())
+      .results;
+  let rows = await read();
+  if (!rows.some(r => r.name_key === '')) {
+    const players = await rosterOf(db, club);
+    // Without a roster there is nothing to freeze yet; try again on a later request.
+    if (!players.length) return new Map();
+    const ident = identityFrom(players, club),
+      table = await cupHistoryTable(db, club),
+      names = new Set(clubOf(club).hasBaseline ? baseline.map(p => key(p.name, club)) : []);
+    for (const row of (await db.prepare(`SELECT payload FROM ${table}`).all()).results) {
+      const cup = JSON.parse(row.payload);
+      if (!cup.teamIds) for (const name of cup.teams.flat()) names.add(key(name, club));
+    }
+    const pairs = [...names].map(k => [k, ident.byName.get(k)]).filter(([, id]) => id);
+    pairs.push(['', '']);
+    // 30 rows × 3 values stays under D1's 100 bound-parameter limit.
+    for (let i = 0; i < pairs.length; i += 30) {
+      const chunk = pairs.slice(i, i + 30);
+      await db
+        .prepare(
+          'INSERT OR IGNORE INTO cup_name_ids (club,name_key,player_id) VALUES ' +
+            chunk.map(() => '(?,?,?)').join(','),
+        )
+        .bind(...chunk.flatMap(([k, id]) => [club, k, id]))
+        .run();
+    }
+    rows = await read();
+  }
+  return new Map(rows.filter(r => r.name_key).map(r => [r.name_key, r.player_id]));
 }
+export async function loadIdentity(db, club) {
+  const [players, legacy] = await Promise.all([rosterOf(db, club), legacyNames(db, club)]);
+  return identityFrom(players, club, legacy);
+}
+// Ids for a cup about to be saved: names already tied to an id in the previous version
+// of this record keep it (also under the player's current name), then the frozen
+// legacy names, then today's roster.
+function assignIds(cup, ident, previous) {
+  const carried = new Map();
+  previous?.teams.forEach((team, t) =>
+    team.forEach((name, k) => {
+      const id = slotId(ident, previous, t, k);
+      if (!id) return;
+      carried.set(key(name, ident.club), id);
+      if (ident.nameOf.has(id)) carried.set(key(ident.nameOf.get(id), ident.club), id);
+    }),
+  );
+  return cup.teams.map(team =>
+    team.map(name => {
+      const k = key(name, ident.club);
+      return carried.get(k) || nameId(ident, name);
+    }),
+  );
+}
+
 // Names in a cup that match no roster player, no earlier cup and no starting-table name
 // (the organizer must confirm these), each with the closest known names as suggestions.
 const editDistance = (a, b) => {
@@ -89,34 +158,31 @@ const close = (a, b) => {
     (a[0] === b[0] && d <= 3)
   );
 };
-export async function unknownNames(db, club, cup, history) {
-  const known = new Map(),
+export function unknownNames(cup, history, ident) {
+  const club = ident.club,
+    known = new Map(),
     add = name => {
       if (typeof name === 'string' && name.trim())
         known.set(key(name, club), canonicalName(name, club));
     };
-  try {
-    const row = await db
-      .prepare(`SELECT payload FROM ${clubOf(club).stateTable} WHERE id=1`)
-      .first();
-    for (const p of row ? JSON.parse(row.payload).players : []) {
-      add(p.name);
-      add(p.thai);
-    }
-  } catch {
-    // A club without a roster table yet simply has no roster names.
-  }
+  for (const name of ident.spelled.values()) add(name);
   if (clubOf(club).hasBaseline) for (const p of baseline) add(p.name);
-  for (const c of history) for (const team of c.teams) for (const name of team) add(name);
+  for (const c of history) {
+    for (const team of c.teams) for (const name of team) add(name);
+    for (const team of displayCup(c, ident).teams) for (const name of team) add(name);
+  }
   const unknown = [];
   for (const name of cup.teams.flat()) {
     const k = key(name, club);
     if (known.has(k) || unknown.some(u => u.name === name)) continue;
-    const suggestions = [...known]
-      .filter(([other]) => close(k, other))
-      .sort((a, b) => editDistance(k, a[0]) - editDistance(k, b[0]))
-      .slice(0, 3)
-      .map(([, display]) => display);
+    const suggestions = [
+      ...new Set(
+        [...known]
+          .filter(([other]) => close(k, other))
+          .sort((a, b) => editDistance(k, a[0]) - editDistance(k, b[0]))
+          .map(([, display]) => display),
+      ),
+    ].slice(0, 3);
     unknown.push({ name, suggestions });
   }
   return unknown;
@@ -139,7 +205,7 @@ export async function latestCup(db, club) {
       `SELECT payload FROM ${table} ORDER BY json_extract(payload,'$.date') DESC, sequence DESC LIMIT 1`,
     )
     .first();
-  return row ? JSON.parse(row.payload) : null;
+  return row ? displayCup(JSON.parse(row.payload), await loadIdentity(db, club)) : null;
 }
 export function cleanCup(value, club = DEFAULT_CLUB) {
   if (
@@ -189,22 +255,34 @@ export function cleanCup(value, club = DEFAULT_CLUB) {
     pairs.add([m.a, m.b].sort((a, b) => a - b).join(','));
   }
   if (pairs.size !== matches.length) throw Error('คู่แข่งขันซ้ำ');
+  // Player ids travel with a restored backup; a normal save recomputes them (assignIds).
+  const ids = value.teamIds;
+  const validIds =
+    Array.isArray(ids) &&
+    ids.length === teams.length &&
+    ids.every(
+      t =>
+        Array.isArray(t) &&
+        t.length === 2 &&
+        t.every(id => id === null || (typeof id === 'string' && id && id.length <= 100)),
+    );
   return {
     title: value.title.trim(),
     date: value.date,
     inBaseline: value.inBaseline,
     teams: teams.map(t => t.map(name => canonicalName(name, club))),
+    ...(validIds ? { teamIds: ids.map(t => [...t]) } : {}),
     matches: matches.map(({ a, b, sa, sb }) => ({ a, b, sa, sb })),
   };
 }
-function addCup(totals, cup, club) {
+function addCup(totals, cup, ident) {
   const rows = globalThis.Sena.standings(cup.teams, cup.matches);
   const equal = (a, b) => a.w === b.w && a.pf - a.pa === b.pf - b.pa && a.pf === b.pf;
   for (const row of rows)
-    for (const name of cup.teams[row.i]) {
-      const id = key(name, club),
+    cup.teams[row.i].forEach((name, k) => {
+      const id = slotKey(ident, cup, row.i, k),
         p = totals.get(id) || {
-          name: canonicalName(name, club),
+          name: shownName(ident, slotId(ident, cup, row.i, k), name),
           played: 0,
           w: 0,
           l: 0,
@@ -221,31 +299,42 @@ function addCup(totals, cup, club) {
       if (equal(row, rows[0])) p.crown++;
       else if (equal(row, rows[rows.length - 1])) p.poo++;
       totals.set(id, p);
-    }
+    });
 }
-function ordered(cups, club) {
-  const totals = new Map(
-    (clubOf(club).hasBaseline ? baseline : []).map(p => [key(p.name, club), { ...p }]),
-  );
-  for (const cup of cups) addCup(totals, cup, club);
-  return [...totals.values()].sort(
-    (a, b) =>
+// Starting-table rows keyed like cup slots, shown under today's roster name.
+const startingRows = ident =>
+  (clubOf(ident.club).hasBaseline ? baseline : []).map(p => {
+    const id = nameId(ident, p.name);
+    return [
+      id ? 'id:' + id : 'n:' + key(p.name, ident.club),
+      { ...p, name: shownName(ident, id, p.name) },
+    ];
+  });
+function ordered(cups, ident) {
+  const totals = new Map(startingRows(ident));
+  for (const cup of cups) addCup(totals, cup, ident);
+  return [...totals].sort(
+    ([, a], [, b]) =>
       b.w - a.w || b.pf - b.pa - (a.pf - a.pa) || b.pf - a.pf || a.name.localeCompare(b.name),
   );
 }
-export function standings(history, club = DEFAULT_CLUB) {
-  const starting = clubOf(club).hasBaseline ? baseline : [];
+// `history` holds the cups as stored (names + teamIds). Without an identity (tests, old
+// callers) players are matched by name only, as before ids existed.
+export function standings(history, club = DEFAULT_CLUB, ident = identityFrom([], club)) {
   const counted = history.filter(c => !c.inBaseline).sort((a, b) => a.sequence - b.sequence);
   if (!counted.length)
-    return starting.map(p => ({ ...p, diff: p.pf - p.pa, winPercent: (p.w / p.played) * 100 }));
-  const previous = ordered(counted.slice(0, -1), club),
-    ranks = new Map(previous.map((p, i) => [key(p.name, club), i + 1]));
-  return ordered(counted, club).map((p, i) => ({
+    return startingRows(ident).map(([, p]) => ({
+      ...p,
+      diff: p.pf - p.pa,
+      winPercent: (p.w / p.played) * 100,
+    }));
+  const ranks = new Map(ordered(counted.slice(0, -1), ident).map(([id], i) => [id, i + 1]));
+  return ordered(counted, ident).map(([id, p], i) => ({
     ...p,
     position: i + 1,
     diff: p.pf - p.pa,
     winPercent: p.played ? (p.w / p.played) * 100 : 0,
-    change: ranks.has(key(p.name, club)) ? ranks.get(key(p.name, club)) - (i + 1) : 'NEW',
+    change: ranks.has(id) ? ranks.get(id) - (i + 1) : 'NEW',
   }));
 }
 export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
@@ -254,19 +343,13 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
   if (req.method !== 'GET' && !isAdmin) return reply({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
   if (!env.DB) return reply({ error: 'ยังไม่ได้ตั้งค่าฐานข้อมูล' }, 503);
   const table = await cupHistoryTable(env.DB, club);
-  await loadAliases(env.DB, club);
+  const ident = await loadIdentity(env.DB, club);
   if (req.method === 'POST') {
     let input;
     try {
       const text = await req.text();
       if (text.length > 100000) throw Error('ข้อมูลใหญ่เกินไป');
       input = JSON.parse(text);
-      if (input?.action === 'alias' || input?.action === 'unalias') {
-        const problem = await changeAlias(env.DB, club, input.action, input);
-        if (problem) throw Error(problem);
-        await loadAliases(env.DB, club);
-        return reply({ ok: true, aliases: listAliases(club) });
-      }
       input.cup = cleanCup(input.cup, club);
       if (!clubOf(club).hasBaseline && input.cup.inBaseline)
         throw Error('ก๊วน 88 ยังไม่มียอดสะสมตั้งต้น กรุณานับรายการนี้เป็นผลใหม่');
@@ -284,11 +367,10 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
     // one player showing up twice (Bo/Beau). Unconfirmed names come back as a 409.
     if (input.checkNames === true && input.acceptUnknown !== true) {
       const rows = await env.DB.prepare(`SELECT payload FROM ${table}`).all();
-      const unknown = await unknownNames(
-        env.DB,
-        club,
+      const unknown = unknownNames(
         input.cup,
         rows.results.map(r => JSON.parse(r.payload)),
+        ident,
       );
       if (unknown.length)
         return reply(
@@ -300,6 +382,17 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
           409,
         );
     }
+    const previous =
+      input.revision > 0
+        ? await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=?`).bind(input.id).first()
+        : null;
+    input.cup.teamIds = assignIds(input.cup, ident, previous && JSON.parse(previous.payload));
+    const ids = input.cup.teamIds.flat().filter(Boolean);
+    if (new Set(ids).size !== ids.length)
+      return reply(
+        { error: 'มีผู้เล่นคนเดียวกันอยู่สองช่อง (ชื่อเล่น/ชื่อไทยของคนเดียวกัน)' },
+        400,
+      );
     const payload = JSON.stringify(input.cup);
     const result =
       input.revision === 0
@@ -325,20 +418,15 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
   const result = await env.DB.prepare(
     `SELECT id,revision,sequence,payload FROM ${table} ORDER BY sequence`,
   ).all();
-  const history = result.results.map(row => {
-    const cup = JSON.parse(row.payload);
-    return {
-      ...cup,
-      teams: cup.teams.map(team => team.map(name => canonicalName(name, club))),
-      id: row.id,
-      revision: row.revision,
-      sequence: row.sequence,
-    };
-  });
+  const stored = result.results.map(row => ({
+    ...JSON.parse(row.payload),
+    id: row.id,
+    revision: row.revision,
+    sequence: row.sequence,
+  }));
   return reply({
-    history,
-    standings: standings(history, club),
+    history: stored.map(cup => displayCup(cup, ident)),
+    standings: standings(stored, club, ident),
     canEdit: isAdmin,
-    ...(isAdmin ? { aliases: listAliases(club) } : {}),
   });
 }
