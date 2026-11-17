@@ -620,6 +620,11 @@ test('enabled member mode sends both booking buttons through the configured LIFF
     assert.equal(url.pathname, '/12345-test');
     assert.equal(url.searchParams.get('club'), club);
     assert.equal(url.searchParams.get('page'), 'book');
+    // The collect buttons open the same LIFF app on the collect page.
+    const collect = new URL(buttons[i + 4].action.uri);
+    assert.equal(collect.origin, 'https://liff.line.me');
+    assert.equal(collect.searchParams.get('club'), club);
+    assert.equal(collect.searchParams.get('page'), 'collect');
   }
   await f.hook([f.event('badbot leaderboard sena')]);
   const link = JSON.stringify(f.calls.at(-1).messages);
@@ -642,7 +647,7 @@ test('signed badbot command replies with the compact menu and distinct existing 
   const [menu] = f.calls[0].messages;
   assert.equal(menu.type, 'flex');
   const buttons = menuButtons(menu);
-  assert.equal(buttons.length, 8);
+  assert.equal(buttons.length, 10);
   assert.deepEqual(buttons[0].action, {
     type: 'uri',
     label: '🏸 Sena',
@@ -653,8 +658,18 @@ test('signed badbot command replies with the compact menu and distinct existing 
     label: '🏸 88',
     uri: 'https://sena-web.thegsbnut.workers.dev/court?club=88#booking',
   });
+  assert.deepEqual(buttons[4].action, {
+    type: 'uri',
+    label: '💸 Sena',
+    uri: 'https://sena-web.thegsbnut.workers.dev/billing.html?collect=1',
+  });
+  assert.deepEqual(buttons[5].action, {
+    type: 'uri',
+    label: '💸 88',
+    uri: 'https://sena-web.thegsbnut.workers.dev/billing.html?collect=1&club=88',
+  });
   assert.deepEqual(
-    buttons.slice(2).map(b => b.action.data),
+    buttons.filter(b => b.action.type === 'postback').map(b => b.action.data),
     [
       'badbot:roster:sena',
       'badbot:roster:88',
@@ -747,7 +762,7 @@ test('roster buttons return scoped text only and old menu actions still work', a
   assert.equal(f.calls.length, callsBefore + 1);
   await f.hook([f.event('', { type: 'postback', postback: { data: 'badbot:menu' } })]);
   assert.equal(f.calls.at(-1).messages.length, 1);
-  assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 8);
+  assert.equal(menuButtons(f.calls.at(-1).messages[0]).length, 10);
   // The menu header fades green, like Sena's cards.
   const menuHeader = f.calls.at(-1).messages[0].contents.header;
   assert.equal(menuHeader.backgroundColor, '#168B42');

@@ -3,6 +3,7 @@
   const club = params.get('club') === '88' ? '88' : 'sena';
   let id = params.get('bill');
   const manage = params.get('manage') === '1';
+  const collect = params.get('collect') === '1';
   const payerToken = new URLSearchParams(location.hash.slice(1)).get('pay');
   const root = document.querySelector('#billing');
   const status = document.querySelector('#status');
@@ -513,7 +514,7 @@
        <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
        <small>${b.cancelled ? 'ยกเลิกแล้ว' : b.outstanding ? 'ค้าง ' + money(b.outstanding) + ' บาท' : 'รวม ' + money(b.collection) + ' บาท'}</small></a>`;
     const inner = `
-   <div class="actions"><a class="button create-bill" href="/billing.html?manage=1&new=1&club=${club}">+ สร้างบิลใหม่</a></div>
+   <div class="actions"><a class="button create-bill" href="/billing.html?collect=1&club=${club}">+ สร้างบิลใหม่</a></div>
    <div class="hero"><small>ค้างรวมทั้งก๊วน</small>
     <div class="big">${money(owe.totalCents)} <span>บาท · ${owe.people} คน</span></div>
     ${review.length ? `<p class="flag">รอตรวจ ${review.length} รายการ</p>` : ''}</div>
@@ -751,12 +752,12 @@
   }
   function showHome() {
     document.body.classList.add('home');
-    const canCreate = Boolean(adminList) || memberSession?.link?.status === 'approved';
+    const canCollect = Boolean(adminList) || memberSession?.link?.status === 'approved';
     root.innerHTML =
-      (canCreate
-        ? `<div class="actions"><a class="button create-custom" href="/billing.html?custom=new&club=${club}">+ สร้างบิลอื่นๆ (เช่น ค่าข้าว)</a></div>`
-        : '') +
       mineHtml() +
+      (canCollect
+        ? `<div class="actions collect-entry"><a class="button create-custom" href="/billing.html?collect=1&club=${club}">💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)</a></div>`
+        : '') +
       createdHtml() +
       (adminList ? adminOverviewHtml() : '');
     const roster = document.querySelector('.next-tabbar [data-go=roster]');
@@ -802,7 +803,9 @@
       if (!response.ok) throw Error('โหลดรายชื่อสมาชิกไม่สำเร็จ');
       return response.json();
     };
-    return window.SenaCustomBill.mount(root, {
+    const host = document.createElement('div');
+    root.replaceChildren(host);
+    return window.SenaCustomBill.mount(host, {
       run,
       message,
       fetchPeople,
@@ -836,6 +839,37 @@
             cancel: () => location.assign('/billing.html' + clubQuery),
           }),
     });
+  }
+  // "เก็บเงิน" (Badbot menu or the bills page): the court bill for organizers, the general
+  // bill for everyone. The tabs sit above #billing; each form draws into #billing itself.
+  async function showCollect(tab) {
+    customOpen = true;
+    document.body.classList.remove('home');
+    document.body.classList.add('collecting');
+    picker.hidden = true;
+    if (adminList === undefined) adminList = await request().catch(() => null);
+    const organizer = Boolean(adminList);
+    tab = organizer ? tab || 'court' : 'general';
+    let bar = document.querySelector('#collectTabs');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'collectTabs';
+      root.before(bar);
+      bar.addEventListener('click', event => {
+        const button = event.target.closest('[data-tab]');
+        if (button && !busy && button.getAttribute('aria-selected') !== 'true')
+          run(() => showCollect(button.dataset.tab));
+      });
+    }
+    bar.innerHTML = `<a class="back-link" href="/billing.html${clubQuery}">← กลับหน้าบิล</a>
+     <h1>เก็บเงิน · ${clubName(club)}</h1>
+     <div class="collect-tabs" role="tablist">${
+       organizer
+         ? `<button type="button" role="tab" data-tab="court" aria-selected="${tab === 'court'}">เก็บเงินค่าคอร์ต</button>`
+         : ''
+     }<button type="button" role="tab" data-tab="general" aria-selected="${tab === 'general'}">เก็บเงินทั่วไป</button></div>`;
+    if (tab === 'court') await openDraft();
+    else await showCustom();
   }
   async function load() {
     document.body.classList.remove('home');
@@ -1277,6 +1311,7 @@
       });
     }
     if (action === 'cancel-draft') {
+      if (collect) return location.assign('/billing.html' + clubQuery);
       editing = false;
       return bill ? showBill() : showHome();
     }
@@ -1425,6 +1460,10 @@
         (embedded ? window.top : window).location.replace(
           '/liff.html?page=pay&club=' + club + '&bill=' + encodeURIComponent(id),
         );
+        return;
+      }
+      if (!id && collect) {
+        await showCollect();
         return;
       }
       if (!id && params.get('custom') === 'new') {

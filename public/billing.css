@@ -760,3 +760,24 @@ body.nxc.home .mine .copy-row {
 .cb-sub {
   display: block;
 }
+.collect-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.2rem;
+}
+.collect-tabs button {
+  flex: 1;
+}
+.collect-tabs button[aria-selected='true'] {
+  background: var(--green);
+  color: #fff;
+}
+#collectTabs {
+  margin-bottom: 0.4rem;
+}
+/* The collect page already shows the back link and title above its tabs. */
+body.collecting #billing > .back-link,
+body.collecting #billing > h1,
+body.collecting #billing > div > h1 {
+  display: none;
+}

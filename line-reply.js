@@ -119,13 +119,29 @@ function courtUrl(env, club = DEFAULT_CLUB) {
   return url.href;
 }
 
-function menu(urls) {
+// "เก็บเงิน" opens the bills page in collect mode: organizers get the court bill and
+// the general bill, everyone else the general bill only (the server enforces both).
+function collectUrl(env, club = DEFAULT_CLUB) {
+  if (memberMode(env) && env.LINE_LIFF_ID) return liffUrl(env, club, 'collect');
+  const url = new URL('/billing.html', siteOrigin(env));
+  url.searchParams.set('collect', '1');
+  if (club !== DEFAULT_CLUB) url.searchParams.set('club', club);
+  return url.href;
+}
+function menu(urls, collectUrls) {
   const link = club => ({
     type: 'button',
     style: 'primary',
     color: '#168B42',
     height: 'sm',
     action: { type: 'uri', label: '🏸 ' + clubOf(club).label, uri: urls[club] },
+  });
+  const collect = club => ({
+    type: 'button',
+    style: 'primary',
+    color: '#B86E00',
+    height: 'sm',
+    action: { type: 'uri', label: '💸 ' + clubOf(club).label, uri: collectUrls[club] },
   });
   const postback = (label, data, displayText) => ({
     type: 'button',
@@ -180,6 +196,7 @@ function menu(urls) {
         contents: [
           section('จอง / ถอน คิว', row(...clubs.map(link))),
           section('รายชื่อผู้ตี', row(...clubs.map(roster))),
+          section('เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)', row(...clubs.map(collect))),
           section(
             'บิล และตาราง',
             row(
@@ -651,6 +668,7 @@ export async function replyToGroupCommand(event, env) {
   if (!linked) return;
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw Error('LINE reply is not configured');
   const urls = Object.fromEntries(clubs.map(club => [club, bookingUrl(env, club)])),
+    collectUrls = Object.fromEntries(clubs.map(club => [club, collectUrl(env, club)])),
     now = new Date();
   const db = env.DB;
   await db
@@ -757,7 +775,7 @@ export async function replyToGroupCommand(event, env) {
         )),
       );
     } else if (action.kind === 'menu') {
-      messages.push(menu(urls));
+      messages.push(menu(urls, collectUrls));
     } else {
       const card = await boardMessage(action, env, urls);
       messages.push(...(card ? [card] : textMessages(await shortcutText(action, env, urls))));

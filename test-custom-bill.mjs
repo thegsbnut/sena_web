@@ -525,7 +525,6 @@ test('billing.js opens the form from ?custom=new, fetches members and posts acti
   assert.match(js, /params\.get\('custom'\) === 'new'/);
   assert.match(js, /action=people/);
   assert.match(js, /post\('custom'/);
-  assert.match(js, /custom=new&club=/);
 });
 
 test('billing-custom.js escapes every name it puts into innerHTML', () => {
@@ -602,4 +601,29 @@ test('re-tapping the bills tab does not wipe the custom bill form', () => {
   const js = read('./public/billing.js');
   assert.match(js, /event\.data === 'bills-refresh' &&\s*!id &&\s*!editing &&\s*!customOpen/);
   assert.match(js, /customOpen = true/);
+});
+
+// ---- collect page (Badbot menu → เก็บเงิน) ----
+test('collect page: two tabs, the court tab only for organizers, organizers start on it', () => {
+  const js = read('./public/billing.js');
+  assert.match(js, /params\.get\('collect'\) === '1'/);
+  assert.match(
+    js,
+    /organizer\s*\?\s*`<button[^`]*data-tab="court"[^`]*>เก็บเงินค่าคอร์ต<\/button>`/,
+  );
+  assert.match(js, /เก็บเงินทั่วไป/);
+  assert.match(js, /tab = organizer \? tab \|\| 'court' : 'general'/);
+  // Every entry point goes to the collect page.
+  assert.equal((js.match(/collect=1&club=\$\{club\}/g) || []).length, 2);
+  assert.doesNotMatch(js, /manage=1&new=1&club=/);
+});
+
+test('LIFF collect page lands on the bills tab in collect mode', () => {
+  const liff = read('./public/liff.js');
+  assert.match(liff, /params\.get\('page'\) === 'collect'/);
+  assert.match(liff, /bills=collect#bills/);
+  assert.match(liff, /pay \? 'pay' : collect \? 'collect' : 'book'/);
+  const shell = read('./public/next-shell.js');
+  assert.match(shell, /get\('bills'\) === 'collect'/);
+  assert.match(shell, /collect=1/);
 });

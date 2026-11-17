@@ -23,8 +23,20 @@
       document.querySelector('.next-tabbar').offsetHeight + 'px',
     );
     const club = typeof activeClub !== 'undefined' ? activeClub : '';
-    if (!frame.getAttribute('src')) frame.src = '/billing.html' + (club === '88' ? '?club=88' : '');
-    else frame.contentWindow?.postMessage('bills-refresh', location.origin);
+    if (!frame.getAttribute('src')) {
+      // ?bills=collect (from Badbot "เก็บเงิน") opens the collect page once, then is dropped
+      // so a reload or a later tap shows the normal bills page.
+      const url = new URL(location.href);
+      const collect = url.searchParams.get('bills') === 'collect';
+      if (collect) {
+        url.searchParams.delete('bills');
+        history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+      }
+      const query = [collect ? 'collect=1' : '', club === '88' ? 'club=88' : '']
+        .filter(Boolean)
+        .join('&');
+      frame.src = '/billing.html' + (query ? '?' + query : '');
+    } else frame.contentWindow?.postMessage('bills-refresh', location.origin);
   }
 
   // Red "!" on the bills tab while the player has an unpaid (or re-send) bill. Quiet on any error.
