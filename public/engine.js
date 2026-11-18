@@ -7,13 +7,16 @@
   // with/against whom. STEP = greedy per-game penalty, SCORE = whole-schedule penalty.
   const COUNT_STEP = 300,
     PARTNER_STEP = 20,
-    MEET_STEP = 15,
+    MEET_STEP = 5,
     COUNT_SCORE = 1000,
     DIFF_SCORE = 5,
     PARTNER_SCORE = 20,
-    MEET_SCORE = 20,
+    MEET_SCORE = 5,
+    // Stepping on court and seeing nobody new (all three already met today) is what feels repetitive.
+    STALE_STEP = 150,
+    STALE_SCORE = 150,
     // Cap the polish work so a big roster stays cheap inside the Worker.
-    POLISH_BUDGET = 5000;
+    POLISH_BUDGET = 2500;
   const pairings = ([a, b, c, d]) => [
     [a, b, c, d],
     [a, c, b, d],
@@ -60,6 +63,20 @@
       key(q[1], q[3]),
       key(q[2], q[3]),
     ];
+    // Players in game q who have already met all three others (met = pair tallies so far).
+    const staleIn = (q, met) =>
+      q.filter((p, i) => q.every((o, j) => i === j || met[key(p, o)] > 0)).length;
+    const seen = new Uint8Array(n * n);
+    // How many times, over the whole schedule in order, someone steps on court with no new face.
+    function staleCount(games) {
+      seen.fill(0);
+      let stale = 0;
+      for (const q of games) {
+        stale += staleIn(q, seen);
+        for (const k of meetings(q)) seen[k] = 1;
+      }
+      return stale;
+    }
     const diffOf = q => Math.abs(q[0].lv + q[1].lv - q[2].lv - q[3].lv);
     // Running tallies for one schedule; add(q, ±1) updates them and returns the score change,
     // so the polish step can try thousands of swaps cheaply.
@@ -97,6 +114,7 @@
     // so afterwards try swapping a resting player in, or re-pairing a game, and keep any change
     // that lowers the whole-schedule score (fewer repeat partners/opponents, same fairness).
     function polish(games, t) {
+      let stale = staleCount(games);
       const rests = (r, p) => !games[r - 1]?.includes(p) && !games[r + 1]?.includes(p);
       // Try a list of edits ([[round, newGame], ...]); keep it if every game stays legal and the score drops.
       let budget = POLISH_BUDGET;
@@ -109,7 +127,12 @@
           games[r] = o;
         });
         const restOk = edits.every(([r, o]) => o.every(p => rests(r, p)));
-        if (restOk && d < -1e-9) return true;
+        const nextStale = restOk ? staleCount(games) : stale;
+        d += (nextStale - stale) * STALE_SCORE;
+        if (restOk && d < -1e-9) {
+          stale = nextStale;
+          return true;
+        }
         edits.forEach(([r, o], i) => {
           t.add(o, -1);
           t.add(olds[i], 1);
@@ -209,6 +232,7 @@
             pairs[key(q[0], q[1])] * PARTNER_STEP +
             pairs[key(q[2], q[3])] * PARTNER_STEP +
             meetings(q).reduce((s, k) => s + met[k] * MEET_STEP, 0) +
+            staleIn(q, met) * STALE_STEP +
             Math.random() * randomWeight;
           if (s < min) {
             min = s;
@@ -224,10 +248,10 @@
         games.push(chosen);
       }
       if (failed || (acceptSchedule && !acceptSchedule(toSchedule(games)))) continue;
-      drafts.push({ games, t });
+      drafts.push({ games, t, score: t.score + staleCount(games) * STALE_SCORE });
     }
     if (!drafts.length) throw Error('ยังจัดตารางตามเงื่อนไขนี้ไม่ได้ ลองเพิ่มผู้เล่นหรือลดคู่ล็อก');
-    const draft = drafts.reduce((a, b) => (b.t.score < a.t.score ? b : a));
+    const draft = drafts.reduce((a, b) => (b.score < a.score ? b : a));
     const polished = draft.games.slice();
     polish(polished, draft.t);
     let schedule = toSchedule(polished);

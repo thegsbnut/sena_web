@@ -226,7 +226,8 @@ test('pairing spreads partners and opponents across ten players without breaking
   const pair = (a, b) => [a, b].sort().join('|');
   const runs = 30;
   let neverMet = 0,
-    partnerRepeats = 0;
+    partnerRepeats = 0,
+    noNewFace = 0;
   for (let run = 0; run < runs; run++) {
     // Booking draws (no locks) and the organizer's manual draw with a locked game.
     const lock = { round: 4, ids: ['p0', 'p2', 'p3', 'p4'] };
@@ -247,6 +248,8 @@ test('pairing spreads partners and opponents across ten players without breaking
       const team = t => t.map(id => players.find(p => p.id === id));
       const rule = run % 3 ? bookingRule : globalThis.Sena.valid;
       assert(rule(team(ids.slice(0, 2)), team(ids.slice(2))));
+      for (const x of ids)
+        if (ids.every(y => y === x || met.has(pair(x, y)))) noNewFace += 1 / runs;
       for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) met.add(pair(ids[a], ids[b]));
       for (const k of [pair(ids[0], ids[1]), pair(ids[2], ids[3])])
         partners.set(k, (partners.get(k) || 0) + 1);
@@ -258,6 +261,9 @@ test('pairing spreads partners and opponents across ten players without breaking
   // the best the no-back-to-back rule allows with ten players.
   assert(neverMet < 6.5, `pairs that never met: ${neverMet}`);
   assert(partnerRepeats < 0.5, `repeat partners: ${partnerRepeats}`);
+  // Every time someone steps on court they should see at least one face they haven't met today
+  // (partner or opponent). Before this was ~3.5 of the 40 appearances; now ~0.
+  assert(noNewFace < 1, `appearances with no new face: ${noNewFace}`);
 });
 
 import { cleanCup, standings as leaderboardStandings, leaderboardRoute } from './leaderboard.js';
