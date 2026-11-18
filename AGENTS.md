@@ -1,6 +1,7 @@
-# คำแนะนำสำหรับ AI coding agent (GPT/Codex ฯลฯ)
+# คำแนะนำสำหรับ AI coding agent (GPT/Codex/Antigravity ฯลฯ)
 
 อ่าน `CLAUDE.md` ก่อนเริ่มงาน — เป็นที่รวมกฎของโปรเจกต์ทั้งหมด (stack, ข้อตกลง, คำสั่ง, config) ใช้กับทุกเครื่องมือ ไม่ต้องทำตามที่นี่ซ้ำ
+ถ้าทำงานผ่าน Antigravity Remote Agent ให้ทำตามหัวข้อ "Antigravity Remote Agent" ใน `CLAUDE.md` ด้วย
 
 จากนั้นอ่าน `HANDOFF.md` เพื่อดูว่างานล่าสุดค้างอยู่ตรงไหน
 
