@@ -8,6 +8,7 @@ import { lineAdmin, lineWebhook } from './line.js';
 import { bookingRoute, scheduledBookings } from './booking.js';
 import { backupsRoute, prepareBackups } from './backups.js';
 import { leaderboardRoute } from './leaderboard.js';
+import { queueRoute } from './court-queue.js';
 import './public/engine.js';
 import seed from './seed.json' with { type: 'json' };
 import { logError } from './log.js';
@@ -248,6 +249,8 @@ export default {
           club,
           await memberFor(req, env, club),
         );
+      if (path === '/api/queue')
+        return await queueRoute(req, env, await authorized(req, env), club);
       if (path === '/api/backups')
         return await backupsRoute(req, env, await authorized(req, env), club, valid);
       if (path === '/api/leaderboard') {
