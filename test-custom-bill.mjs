@@ -450,7 +450,16 @@ test('owner row does not block edit; a real payment does (only PromptPay changes
   assert.equal(after.token, pete.token);
   assert.equal(after.amount, 70000);
   assert.equal(v.title, 'ข้าวใหม่');
-  const upload = await act(b, 'upload&payer=' + after.id + '&amount=' + after.amount, slipBytes);
+  const upload = await act(
+    b,
+    'upload&payer=' +
+      after.id +
+      '&amount=' +
+      after.amount +
+      '&paymentRevision=' +
+      v.paymentRevision,
+    slipBytes,
+  );
   assert.equal(upload.status, 200);
   v = await view(a);
   assert.equal(v.editable, false);
@@ -467,7 +476,13 @@ test('creator can view and reject slips on own bill, other members cannot view t
   const pete = v.payers.find(p => p.name === 'Pete'),
     owner = v.payers.find(p => p.name === 'Nut');
   assert.equal(
-    (await act(b, 'upload&payer=' + pete.id + '&amount=' + pete.amount, slipBytes)).status,
+    (
+      await act(
+        b,
+        'upload&payer=' + pete.id + '&amount=' + pete.amount + '&paymentRevision=0',
+        slipBytes,
+      )
+    ).status,
     200,
   );
   const slipPath = path + '&action=slip&payer=' + pete.id;
@@ -636,11 +651,11 @@ test('collect page: two tabs, the court tab only for organizers, organizers star
 test('LIFF collect page lands on the bills tab in collect mode', () => {
   const liff = read('./public/liff.js');
   assert.match(liff, /params\.get\('page'\) === 'collect'/);
-  assert.match(liff, /bills=collect#bills/);
+  assert.match(liff, /set\('bills', 'collect'\)/);
   assert.match(liff, /pay \? 'pay' : collect \? 'collect' : 'book'/);
   const shell = read('./public/next-shell.js');
   assert.match(shell, /get\('bills'\) === 'collect'/);
-  assert.match(shell, /collect=1/);
+  assert.match(shell, /set\('collect', '1'\)/);
 });
 
 // Run the real liff.js for an already logged-in, linked member and report where it sends them.
@@ -684,6 +699,14 @@ test('LIFF sends a logged-in member to the page they asked for (book, collect, p
     '/court?club=88&bills=collect#bills',
   ]);
   assert.deepEqual(await liffLands('?club=sena&page=pay'), ['/court#bills']);
+  const bill = 'a'.repeat(32);
+  assert.deepEqual(await liffLands('?club=sena&page=pay&bill=' + bill), [
+    '/court?bill=' + bill + '#bills',
+  ]);
+  assert.deepEqual(
+    await liffLands('?liff.state=' + encodeURIComponent('?club=88&page=pay&bill=' + bill)),
+    ['/court?club=88&bill=' + bill + '#bills'],
+  );
   // LINE hands the original query over as liff.state
   assert.deepEqual(
     await liffLands('?liff.state=' + encodeURIComponent('?club=sena&page=collect')),

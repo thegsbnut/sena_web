@@ -200,6 +200,8 @@ function paymentView(p, privateView, admin, slipsRemoved) {
 function billView(bill, admin, payer) {
   return {
     ...summary(bill),
+    // Payment terms have their own revision so other payers' updates do not invalidate this QR.
+    paymentRevision: bill.paymentRevision ?? 0,
     court: bill.court,
     shuttle: bill.shuttle,
     people: bill.people,
@@ -222,6 +224,8 @@ function billView(bill, admin, payer) {
     ),
   };
 }
+const paymentRevisionMatches = (url, bill) =>
+  url.searchParams.get('paymentRevision') === String(bill.paymentRevision ?? 0);
 function validDate(date) {
   if (typeof date !== 'string' || !datePattern.test(date)) return false;
   const parsed = new Date(date + 'T00:00:00Z');
@@ -557,6 +561,7 @@ async function editCustom(env, bill, payload, input) {
   const { items: _old, ...rest } = payload;
   const next = {
     ...rest,
+    paymentRevision: bill.revision + 1,
     title: read.title,
     mode: read.draft.mode,
     total: read.split.total,
@@ -783,7 +788,10 @@ export async function billingRoute(req, env, admin, club, ctx) {
       if (!target || (payer && payer.id !== target.id)) return fail('ไม่พบชื่อผู้จ่าย', 404);
       if (bill.cancelled || !['unpaid', 'rejected'].includes(target.status))
         return fail('รายการนี้ไม่เปิดให้ชำระแล้ว', 409);
-      if (url.searchParams.get('amount') !== String(target.amount))
+      if (
+        url.searchParams.get('amount') !== String(target.amount) ||
+        (url.searchParams.has('paymentRevision') && !paymentRevisionMatches(url, bill))
+      )
         return fail('ยอดเปลี่ยนแล้ว กรุณาอัปเดตบิล', 409);
       const payload = promptPayPayload(bill.transfer, target.amount);
       if (!payload) return fail('สร้าง QR ไม่ได้ กรุณาตรวจเลขพร้อมเพย์กับผู้จัด');
@@ -868,10 +876,13 @@ export async function billingRoute(req, env, admin, club, ctx) {
     const target = payload.payers.find(p => p.id === (payer?.id || url.searchParams.get('payer')));
     if (!target || (!payer && !promptPayPattern.test(bill.transfer)))
       return fail('กรุณาเลือกชื่อผู้จ่ายจากหน้าบิล', 403);
-    if (!payer && url.searchParams.get('amount') !== String(target.amount))
-      return fail('ยอดเปลี่ยนแล้ว กรุณาโหลดบิลใหม่', 409);
     if (memberMode(env) && !admin && !owns(target))
       return fail('แนบสลิปได้เฉพาะบิลของตัวเอง กรุณาเข้าสู่ระบบ LINE', 403);
+    if (
+      url.searchParams.get('amount') !== String(target.amount) ||
+      !paymentRevisionMatches(url, bill)
+    )
+      return fail('ข้อมูลการชำระเปลี่ยนแล้ว กรุณาอัปเดตบิลและตรวจสลิปก่อนส่งอีกครั้ง', 409);
     const slips = env.SLIPS_DB;
     if (!slips) return fail('ระบบรับสลิปยังไม่พร้อม', 503);
     if (!['unpaid', 'rejected'].includes(target.status)) return fail('รายการนี้ส่งสลิปแล้ว', 409);
@@ -949,6 +960,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
   if (action === 'cancel' || action === 'restore') {
     if (input?.revision !== bill.revision) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     payload.cancelled = action === 'cancel';
+    payload.paymentRevision = bill.revision + 1;
     if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     const label = billLabel(bill),
       owing = payload.payers.filter(p => p.status !== 'paid').length;
@@ -1017,6 +1029,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
         return fail('มีการชำระแล้ว จึงแก้ได้เฉพาะเลขพร้อมเพย์', 409);
       const accountChanged = payload.transfer !== input.transfer;
       payload.transfer = input.transfer;
+      if (accountChanged) payload.paymentRevision = bill.revision + 1;
       if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
       return json({
         ok: true,
@@ -1034,6 +1047,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
     if (!draft || input.revision !== bill.revision)
       return fail('ข้อมูลบิลไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     const next = splitBill(draft, bill.payers);
+    next.paymentRevision = bill.revision + 1;
     if (!(await updateBill(db, bill, next))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
     return json({
       ok: true,

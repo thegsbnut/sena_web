@@ -965,7 +965,13 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
   assert.equal(own.bills[0].hasSlip, false);
   assert(!JSON.stringify(own).includes(theirs.token));
   const path =
-    '/api/billing?bill=' + id + '&action=upload&payer=' + theirs.id + '&amount=' + theirs.amount;
+    '/api/billing?bill=' +
+    id +
+    '&action=upload&payer=' +
+    theirs.id +
+    '&amount=' +
+    theirs.amount +
+    '&paymentRevision=0';
   const slip = Uint8Array.of(255, 216, 255, 224, 0, 0, 0, 0, 0, 0, 255, 217);
   assert.equal((await f.request(path, slip, member)).status, 403);
   assert.equal((await f.request(path, slip)).status, 403);
@@ -987,7 +993,13 @@ test('personal bill links reveal only the owner; uploads enforce ownership; grou
   assert.equal(
     (
       await f.request(
-        '/api/billing?bill=' + id + '&action=upload&payer=' + mine.id + '&amount=' + mine.amount,
+        '/api/billing?bill=' +
+          id +
+          '&action=upload&payer=' +
+          mine.id +
+          '&amount=' +
+          mine.amount +
+          '&paymentRevision=0',
         slip,
         member,
       )

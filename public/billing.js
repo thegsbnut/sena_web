@@ -4,6 +4,8 @@
   let id = params.get('bill');
   const manage = params.get('manage') === '1';
   const collect = params.get('collect') === '1';
+  const requestedBill = params.get('focusBill');
+  const focusBill = /^[a-f0-9]{32}$/.test(requestedBill ?? '') ? requestedBill : null;
   const payerToken = new URLSearchParams(location.hash.slice(1)).get('pay');
   const root = document.querySelector('#billing');
   const status = document.querySelector('#status');
@@ -138,12 +140,13 @@
       setTimeout(() => window.SenaLineNotice?.send(value.notice));
     return value;
   }
-  async function request(action, options = {}, payer, amount) {
+  async function request(action, options = {}, payer, amount, paymentRevision) {
     if (notifying(action)) window.SenaLineNotice?.preload();
     const headers = new Headers(options.headers);
     if (payerToken) headers.set('X-Bill-Token', payerToken);
     const url = endpoint(action, payer);
     if (amount !== undefined) url.searchParams.set('amount', amount);
+    if (paymentRevision !== undefined) url.searchParams.set('paymentRevision', paymentRevision);
     if (action === 'sessions') {
       url.searchParams.delete('bill');
       if (bill?.club) url.searchParams.set('club', bill.club);
@@ -556,7 +559,8 @@
   }
   // Home page (no ?bill=): "ของฉัน" for any logged-in player, plus the overview for organizers.
   let mine = { state: 'login', bills: [] },
-    openBill;
+    openBill = focusBill,
+    scrollToBill = Boolean(focusBill);
   const mineCache = new Map();
   const payTokenOf = item => new URLSearchParams(new URL(item.url).hash.slice(1)).get('pay');
   async function loadMine() {
@@ -567,6 +571,16 @@
       const data = await response.json();
       // A reply without a bills list is an error, never "no bills".
       if (!Array.isArray(data.bills)) return { state: 'error', bills: [] };
+      if (focusBill && !data.bills.some(b => b.id === focusBill)) {
+        const specific = await fetch('/api/member/bills?club=' + club + '&bill=' + focusBill, {
+          cache: 'no-store',
+        });
+        if (!specific.ok) return { state: 'error', bills: [] };
+        const { bills } = await specific.json();
+        if (!Array.isArray(bills)) return { state: 'error', bills: [] };
+        const linked = bills.find(b => b.id === focusBill);
+        if (linked) data.bills.push(linked);
+      }
       return {
         state: 'ok',
         bills: data.bills,
@@ -592,7 +606,9 @@
       url.searchParams.set('action', 'qr');
       url.searchParams.set('payer', payer.id);
       url.searchParams.set('amount', payer.amount);
+      url.searchParams.set('paymentRevision', detail.paymentRevision);
       const qr = await fetch(url, { headers, cache: 'no-store' });
+      if (qr.status === 409) throw Error('ข้อมูลการชำระเปลี่ยนแล้ว กรุณาอัปเดตบิลก่อนจ่าย');
       if (qr.ok) {
         photo = await qrPng(await qr.blob());
         photoUrl = URL.createObjectURL(photo);
@@ -605,13 +621,14 @@
   function zone(kind, title, note, inner) {
     return `<section class="zone zone-${kind}"><div class="zone-head"><h2>${title}</h2><span>${note}</span></div>${inner}</section>`;
   }
-  function mineCall(item, action, options = {}, payer, amount) {
+  function mineCall(item, action, options = {}, payer, amount, paymentRevision) {
     const url = new URL('/api/billing', location.origin);
     url.searchParams.set('club', club);
     url.searchParams.set('bill', item.id);
     url.searchParams.set('action', action);
     if (payer) url.searchParams.set('payer', payer);
     if (amount !== undefined) url.searchParams.set('amount', amount);
+    if (paymentRevision !== undefined) url.searchParams.set('paymentRevision', paymentRevision);
     const headers = new Headers(options.headers);
     headers.set('X-Bill-Token', payTokenOf(item));
     if (notifying(action)) window.SenaLineNotice?.preload();
@@ -652,7 +669,9 @@
       .sort((a, b) => a.date.localeCompare(b.date));
   const openMineId = () => {
     const unpaid = unpaidMine();
-    return unpaid.some(b => b.id === openBill) ? openBill : unpaid[0]?.id;
+    if (unpaid.some(b => b.id === openBill)) return openBill;
+    if (focusBill && openBill === focusBill) return;
+    return unpaid[0]?.id;
   };
   // Custom bills I opened, with a link to manage each (the organizer already has them all).
   function createdHtml() {
@@ -670,8 +689,7 @@
     return load();
   }
   function mineHtml() {
-    const loginLink = '/liff.html?page=pay&club=' + club;
-    const head = '';
+    const loginLink = '/liff.html?page=pay&club=' + club + (focusBill ? '&bill=' + focusBill : '');
     const wrap = inner => zone('mine', 'ของฉัน', 'บิลที่คุณต้องจ่าย', inner);
     if (mine.state === 'login')
       return wrap(
@@ -685,11 +703,17 @@
     const waiting = mine.bills.filter(b => b.status === 'review');
     const paid = mine.bills.filter(b => b.status === 'paid');
     const total = unpaid.reduce((sum, b) => sum + b.amount, 0);
-    const statusBanner = unpaid.length
-      ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div>${unpaid.length > 1 ? '<small>จ่ายทีละบิล เริ่มจากบิลเก่าสุดก่อน · สลิปหนึ่งใบต่อหนึ่งบิล</small>' : ''}</div>`
-      : waiting.length
-        ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
-        : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>';
+    const focusMessage =
+      focusBill && !mineItem(focusBill)
+        ? '<p class="muted">ไม่พบบิลจากลิงก์ในรายการของคุณ บิลอาจถูกยกเลิกหรือไม่ได้เรียกเก็บคุณ</p>'
+        : '';
+    const statusBanner =
+      focusMessage +
+      (unpaid.length
+        ? `<div class="status status-due"><b>มีค้างจ่าย</b><div class="big">${money(total)} <span>บาท · ${unpaid.length} บิล</span></div>${unpaid.length > 1 ? '<small>จ่ายทีละบิล เริ่มจากบิลเก่าสุดก่อน · สลิปหนึ่งใบต่อหนึ่งบิล</small>' : ''}</div>`
+        : waiting.length
+          ? `<div class="status status-ok"><b>ไม่มีค้างจ่าย</b><small>มี ${waiting.length} บิลรอผู้จัดตรวจสลิป</small></div>`
+          : '<div class="status status-ok"><b>ไม่มีค้างจ่าย ✓</b></div>');
     if (!mine.bills.length)
       return wrap(
         memberSession?.link?.status === 'approved'
@@ -711,8 +735,8 @@
          : `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>ยังไม่จ่าย</small></div><span class="amt due">${money(b.amount)} บ.</span><button type="button" class="pill2" data-action="open-mine" data-bill="${b.id}">จ่ายด้วย QR</button></div></div>`,
      )
      .join('')}
-   ${waiting.map(b => `<div class="mine collapsed"><div class="t"><div><strong>${title(b)}</strong><br><small>${b.hasSlip ? 'ส่งสลิปแล้ว' : 'แจ้งจ่ายเงินสดแล้ว'} · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span>${slipButton(b)}</div></div>`).join('')}
-   ${paid.length ? `<details><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe"><div><strong>${title(b)}</strong>${b.method === 'cash' ? '<small>เงินสด</small>' : ''}</div><div class="r">✓ ${money(b.amount)} บ.${slipButton(b)}</div></div>`).join('')}</details>` : ''}`);
+   ${waiting.map(b => `<div class="mine collapsed" data-bill="${b.id}"><div class="t"><div><strong>${title(b)}</strong><br><small>${b.hasSlip ? 'ส่งสลิปแล้ว' : 'แจ้งจ่ายเงินสดแล้ว'} · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span>${slipButton(b)}</div></div>`).join('')}
+   ${paid.length ? `<details${paid.some(b => b.id === openBill) && openBill === focusBill ? ' open' : ''}><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe" data-bill="${b.id}"><div><strong>${title(b)}</strong>${b.method === 'cash' ? '<small>เงินสด</small>' : ''}</div><div class="r">✓ ${money(b.amount)} บ.${slipButton(b)}</div></div>`).join('')}</details>` : ''}`);
   }
 
   async function fillMine() {
@@ -739,7 +763,7 @@
         .join('');
       const copies = validPromptPay(detail.transfer)
         ? `<div class="copy-row"><span>พร้อมเพย์ <b>${escape(detail.transfer)}</b></span><button type="button" class="pill2" data-action="mine-copy" data-value="${escape(detail.transfer)}">คัดลอกเลข</button></div>
-           <div class="copy-row"><span>ยอด <b>${money(item.amount)}</b> บาท</span><button type="button" class="pill2" data-action="mine-copy" data-value="${(item.amount / 100).toFixed(2)}">คัดลอกยอด</button></div>`
+           <div class="copy-row"><span>ยอด <b>${money(payer.amount)}</b> บาท</span><button type="button" class="pill2" data-action="mine-copy" data-value="${(payer.amount / 100).toFixed(2)}">คัดลอกยอด</button></div>`
         : '';
       body.innerHTML = `${note}${split}${
         photoUrl
@@ -764,6 +788,14 @@
     if (roster) roster.hidden = !adminList;
     message('');
     fillMine();
+    if (scrollToBill && mine.state === 'ok') {
+      scrollToBill = false;
+      root
+        .querySelector(`.mine[data-bill="${focusBill}"], .owe[data-bill="${focusBill}"]`)
+        ?.scrollIntoView({
+          block: 'nearest',
+        });
+    }
   }
   root.addEventListener('input', event => {
     if (event.target.id !== 'oweSearch') return;
@@ -942,7 +974,7 @@
       input.value = '';
       if (!file || !item) return;
       return run(async () => {
-        const { payer } = await mineDetail(item);
+        const { detail, payer } = await mineDetail(item);
         if (
           !confirm(
             'แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ ' +
@@ -960,6 +992,7 @@
           { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob },
           payer.id,
           payer.amount,
+          detail.paymentRevision,
         );
         await mineChanged();
         message('แนบสลิปแล้ว · จ่ายแล้ว');
@@ -967,7 +1000,8 @@
     }
     if (e.target.id === 'paymentSlip') {
       const input = e.target,
-        payer = bill.payers.find(p => p.id === input.dataset.payer);
+        payer = bill.payers.find(p => p.id === input.dataset.payer),
+        paymentRevision = bill.paymentRevision;
       const file = input.files[0];
       if (
         file &&
@@ -987,6 +1021,7 @@
             { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob },
             payer.id,
             payer.amount,
+            paymentRevision,
           );
           await load();
           message('แนบสลิปแล้ว · จ่ายแล้ว');
@@ -1354,7 +1389,9 @@
     if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
     if (action === 'qr' && payer)
       return run(async () => {
-        qrPhoto = await qrPng(await request('qr', {}, payer.id, payer.amount));
+        qrPhoto = await qrPng(
+          await request('qr', {}, payer.id, payer.amount, bill.paymentRevision),
+        );
         qrImage.src = qrPhotoUrl = URL.createObjectURL(qrPhoto);
         qrSaveHint.textContent = navigator.canShare?.({ files: [qrPhoto] })
           ? 'ในเมนูแชร์ เลือกบันทึกรูปภาพ (Save Image)'

@@ -657,6 +657,59 @@ test('weekly regulars do not duplicate or reappear after cancellation; future we
   assert.equal(doc.sessions.length, 6);
   assert(doc.sessions.every(s => s.registrations.length === 1));
 });
+
+test('changing weekdays retires unused dates and preserves registrations on existing dates', async t => {
+  const f = fixture();
+  t.after(() => f.db.close());
+  const { cookie, settings, data } = await f.open();
+  const [booked, empty, remaining] = data.sessions;
+  const book = (sessionId, playerId) =>
+    f.call({ action: 'book', sessionIds: [sessionId], playerId, acceptHoliday: true });
+  assert.equal((await book(booked.id, 'p0')).status, 200);
+  const result = await f.call(
+    {
+      action: 'settings',
+      settingsVersion: data.settingsVersion,
+      settings: { ...settings, weekdays: [new Date(remaining.date + 'T00:00:00Z').getUTCDay()] },
+    },
+    { cookie },
+  );
+  assert.equal(result.status, 200);
+  const { sessions } = await result.json();
+  assert(sessions.some(s => s.id === remaining.id));
+  assert.equal(sessions.find(s => s.id === booked.id).registrations[0].playerId, 'p0');
+  assert(!sessions.some(s => s.id === empty.id));
+  assert.equal((await book(empty.id, 'p1')).status, 409);
+});
+
+test('a failed attendance read does not hide a successful booking', async t => {
+  const f = fixture();
+  t.after(() => f.db.close());
+  const { data } = await f.open();
+  const { id } = data.sessions[0];
+  const prepare = f.env.DB.prepare;
+  t.mock.method(f.env.DB, 'prepare', sql => {
+    const stmt = prepare(sql);
+    if (sql.startsWith('SELECT player_id, session_date FROM attendance'))
+      stmt.all = () => {
+        throw Error('attendance unavailable');
+      };
+    return stmt;
+  });
+  const result = await f.call({
+    action: 'book',
+    sessionIds: [id],
+    playerId: 'p0',
+    acceptHoliday: true,
+  });
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).result.added, 1);
+  const saved = JSON.parse(
+    f.db.prepare("SELECT payload FROM booking_clubs WHERE club='sena'").get().payload,
+  );
+  assert(saved.sessions.find(s => s.id === id).registrations.some(r => r.playerId === 'p0'));
+});
+
 test('Bangkok date boundary, holiday acknowledgement, skip and organizer closure', async () => {
   assert.equal(bangkokDate(new Date('2026-11-03T18:00:00Z')), '2026-11-04');
   assert.equal(holidayOn('2026-12-10'), 'วันรัฐธรรมนูญ');
