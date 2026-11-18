@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="th">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <meta name="referrer" content="no-referrer">
+ <meta name="theme-color" content="#092e24">
+ <title>คิวสนาม · SENA COURT</title>
+ <link rel="icon" href="/shuttle-spirit-tab.png">
+ <link rel="stylesheet" href="/queue.css?v=20261118-queue">
+ <script defer src="/queue-engine.js?v=20261118-queue"></script>
+ <script defer src="/queue.js?v=20261118-queue"></script>
+</head>
+<body>
+<div class="top"><a class="brand" id="homeLink" href="/court" aria-label="SENA COURT"><b id="clubBrand">SENA</b> <span>COURT</span></a><div class="top-right"><select id="clubSelect" class="club-switch" aria-label="เลือกก๊วน"><option value="sena">Sena</option><option value="88">88</option></select><span class="tag">QUEUE</span></div></div>
+<main>
+  <section class="hero" aria-label="คิวสนาม">
+    <div class="hero-copy">
+      <small id="clubSub">SENA BADMINTON CLUB</small>
+      <h1>COURT QUEUE<em>.</em></h1>
+      <p>เรียกคิวสนาม ตีน้อยสุดได้ลงก่อน เกลี่ยมือสองฝั่งให้สูสี</p>
+    </div>
+    <img class="spirit" alt="" width="170" height="170" src="/shuttle-spirit-180.png">
+  </section>
+  <p class="sync" id="sync"></p>
+  <div class="bar" id="bar" role="toolbar" aria-label="เครื่องมือ" hidden>
+    <button id="undo" class="admin-only" type="button">↶ ย้อนกลับ</button>
+    <button id="lvToggle" class="admin-only" type="button" aria-pressed="true">Lv: แสดง</button>
+    <button id="soundToggle" type="button" aria-pressed="false">เสียงเรียก: ปิด</button>
+    <span class="stepper admin-only" role="group" aria-label="จำนวนคอร์ต"><button id="courtMinus" type="button" aria-label="ลดคอร์ต">−</button><span>คอร์ต <b id="courtCount" class="num">2</b></span><button id="courtPlus" type="button" aria-label="เพิ่มคอร์ต">+</button></span>
+    <button id="endQueue" class="end admin-only" type="button">ปิดคิว</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <p id="status" role="status">กำลังโหลดคิว…</p>
+  <div id="app"></div>
+  <details id="rules" hidden>
+    <summary>ระบบเลือกคู่ยังไง</summary>
+    <ul>
+      <li>คนที่ตีน้อยเกมที่สุดได้ลงก่อนเสมอ ถ้าเท่ากัน คนที่รอนานกว่าได้ก่อน</li>
+      <li>ถ้าคนที่เท่ากันมีมากกว่าที่นั่งที่เหลือ ระบบเลือกชุดที่แบ่งสองฝั่งได้สมดุลที่สุด (ผลรวม Lv สองฝั่งต่างกันน้อย)</li>
+      <li>ไม่ให้สี่คนเดิมกลับมาเจอกันบ่อย: ถ้าชุดสี่คนซ้ำกับที่เคยตีไปแล้ว ระบบจะลองสลับคนในชุดก่อน และถ้าจำเป็นจะดึงคนที่ตีเกินมา 1 เกมมาผสม (ผลต่างจำนวนเกมยังไม่เกิน 1)</li>
+      <li>เลี่ยงคู่ขาซ้ำ และให้เจอหน้าใหม่ก่อน ถ้าไม่ทำให้ลำดับตีน้อยก่อนเสียไป</li>
+      <li>กติกาเพศเดิม: ห้าม หญิง+หญิง เจอ ชาย+หญิง</li>
+      <li>กด "พัก" ตอนถูกเรียก = ไม่นับว่าลงตี คนนั้นกลับเข้าคิวทันที แต่ข้ามการเรียกครั้งถัดไป 1 ครั้ง ระบบหาคนจากคิวมาแทนและจัดสองฝั่งใหม่</li>
+      <li>คนมาสายเริ่มนับเกมที่ค่าเฉลี่ยของคนที่อยู่ จะได้ไม่แซงคิวทั้งหมด</li>
+      <li>นับเกมตอนกด "เริ่มตี" ไม่ใช่ตอนถูกเรียก</li>
+    </ul>
+  </details>
+  <footer><b>SENA COURT</b> · จัดคู่ดี ๆ แล้วไปตีให้สุด</footer>
+</main>
+<canvas id="fx" aria-hidden="true"></canvas>
+<dialog id="finishDlg" aria-label="ยืนยันจบการแข่ง"></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
