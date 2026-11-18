@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
 import worker from './worker.js';
 import { bangkokDate } from './booking.js';
 import './public/queue-engine.js';
@@ -337,4 +339,104 @@ test('api: club=88 queue is isolated from sena even without club_state_88', asyn
   );
   assert.equal(start88.status, 200);
   assert.equal(Object.keys((await start88.json()).state.players).length, 4);
+});
+
+test('page: queue.js boots and renders guest and organizer views without errors', async () => {
+  const html = fs.readFileSync('public/queue.html', 'utf8');
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
+  const els = new Map(
+    ids.map(id => [
+      id,
+      {
+        id,
+        value: '',
+        textContent: '',
+        innerHTML: '',
+        hidden: false,
+        disabled: false,
+        href: '',
+        open: false,
+        classList: { toggle() {}, add() {}, remove() {} },
+        setAttribute() {},
+      },
+    ]),
+  );
+  const activeState = Q.create(qp(8), 2, 1000, seeded(), ['6', '7']);
+  for (const [name, payload, check] of [
+    [
+      'guest-empty',
+      { state: null, revision: 0, updatedAt: null, canUndo: false, canEdit: false },
+      s => s.includes('ยังไม่เริ่มคิววันนี้'),
+    ],
+    [
+      'admin-setup',
+      {
+        state: null,
+        revision: 0,
+        updatedAt: null,
+        canUndo: false,
+        canEdit: true,
+        session: {
+          date: '2026-11-18',
+          start: '19:00',
+          end: '22:00',
+          booked: qp(8),
+          courtNumbers: ['6', '7'],
+        },
+        roster: qp(8),
+      },
+      s => s.includes('เริ่มคิว 8 คน'),
+    ],
+    [
+      'admin-active',
+      {
+        state: activeState,
+        revision: 1,
+        updatedAt: 'x',
+        canUndo: true,
+        canEdit: true,
+        session: null,
+        roster: qp(8),
+      },
+      s => s.includes('COURT'),
+    ],
+  ]) {
+    els.get('status').hidden = false;
+    els.get('status').textContent = '';
+    els.get('app').innerHTML = '';
+    const ctx = {
+      URLSearchParams,
+      Date,
+      Math,
+      Object,
+      Array,
+      Set,
+      Map,
+      JSON,
+      String,
+      Number,
+      Boolean,
+      SenaQueue: Q,
+      location: { search: '', assign() {} },
+      localStorage: { getItem: () => null, setItem() {} },
+      matchMedia: () => ({ matches: true }),
+      setInterval: () => 0,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      fetch: async () => ({ ok: true, json: async () => payload }),
+      document: {
+        hidden: false,
+        activeElement: null,
+        body: { classList: { toggle() {}, add() {}, remove() {} } },
+        querySelector: sel => (sel.startsWith('#') ? els.get(sel.slice(1)) || null : null),
+        querySelectorAll: () => [],
+        addEventListener() {},
+      },
+    };
+    ctx.window = ctx;
+    vm.runInNewContext(fs.readFileSync('public/queue.js', 'utf8'), ctx);
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(els.get('status').hidden, true, name + ': ' + els.get('status').textContent);
+    assert.ok(check(els.get('app').innerHTML), name);
+  }
 });
