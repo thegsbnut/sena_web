@@ -20,6 +20,7 @@
 | `line.js` | `/api/line/webhook` (ตรวจ HMAC), จับคู่กลุ่มด้วย `/badbot <code>`, หน้า admin เชื่อมกลุ่ม |
 | `line-reply.js`, `line-mentions.js` | ตอบคำสั่ง/ปุ่มในกลุ่ม, สร้างข้อความ mention |
 | `line-roster-card.js`, `line-bill-card.js`, `line-board-cards.js` | การ์ด Flex รายชื่อผู้ตี / สรุปบิลจ่ายครบ / ตารางจัดคู่ อันดับ ผล Cup (badge PNG ใน `public/badges/`) |
+| `line-nudge.js` | ตามบิลค้างตอนเช้าแบบไม่ push: ข้อความตัวอักษรแรกของวัน (หลัง 08:00 เวลาไทย) ในกลุ่มที่ผูกก๊วน → ตอบการ์ดบิลค้างด้วย reply token ของข้อความนั้น 1 ครั้งต่อกลุ่มต่อวัน (ตาราง `line_daily_nudges`) |
 | `backups.js`, `leaderboard.js`, `booking-holidays.js` | backup state, ตารางคะแนน Cup, วันหยุด |
 | `public/engine.js` | อัลกอริทึมจัดคู่ (`globalThis.Sena.generate`) ใช้ทั้งในเบราว์เซอร์และ Worker |
 | `public/custom-split.js`, `public/billing-custom.js` | บิลอื่นๆ (ค่าข้าว ฯลฯ ไม่ผูกกับรอบตีแบด): ตัวคำนวณหาร 3 แบบ (`globalThis.SenaCustomSplit.split` ใช้ทั้งเบราว์เซอร์และ Worker) + ฟอร์มสร้าง/แก้; ฝั่ง Worker อยู่ใน `billing.js` (`action=custom` / `people`, สิทธิ์ `manager` = ผู้จัดหรือคนสร้างบิล) — spec `docs/superpowers/specs/2026-11-16-custom-bills-design.md` |
