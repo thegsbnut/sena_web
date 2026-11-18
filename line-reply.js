@@ -232,7 +232,8 @@ function boundedSection(lines) {
   return result.join('\n');
 }
 
-function displayNames(data, session) {
+// shortGuests: game lists show a guest by name only ("แขกของ …" is for roster lists).
+function displayNames(data, session, shortGuests = false) {
   const names = new Map(
     data.roster.map(p => [p.id, clean([p.award, p.name].filter(Boolean).join(' '))]),
   );
@@ -248,7 +249,9 @@ function displayNames(data, session) {
     if (r.guest)
       names.set(
         r.playerId,
-        clean(r.guest.name) + ' (แขกของ ' + (names.get(r.guest.hostId) || 'สมาชิก') + ')',
+        shortGuests
+          ? clean(r.guest.name)
+          : clean(r.guest.name) + ' (แขกของ ' + (names.get(r.guest.hostId) || 'สมาชิก') + ')',
       );
   }
   return id => names.get(id) || 'ผู้เล่นที่นำออกจากก๊วน';
@@ -318,7 +321,7 @@ async function matchupRound(env) {
     (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : '');
   if (session.closed || !session.schedule?.schedule?.length)
     return { error: heading + '\nตารางคู่ยังไม่พร้อม' };
-  return { data, session, heading, name: displayNames(data, session) };
+  return { data, session, heading, name: displayNames(data, session, true) };
 }
 
 async function cupMatches(env, club) {

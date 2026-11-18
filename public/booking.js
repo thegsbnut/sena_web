@@ -68,6 +68,8 @@
     const award = player(id)?.award === '🥇' ? '' : player(id)?.award;
     return award ? award + ' ' + rawName(id) : rawName(id);
   };
+  // Game lists: a guest is shown by their own name only; the roster keeps "แขกของ …".
+  const gameName = id => guest(id)?.name || name(id);
   const level = id => player(id)?.lv;
   const rosterBadge = r => (!r.guest && data?.roster.find(p => p.id === r.playerId)?.badge) || null;
   let jobTarget = null;
@@ -118,12 +120,12 @@
       : '';
   }
   function matchTeam(ids) {
-    if (!data.canEdit) return `<span>${html(ids.map(name).join(' / '))}</span>`;
+    if (!data.canEdit) return `<span>${html(ids.map(gameName).join(' / '))}</span>`;
     const levels = ids.map(level);
     const average = levels.every(Number.isFinite)
       ? `<small>Lv เฉลี่ย ${formatLevel.format((levels[0] + levels[1]) / 2)}</small>`
       : '';
-    return `<div class="booking-match-team">${ids.map(id => `<span>${html(name(id))} ${levelBadge(id)}</span>`).join('')}${average}</div>`;
+    return `<div class="booking-match-team">${ids.map(id => `<span>${html(gameName(id))} ${levelBadge(id)}</span>`).join('')}${average}</div>`;
   }
   function status(text, error = false) {
     q('#bookingStatus').textContent = text;
@@ -619,7 +621,7 @@
         ? `<div class="booking-ready">✓ บันทึกตารางแล้ว <small>เวอร์ชัน ${s.scheduleVersion} • ${s.rounds} เกม</small></div><p class="hint">ปรับคู่และบันทึกใหม่เมื่อรายชื่อตัวจริงเปลี่ยน • พักอย่างน้อย 1 เกม</p><button type="button" class="primary booking-primary" id="bookingCopy">📋 Copy ตารางลง LINE</button>${data.canEdit && !s.started ? `<button type="button" class="secondary booking-primary" id="bookingReroll">↻ จัดคู่ใหม่</button><p id="bookingRerollStatus" role="status" class="hint"></p>` : ''}<p id="bookingCopyStatus" role="status"></p><details class="booking-draw"><summary>ดูตารางทั้งหมด ${s.rounds} เกม</summary>${s.schedule.schedule.map(m => `<div class="booking-match"><b>GAME ${String(m.round).padStart(2, '0')}</b><div>${matchTeam(m.ids.slice(0, 2))}<em>VS</em>${matchTeam(m.ids.slice(2))}</div></div>`).join('')}<div class="booking-counts">${Object.entries(
             s.schedule.counts,
           )
-            .map(([id, n]) => `<span>${html(name(id))} <b>${n} เกม</b></span>`)
+            .map(([id, n]) => `<span>${html(gameName(id))} <b>${n} เกม</b></span>`)
             .join('')}</div></details>`
         : `<div class="booking-empty">🏸<p>${messages[s.scheduleStatus] || 'เมื่อคนครบ ระบบจะจัดคู่และบันทึกตารางให้ทันที'}</p></div>`;
   }
@@ -654,11 +656,11 @@
       '',
       ...s.schedule.schedule.map(
         m =>
-          `เกม ${m.round} ⚡ ${m.ids.slice(0, 2).map(name).join(' / ')} VS ${m.ids.slice(2).map(name).join(' / ')}`,
+          `เกม ${m.round} ⚡ ${m.ids.slice(0, 2).map(gameName).join(' / ')} VS ${m.ids.slice(2).map(gameName).join(' / ')}`,
       ),
       '',
       'จำนวนเกมแต่ละคน',
-      ...Object.entries(s.schedule.counts).map(([id, n]) => `${name(id)}: ${n} เกม`),
+      ...Object.entries(s.schedule.counts).map(([id, n]) => `${gameName(id)}: ${n} เกม`),
       ...(s.waitlistCount
         ? [
             '',

@@ -1599,6 +1599,30 @@ test('table cards: schedule cap and rest marks, podium order, shared first place
   for (const b of [schedule, board, small, cup]) assert.deepEqual(flexProblems(b), []);
 });
 
+test('matchup lists show a guest by name only, not "แขกของ …"', async t => {
+  const f = fixture(t);
+  const date = future(1);
+  const round = { ...session(date, { names: 7 }), rounds: 2 };
+  round.registrations.push({
+    id: 'g1',
+    playerId: 'g1',
+    seq: 7,
+    source: 'manual',
+    ownerHash: 'x',
+    guest: { name: 'Pal', gender: 'M', hostId: 'p0' },
+  });
+  f.seed(
+    'sena',
+    [{ ...round, cupOverride: false }],
+    true,
+    Array.from({ length: 8 }, (_, i) => 'Sena ' + (i + 1)),
+  );
+  await f.hook([f.event('badbot matchup sena')]);
+  const reply = textOf(f.calls.at(-1));
+  assert.match(reply, /\bPal\b/);
+  assert.doesNotMatch(reply, /แขกของ/);
+});
+
 test('table shortcuts with nothing to show still answer in plain text', async t => {
   const f = fixture(t);
   for (const command of ['senacup', 'matchup senacup', 'matchup sena']) {
