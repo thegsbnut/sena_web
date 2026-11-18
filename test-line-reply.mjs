@@ -11,6 +11,7 @@ import { createNotice, noticeDay } from './line-notices.js';
 import { badgeImage, rosterBubble } from './line-roster-card.js';
 import { owedMessage, paidBubble } from './line-bill-card.js';
 import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-cards.js';
+import { nudgeDay, claimNudge, releaseNudge } from './line-nudge.js';
 
 const origin = 'https://example.com',
   group = 'C' + 'a'.repeat(32);
@@ -1730,5 +1731,31 @@ test('outstanding-bill cards list each person owing, tag failures and cash waiti
   assert.equal(
     owedMessage([bill('บิล Sena · ส. 14 พ.ย.', huge)], { heading: 'h', note: '' }),
     null,
+  );
+});
+
+test('nudgeDay: the Thai day only starts at 08:00', () => {
+  const at = iso => nudgeDay(Date.parse(iso));
+  assert.equal(at('2026-11-18T07:59:00+07:00'), null);
+  assert.equal(at('2026-11-18T08:00:00+07:00'), '2026-11-18');
+  assert.equal(at('2026-11-18T23:59:00+07:00'), '2026-11-18');
+  assert.equal(at('2026-11-18T00:30:00+07:00'), null);
+});
+
+test('claimNudge: one claim per group per day, releasable, old rows pruned', async t => {
+  const f = fixture(t);
+  assert.equal(await claimNudge(f.env, group, '2026-11-18'), true);
+  assert.equal(await claimNudge(f.env, group, '2026-11-18'), false);
+  assert.equal(await claimNudge(f.env, group, '2026-11-19'), true);
+  assert.equal(await claimNudge(f.env, 'C' + 'b'.repeat(32), '2026-11-18'), true);
+  await releaseNudge(f.env, group, '2026-11-18');
+  assert.equal(await claimNudge(f.env, group, '2026-11-18'), true);
+  f.db
+    .prepare('INSERT INTO line_daily_nudges VALUES (?,?,?)')
+    .run(group, '2026-11-01', Date.now() - 8 * 86400000);
+  await claimNudge(f.env, group, '2026-11-20');
+  assert.equal(
+    f.db.prepare('SELECT COUNT(*) n FROM line_daily_nudges WHERE day=?').get('2026-11-01').n,
+    0,
   );
 });
