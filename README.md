@@ -1,5 +1,5 @@
 # SENA Court — Cloudflare
-เว็บจัดก๊วน + Sena Cup จากโปรเจกต์เดิม โดยเว็บเดิมยังไม่ถูกแก้ไขหรือลบ
+เว็บจัดก๊วน จองคิวผ่าน LINE LIFF + Sena Cup และจัดการบิล สำหรับก๊วน Sena และ 88 บน Cloudflare Workers
 
 ## ตั้งค่าบนมือถือ
 1. Cloudflare → Workers & Pages → Worker ที่เชื่อม repo นี้ → Settings → Builds
