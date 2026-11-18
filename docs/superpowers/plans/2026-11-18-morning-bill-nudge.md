@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** First plain text message in a linked LINE group each day (after 06:00 Thai) makes Badbot post the open-bills reminder once, using the free Reply API.
+**Goal:** First plain text message in a linked LINE group each day (after 08:00 Thai) makes Badbot post the open-bills reminder once, using the free Reply API.
 
 **Architecture:** New `line-nudge.js` (day rule, per-group-per-day claim row in D1, `morningNudge`). `lineWebhook`'s background loop sends non-command events to `morningNudge`; command events go to `replyToGroupCommand` as before, which now returns `'bill'` when it answered a bill so the day is marked done. The message itself is `billingLineMessages` (same as `badbot bill`).
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Reply API only (`https://api.line.me/v2/bot/message/reply`); never Push.
-- Day starts 06:00 `Asia/Bangkok`; messages before 06:00 never trigger.
+- Day starts 08:00 `Asia/Bangkok`; messages before 08:00 never trigger.
 - One reminder per **group** per Thai day, even if the group is linked to both clubs (`sena`, `88`).
 - Tables are created lazily with `CREATE TABLE IF NOT EXISTS`; rows older than 7 days pruned on claim.
 - Do not touch the command-reply path other than the single return value described in Task 2.
@@ -24,7 +24,7 @@
 ## Review Focus
 
 - Two messages arriving at the same instant → exactly one reminder (claim race).
-- Message at 05:59 Thai ignored; at 06:00 triggers.
+- Message at 07:59 Thai ignored; at 08:00 triggers.
 - LINE rejects/fails the reply (500) → claim released; next message retries.
 - No open bills → silent and unclaimed; a bill opened later the same day is reminded on the next message.
 - Unlinked group, sticker/image, `mode: 'standby'` → nothing, and no row written.
@@ -41,12 +41,12 @@
 
 **Interfaces:**
 - Produces (all exported from `line-nudge.js`):
-  - `nudgeDay(timestamp: number): string | null` — `'YYYY-MM-DD'` (Thai date, use `bangkokDate` from `booking.js`) when the Thai hour is ≥ 6, else `null`. Hour via `Intl.DateTimeFormat` with `timeZone: 'Asia/Bangkok'` as `line-reply.js` does.
+  - `nudgeDay(timestamp: number): string | null` — `'YYYY-MM-DD'` (Thai date, use `bangkokDate` from `booking.js`) when the Thai hour is ≥ 8, else `null`. Hour via `Intl.DateTimeFormat` with `timeZone: 'Asia/Bangkok'` as `line-reply.js` does.
   - `claimNudge(env, group: string, day: string, now = Date.now()): Promise<boolean>` — creates table `line_daily_nudges (group_id TEXT NOT NULL, day TEXT NOT NULL, claimed_at INTEGER NOT NULL, PRIMARY KEY (group_id, day))`, prunes rows with `claimed_at < now - 7 days`, `INSERT OR IGNORE`, returns `meta.changes > 0`.
   - `releaseNudge(env, group: string, day: string): Promise<void>` — deletes that row.
 
 - [ ] **Step 1: Write failing tests** (using `fixture(t)` for `env`/`db`)
-  - `nudgeDay`: `Date.parse('2026-11-18T05:59:00+07:00')` → `null`; `'2026-11-18T06:00:00+07:00'` → `'2026-11-18'`; `'2026-11-18T23:59:00+07:00'` → `'2026-11-18'`; `'2026-11-18T00:30:00+07:00'` → `null`.
+  - `nudgeDay`: `Date.parse('2026-11-18T07:59:00+07:00')` → `null`; `'2026-11-18T08:00:00+07:00'` → `'2026-11-18'`; `'2026-11-18T23:59:00+07:00'` → `'2026-11-18'`; `'2026-11-18T00:30:00+07:00'` → `null`.
   - `claimNudge` twice for same group/day → `true` then `false`; different day or different group → `true`.
   - After `releaseNudge`, `claimNudge` → `true` again.
   - A row inserted with `claimed_at = Date.now() - 8*86400000` is gone after any `claimNudge`.
@@ -73,10 +73,10 @@
 
 `morningNudge` rules, in order: ignore unless `event.type === 'message'`, `event.message?.type === 'text'`, `event.source?.type === 'group'`, `event.replyToken` set, `event.mode !== 'standby'`, `env.LINE_CHANNEL_ACCESS_TOKEN` set; `day = nudgeDay(event.timestamp ?? Date.now())` non-null; clubs = `SELECT club FROM line_groups WHERE group_id=?` (none → return); scope = `'all'` if both clubs else that club; `claimNudge` false → return; build `billingLineMessages(env, scope, siteOrigin(env), group, [], { rosterOf: rosterOf(env), quietIfEmpty: true })`; null or empty → `releaseNudge`, return; POST the Reply API (`notificationDisabled: false`, 10 s timeout); on HTTP 400 retry once with `messages.map(flexFallback)`; if still not ok or network error → `releaseNudge`, `logError('line-nudge:send', …)`, throw. Any exception while building messages also releases the claim.
 
-- [ ] **Step 1: Write failing tests** using `billFixture(t)` with `event('สวัสดี', { timestamp })` where `timestamp = Date.parse(future(0) + 'T08:00:00+07:00')`:
+- [ ] **Step 1: Write failing tests** using `billFixture(t)` with `event('สวัสดี', { timestamp })` where `timestamp = Date.parse(future(0) + 'T09:00:00+07:00')`:
   - `morning nudge: first plain message gets one bill reply`: `f.calls.length === 1`, `messages[0].type === 'flex'`, reply token equals the event's; second plain message same day → still 1 call.
   - `morning nudge: two simultaneous messages send one reminder`: `Promise.all([f.hook([e1]), f.hook([e2])])` → 1 call.
-  - `morning nudge: ignored before 06:00 Thai`: timestamp `…T05:59:00+07:00` → 0 calls, no row in `line_daily_nudges`; `…T06:00:00+07:00` → 1 call.
+  - `morning nudge: ignored before 08:00 Thai`: timestamp `…T07:59:00+07:00` → 0 calls, no row in `line_daily_nudges`; `…T08:00:00+07:00` → 1 call.
   - `morning nudge: next Thai day reminds again`: timestamps on `future(0)` and `future(1)` → 2 calls.
   - `morning nudge: silent without open bills`: bill row removed → 0 calls, no row; after re-inserting the bill, the next message → 1 call.
   - `morning nudge: failed reply is retried by the next message`: `f.replyStatus(500)` → `hook` returns 200 (no ctx → check status via the existing no-ctx path: expect 503) and row released; `f.replyStatus(200)`; next message → one successful call.
@@ -97,6 +97,6 @@
 **Files:**
 - Modify: `BADBOT-REPLY.md` (append a bullet at the end), `HANDOFF.md`, `CLAUDE.md` (module table row for `line-nudge.js`)
 
-- [ ] **Step 1: Document** in `BADBOT-REPLY.md`: trigger rule (first plain text message after 06:00 Thai, once per group per Thai day, Reply API only), `line_daily_nudges`, commands don't consume the day except bill answers, silent when nothing is owed. Add the `line-nudge.js` row to the `CLAUDE.md` module table. Add a top "อัปเดตล่าสุด" entry in `HANDOFF.md` (not yet tried in real LINE: check that the first morning message produces the card with tags, and that a group linked to both clubs gets one message); trim the oldest history line so history stays ≤ 5.
+- [ ] **Step 1: Document** in `BADBOT-REPLY.md`: trigger rule (first plain text message after 08:00 Thai, once per group per Thai day, Reply API only), `line_daily_nudges`, commands don't consume the day except bill answers, silent when nothing is owed. Add the `line-nudge.js` row to the `CLAUDE.md` module table. Add a top "อัปเดตล่าสุด" entry in `HANDOFF.md` (not yet tried in real LINE: check that the first morning message produces the card with tags, and that a group linked to both clubs gets one message); trim the oldest history line so history stays ≤ 5.
 - [ ] **Step 2: Run** `npm run format:check && npm test && npm run build` — Expected: PASS.
 - [ ] **Step 3: Commit** `docs: morning bill nudge`
