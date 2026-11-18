@@ -28,14 +28,17 @@
       // so a reload or a later tap shows the normal bills page.
       const url = new URL(location.href);
       const collect = url.searchParams.get('bills') === 'collect';
+      const bill = url.searchParams.get('bill');
       if (collect) {
         url.searchParams.delete('bills');
         history.replaceState(history.state, '', url.pathname + url.search + url.hash);
       }
-      const query = [collect ? 'collect=1' : '', club === '88' ? 'club=88' : '']
-        .filter(Boolean)
-        .join('&');
-      frame.src = '/billing.html' + (query ? '?' + query : '');
+      const query = new URLSearchParams();
+      if (club === '88') query.set('club', club);
+      if (collect) query.set('collect', '1');
+      else if (/^[a-f0-9]{32}$/.test(bill ?? '')) query.set('focusBill', bill);
+      const search = query.toString();
+      frame.src = '/billing.html' + (search ? '?' + search : '');
     } else frame.contentWindow?.postMessage('bills-refresh', location.origin);
   }
 

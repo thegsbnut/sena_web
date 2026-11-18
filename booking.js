@@ -66,6 +66,9 @@ export const bangkokDate = (now = new Date()) =>
 const addDays = (date, n) =>
   new Date(Date.parse(date + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 const startsAt = s => Date.parse(s.date + 'T' + s.start + ':00+07:00');
+const weekdayOf = date => new Date(date + 'T00:00:00Z').getUTCDay();
+const unscheduledEmpty = (session, settings) =>
+  !settings.weekdays.includes(weekdayOf(session.date)) && !session.registrations.length;
 const validDate = d =>
   typeof d === 'string' &&
   /^\d{4}-\d{2}-\d{2}$/.test(d) &&
@@ -169,12 +172,22 @@ export function materialize(doc, players, now = new Date()) {
     today = bangkokDate(now),
     rosterIds = new Set(players.map(p => p.id));
   // Retain a month of recent sessions; current/future bookings are never pruned.
-  doc.sessions = doc.sessions.filter(s => s.date >= addDays(today, -30));
+  const oldest = addDays(today, -30);
+  doc.sessions = doc.sessions.filter(
+    s =>
+      s.date >= oldest &&
+      (startsAt(s) <= +now ||
+        !unscheduledEmpty(s, cfg) ||
+        s.withdrawals?.length ||
+        s.cupOverride != null ||
+        s.closed ||
+        s.courtNumbers),
+  );
   if (cfg.enabled) {
     for (let n = 0; n < cfg.weeks * 7; n++) {
       const date = addDays(today, n);
       if (
-        !cfg.weekdays.includes(new Date(date + 'T00:00:00Z').getUTCDay()) ||
+        !cfg.weekdays.includes(weekdayOf(date)) ||
         Date.parse(date + 'T' + cfg.start + ':00+07:00') <= +now
       )
         continue;
@@ -409,7 +422,7 @@ export function publicBooking(
       rounds: s.rounds,
       holiday: s.holiday,
       skipped: s.skipped,
-      closed: s.closed,
+      closed: s.closed || (startsAt(s) > +now && unscheduledEmpty(s, cfg)),
       confirmedCount: Math.min(s.registrations.length, s.capacity),
       waitlistCount: Math.max(0, s.registrations.length - s.capacity),
       canJoinWaitlist: s.registrations.length < 200,
@@ -552,7 +565,12 @@ export async function bookingRoute(req, env, admin, club, member = null) {
     // Badge rows and cup history are independent of the booking document: fetch
     // them at the same time. The latest cup comes from those same rows.
     const [badgeSource, outcome] = await Promise.all([
-      env.DB ? readBadgeSource(env.DB, club) : null,
+      env.DB
+        ? readBadgeSource(env.DB, club).catch(error => {
+            logError('booking:badges', error, { club });
+            return null;
+          })
+        : null,
       mutateBooking(
         env,
         club,
@@ -662,6 +680,8 @@ export async function bookingRoute(req, env, admin, club, member = null) {
               if (input.action === 'close') {
                 const s = session(input.sessionId);
                 if (typeof input.closed !== 'boolean') fail('ข้อมูลไม่ถูกต้อง');
+                if (!input.closed && unscheduledEmpty(s, doc.settings))
+                  fail('วันนี้อยู่นอกวันจองประจำ กรุณาเพิ่มวันในตั้งค่าก่อนเปิดรับจอง', 409);
                 s.closed = input.closed;
                 return { message: s.closed ? 'ปิดรับจองรอบนี้แล้ว' : 'เปิดรับจองรอบนี้แล้ว' };
               }
@@ -684,7 +704,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                 )
                   fail('เลือกวันที่ต้องการจองอย่างน้อย 1 วัน');
                 const sessions = input.sessionIds.map(session);
-                if (sessions.some(s => s.closed || s.skipped))
+                if (sessions.some(s => s.closed || s.skipped || unscheduledEmpty(s, doc.settings)))
                   fail('มีวันที่ปิดรับจองหรือข้ามวันหยุดอยู่ กรุณาเลือกใหม่', 409);
                 if (sessions.some(s => s.holiday) && input.acceptHoliday !== true)
                   fail('มีวันหยุดในวันที่เลือก กรุณายืนยันรับทราบก่อนจอง', 409);
@@ -863,7 +883,7 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       (badgeSource && latestCupOf(badgeSource)) ?? outcome.cup,
       identityFrom(outcome.players, club, badgeSource?.legacy),
     );
-    const badges = badgesFrom(badgeSource, club, outcome.players, awards);
+    const badges = badgeSource ? badgesFrom(badgeSource, club, outcome.players, awards) : undefined;
     const view = publicBooking(
       outcome.doc,
       outcome.revision,
