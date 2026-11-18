@@ -62,24 +62,6 @@ export function cupMedals(cup, ident) {
   );
   return medals;
 }
-// Gold-medal slots of one cup in a form that can be stored and resolved later against any
-// roster: the saved player id (if any) and the spelled-name key (legacy / roster lookup).
-export function goldSlots(cup, club = DEFAULT_CLUB) {
-  const byName = globalThis.Sena.cupAwards(cup),
-    golds = [];
-  cup?.teams?.forEach((team, t) =>
-    team.forEach((name, k) => {
-      if (byName.get(name.trim().toLowerCase()) === '🥇')
-        golds.push({ id: cup.teamIds?.[t]?.[k] || null, key: key(name, club) });
-    }),
-  );
-  return golds;
-}
-// slotKey() for a stored gold slot (same lookup order: saved id, frozen legacy, roster).
-export const goldSlotKey = (ident, { id, key: k }) => {
-  const resolved = id || ident.legacy.get(k) || ident.byName.get(k) || null;
-  return resolved ? 'id:' + resolved : 'n:' + k;
-};
 async function rosterOf(db, club) {
   try {
     const row = await db

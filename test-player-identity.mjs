@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
-import { cleanCup, goldSlots, identityFrom } from './leaderboard.js';
+import { cleanCup, identityFrom } from './leaderboard.js';
 import { badgesFrom } from './job-badges.js';
 
 const players = [
@@ -212,7 +212,7 @@ test('badge: จำนวนแชมป์และแชมป์ล่าส�
     ],
     matches: [{ a: 0, b: 1, sa: 21, sb: 10 }],
   };
-  const source = { plays: [], jobs: [], golds: goldSlots(cup, '88'), legacy: new Map() };
+  const source = { plays: [], jobs: [], cups: [{ sequence: 1, cup }], legacy: new Map() };
   const ident = identityFrom(renamed, '88');
   const awards = new Map([['id:a', '🥇']]);
   const badges = badgesFrom(source, '88', renamed, awards);

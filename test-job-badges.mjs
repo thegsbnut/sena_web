@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import './public/job-rules.js';
-import { recordAttendance, latestOf, latestCupOf } from './job-badges.js';
+import { recordAttendance, latestCupOf } from './job-badges.js';
 import { scheduledBookings, bookingRoute } from './booking.js';
 import worker from './worker.js';
 
@@ -389,10 +389,12 @@ test('admins set any roster player line; players cannot target someone else', as
 
 test('latestCupOf picks the newest date, then the newest sequence, like latestCup', () => {
   const row = (sequence, date) => ({ sequence, cup: { date, id: sequence } });
-  assert.equal(latestOf([]), null);
-  assert.equal(latestOf([row(3, '2026-10-01'), row(1, '2026-11-01'), row(2, '2026-09-01')]).id, 1);
-  assert.equal(latestOf([row(4, '2026-11-01'), row(7, '2026-11-01')]).id, 7);
-  assert.equal(latestCupOf({ latest: null }), null);
+  assert.equal(latestCupOf({ cups: [] }), null);
+  assert.equal(
+    latestCupOf({ cups: [row(3, '2026-10-01'), row(1, '2026-11-01'), row(2, '2026-09-01')] }).id,
+    1,
+  );
+  assert.equal(latestCupOf({ cups: [row(4, '2026-11-01'), row(7, '2026-11-01')] }).id, 7);
 });
 
 test('a night with a Cup counts as 3 plays, including a Cup recorded afterwards', async () => {
@@ -417,58 +419,4 @@ test('a night with a Cup counts as 3 plays, including a Cup recorded afterwards'
     .prepare('INSERT INTO cup_history VALUES (?,1,?,?)')
     .run('old', 2, JSON.stringify({ date: '2026-11-01', teams: [['A', 'B']], matches: [] }));
   assert.equal((await own('p2')).roster[2].badge.plays, 4);
-});
-
-test('badge summary is cached across reads and rebuilt after attendance or Cup changes', async () => {
-  const f = bookingEnv();
-  const cached = () => f.rows('SELECT version, payload FROM badge_summary');
-  const plays = async id =>
-    (
-      await (
-        await bookingRoute(
-          new Request('https://example.com/api/booking'),
-          f.env,
-          true,
-          'sena',
-          null,
-        )
-      ).json()
-    ).roster[id].badge.plays;
-  await f.get();
-  assert.ok(cached()[0].payload, 'first read stores the summary');
-  // Reads never touch the big tables once cached: drop them and the page still answers.
-  f.db.exec('ALTER TABLE attendance RENAME TO attendance_hidden');
-  assert.equal((await f.get()).roster.length, roster.length);
-  f.db.exec('ALTER TABLE attendance_hidden RENAME TO attendance');
-
-  const add = f.db.prepare("INSERT INTO attendance VALUES ('sena', ?, ?)");
-  add.run('2026-09-01', 'p1');
-  assert.equal(cached()[0].payload, null, 'an attendance insert clears the summary');
-  assert.equal(await plays(1), 1);
-  assert.ok(cached()[0].payload);
-
-  f.db
-    .prepare('INSERT INTO cup_history VALUES (?,1,?,?)')
-    .run('c', 1, JSON.stringify({ date: '2026-09-01', teams: [['A', 'B']], matches: [] }));
-  assert.equal(cached()[0].payload, null, 'a Cup insert clears the summary');
-  await f.get();
-  f.db.prepare("UPDATE cup_history SET payload=?, revision=2 WHERE id='c'").run('{"date":"x"}');
-  assert.equal(cached()[0].payload, null, 'a Cup edit or restore clears the summary');
-  await f.get();
-  f.db.exec("DELETE FROM attendance WHERE club='sena'");
-  assert.equal(cached()[0].payload, null, 'clearing attendance clears the summary');
-  assert.equal(await plays(1), 0);
-});
-
-test('a rebuild that raced a write does not store stale numbers', async () => {
-  const f = bookingEnv();
-  await f.get();
-  const { version } = f.rows('SELECT version FROM badge_summary')[0];
-  f.db.prepare("INSERT INTO attendance VALUES ('sena', '2026-09-01', 'p1')").run(); // bumps version
-  f.db
-    .prepare(
-      'INSERT INTO badge_summary (club,version,payload) VALUES (?,?,?) ON CONFLICT(club) DO UPDATE SET payload=excluded.payload WHERE badge_summary.version=excluded.version',
-    )
-    .run('sena', version, '{"plays":[],"golds":[],"latest":null}');
-  assert.equal(f.rows('SELECT payload FROM badge_summary')[0].payload, null);
 });
