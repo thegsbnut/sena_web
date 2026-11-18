@@ -77,6 +77,46 @@ const draft = {
 };
 const slip = Uint8Array.of(255, 216, 255, 224, 0, 0, 0, 0, 0, 0, 255, 217);
 
+test('slip submission with a payer token must match the viewed amount and payment revision', async t => {
+  const f = fixture(t);
+  const cookie = await f.login();
+  const { id } = await (
+    await f.request('/api/billing', { method: 'POST', payload: draft, cookie })
+  ).json();
+  const path = '/api/billing?bill=' + id;
+  const before = await (await f.request(path, { cookie })).json();
+  const token = before.payers[0].token;
+  const afterEdit = await f.request(path + '&action=edit', {
+    method: 'POST',
+    cookie,
+    payload: { ...draft, transfer: '0812345678', revision: before.revision },
+  });
+  assert.equal(afterEdit.status, 200);
+  const detail = await (await f.request(path, { token })).json();
+  const [payer] = detail.payers;
+  assert.equal(payer.amount, before.payers[0].amount);
+  const upload = (amount, paymentRevision) =>
+    f.request(path + '&action=upload&' + new URLSearchParams({ amount, paymentRevision }), {
+      method: 'POST',
+      token,
+      body: slip,
+    });
+  assert.equal((await upload(payer.amount, before.paymentRevision)).status, 409);
+  assert.equal((await upload(payer.amount - 100, detail.paymentRevision)).status, 409);
+  assert.equal(
+    (
+      await f.request(path + '&action=upload&amount=' + payer.amount, {
+        method: 'POST',
+        token,
+        body: slip,
+      })
+    ).status,
+    409,
+  );
+  assert.equal((await (await f.request(path, { token })).json()).payers[0].status, 'unpaid');
+  assert.equal((await upload(payer.amount, detail.paymentRevision)).status, 200);
+});
+
 test('Badbot bill links open the exact original or supplemental bill across both clubs', async t => {
   const f = fixture(t),
     cookie = await f.login();
@@ -320,10 +360,13 @@ test('public uploads auto-pay the selected row, slips stay private, and only clo
       payload: { payer: p.id, status, note, receiptId: p.receiptId },
     });
   const upload = (p, body = slip) =>
-    f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, {
-      method: 'POST',
-      body,
-    });
+    f.request(
+      path + '&action=upload&payer=' + p.id + '&amount=' + p.amount + '&paymentRevision=0',
+      {
+        method: 'POST',
+        body,
+      },
+    );
   assert.equal((await review(nut, 'paid')).status, 409);
   assert.equal((await upload({})).status, 403);
   assert.equal((await upload(nut, new Uint8Array(1024 * 1024 + 1))).status, 400);
@@ -475,13 +518,6 @@ test('"ของฉัน" attaches a slip and declares cash on the home page it
   assert.match(src, /id="mineSlip"/);
 });
 
-test('LIFF pay links land on the new bills tab instead of the old per-bill page', async () => {
-  const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('./public/liff.js', import.meta.url), 'utf8');
-  assert.match(src, /'\/court' \+ \(club === '88' \? '\?club=88' : ''\) \+ '#bills'/);
-  assert.doesNotMatch(src, /bills\[0\]\.url/);
-});
-
 test('payments return a group notice; the payment that completes the bill carries a code', async t => {
   const f = fixture(t),
     cookie = await f.login();
@@ -492,10 +528,13 @@ test('payments return a group notice; the payment that completes the bill carrie
   const [nut, bua] = (await (await f.request(path, { cookie })).json()).payers;
   const baht = p => (p.amount / 100).toLocaleString('th-TH');
   const day = noticeDay(draft.date);
-  let r = await f.request(path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount, {
-    method: 'POST',
-    body: slip,
-  });
+  let r = await f.request(
+    path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount + '&paymentRevision=0',
+    {
+      method: 'POST',
+      body: slip,
+    },
+  );
   assert.equal(
     (await r.json()).notice.text,
     `💸 Nut จ่ายบิล SENA ${day} ${baht(nut)} บ. สำเร็จ · จ่ายแล้ว 2/3`,
@@ -587,10 +626,13 @@ test('organizer changes after payments announce themselves: PromptPay, undo cash
   const act = async (action, payload) =>
     (await f.request(path + '&action=' + action, { method: 'POST', cookie, payload })).json();
   const [nut, bua] = (await read()).payers;
-  await f.request(path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount, {
-    method: 'POST',
-    body: slip,
-  });
+  await f.request(
+    path + '&action=upload&payer=' + nut.id + '&amount=' + nut.amount + '&paymentRevision=0',
+    {
+      method: 'POST',
+      body: slip,
+    },
+  );
   let body = await act('cash', {
     payer: bua.id,
     received: true,

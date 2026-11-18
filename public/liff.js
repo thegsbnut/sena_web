@@ -22,6 +22,16 @@
     collect = params.get('page') === 'collect';
     bill = params.get('bill');
   }
+  function openCourt() {
+    const query = new URLSearchParams();
+    if (club === '88') query.set('club', club);
+    if (collect) query.set('bills', 'collect');
+    if (pay && /^[a-f0-9]{32}$/.test(bill ?? '')) query.set('bill', bill);
+    const search = query.toString();
+    location.replace(
+      '/court' + (search ? '?' + search : '') + (pay || collect ? '#bills' : '#booking'),
+    );
+  }
   const q = id => document.getElementById(id),
     message = text => (q('message').textContent = text);
   const api = async (action = '', body, csrf) => {
@@ -79,13 +89,7 @@
       return;
     }
     if (session.loggedIn && session.link?.status === 'approved' && !session.mappingError) {
-      const clubQuery = club === '88' ? 'club=88' : '';
-      // Badbot "เก็บเงิน": the bills tab opens straight on the collect page.
-      if (collect)
-        location.replace('/court?' + (clubQuery ? clubQuery + '&' : '') + 'bills=collect#bills');
-      else if (pay) location.replace('/court' + (clubQuery ? '?' + clubQuery : '') + '#bills');
-      else location.replace('/court' + (clubQuery ? '?' + clubQuery : '') + '#booking');
-      return;
+      return openCourt();
     }
     if (!session.loggedIn) {
       message('กำลังเข้าสู่ระบบด้วย LINE…');
@@ -175,18 +179,7 @@
       q('mapping').showModal();
       return;
     }
-    // Badbot "เก็บเงิน": the bills tab opens straight on the collect page.
-    if (collect) {
-      location.replace('/court?' + (club === '88' ? 'club=88&' : '') + 'bills=collect#bills');
-      return;
-    }
-    if (!pay) {
-      location.replace('/court' + (club === '88' ? '?club=88' : '') + '#booking');
-      return;
-    }
-    // Bills now live in the court page's bills tab (own bills, QR and slip upload all in one place).
-    location.replace('/court' + (club === '88' ? '?club=88' : '') + '#bills');
-    return;
+    openCourt();
   } catch (error) {
     message(error.message || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่');
   }

@@ -386,10 +386,13 @@ async function withUpload(f) {
   const [nut, bua] = await read();
   f.ai.answer = () => slipAnswer(nut, { date_text: todayThai() });
   const upload = (p = nut) =>
-    f.request(path + '&action=upload&payer=' + p.id + '&amount=' + p.amount, {
-      method: 'POST',
-      body: jpeg,
-    });
+    f.request(
+      path + '&action=upload&payer=' + p.id + '&amount=' + p.amount + '&paymentRevision=0',
+      {
+        method: 'POST',
+        body: jpeg,
+      },
+    );
   return { ...bill, path, read, nut, bua, upload };
 }
 
