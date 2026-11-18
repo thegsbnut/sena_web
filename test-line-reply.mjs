@@ -345,6 +345,7 @@ async function billFixture(t, count = 1) {
     lineNames = {};
   let replyStatus = 200,
     network = false,
+    replyDetails = null,
     profileFailure = null;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     if (String(url).startsWith('https://api.line.me/v2/bot/group/')) {
@@ -368,7 +369,7 @@ async function billFixture(t, count = 1) {
         ? { sentMessages: [{ id: 'line-message-id' }] }
         : {
             message: 'Invalid message for ' + ids[0],
-            details: [
+            details: replyDetails || [
               { property: 'messages[1].substitution.member0', message: 'Mention rejected' },
             ],
           },
@@ -382,6 +383,7 @@ async function billFixture(t, count = 1) {
     lineNames,
     profileCalls,
     replyStatus: value => (replyStatus = value),
+    replyDetails: value => (replyDetails = value),
     network: value => (network = value),
     profileFailure: value => (profileFailure = value),
     report: () =>
@@ -1891,4 +1893,42 @@ test('morning nudge: stays silent when member login is off', async t => {
   await f.hook([morning(f)]);
   assert.equal(f.calls.length, 0);
   assert.equal(nudgeRows(f), 0);
+});
+
+test('morning nudge: a rejected Flex card is resent once as text and the day is used', async t => {
+  const f = await billFixture(t);
+  f.replyStatus(400);
+  f.replyDetails([{ property: 'messages[0].contents.body', message: 'Invalid flex' }]);
+  assert.equal((await f.hook([morning(f)])).status, 200);
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[0].messages[0].type, 'flex');
+  assert.notEqual(f.calls[1].messages[0].type, 'flex');
+  assert.equal(nudgeRows(f), 1);
+});
+
+test('morning nudge: a 400 that is not about Flex is not retried by later messages', async t => {
+  const f = await billFixture(t);
+  f.replyStatus(400);
+  const logged = [];
+  t.mock.method(console, 'error', line => logged.push(String(line)));
+  assert.equal((await f.hook([morning(f)])).status, 200);
+  assert.equal(f.calls.length, 1);
+  assert.equal(nudgeRows(f), 1);
+  await f.hook([morning(f, 'อีกที', '09:05')]);
+  assert.equal(f.calls.length, 1);
+  assert(logged.some(l => l.includes('line-nudge:rejected') && l.includes('Mention rejected')));
+});
+
+test('morning nudge: a failed release does not hide the original error', async t => {
+  const f = await billFixture(t);
+  f.replyStatus(500);
+  const logged = [];
+  t.mock.method(console, 'error', line => logged.push(String(line)));
+  const prepare = f.env.DB.prepare.bind(f.env.DB);
+  f.env.DB.prepare = sql => {
+    if (sql.startsWith('DELETE FROM line_daily_nudges WHERE group_id=')) throw Error('d1 down');
+    return prepare(sql);
+  };
+  await f.hook([morning(f)]);
+  assert(logged.some(l => l.includes('line-nudge:send') && l.includes('LINE reply unavailable')));
 });

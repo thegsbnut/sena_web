@@ -1,6 +1,6 @@
 import { bangkokDate } from './booking.js';
 import { billingLineMessages } from './billing.js';
-import { rosterOf, siteOrigin } from './line-reply.js';
+import { flexRejected, rosterOf, siteOrigin } from './line-reply.js';
 import { flexFallback } from './line-roster-card.js';
 import { logError } from './log.js';
 
@@ -70,9 +70,25 @@ async function reply(env, event, messages) {
       signal: AbortSignal.timeout(10000),
     });
   let response = await post(messages);
+  if (response.ok) return;
+  let error = await response.json().catch(() => ({}));
   // LINE refusing a Flex card must not mean silence: send the same thing as text once.
-  if (response.status === 400) response = await post(messages.map(flexFallback));
-  if (!response.ok) throw Error('LINE reply unavailable (' + response.status + ')');
+  if (response.status === 400 && flexRejected(messages, error)) {
+    response = await post(messages.map(flexFallback));
+    if (response.ok) return;
+    error = await response.json().catch(() => ({}));
+  }
+  // A 400 that text cannot fix (bad mention, token) would fail again on every message
+  // today: keep the day claimed and log what LINE said. Anything else may be transient.
+  if (response.status === 400) {
+    logError('line-nudge:rejected', error?.message || 'LINE rejected the reminder', {
+      status: 400,
+      requestId: response.headers.get('x-line-request-id'),
+      details: error?.details,
+    });
+    return;
+  }
+  throw Error('LINE reply unavailable (' + response.status + ')');
 }
 
 // Ordinary text in a linked group, first one after 08:00 Thai: remind the open bills,
@@ -105,8 +121,10 @@ export async function morningNudge(event, env) {
     if (!messages?.length) return await releaseNudge(env, group, day);
     await reply(env, event, messages);
   } catch (error) {
-    await releaseNudge(env, group, day);
     logError('line-nudge:send', error);
+    await releaseNudge(env, group, day).catch(releaseError =>
+      logError('line-nudge:release', releaseError),
+    );
     throw error;
   }
 }

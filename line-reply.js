@@ -653,6 +653,23 @@ async function eventKey(event) {
   return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// True when LINE's 400 points at a Flex message of this reply (a card it refused),
+// as opposed to text/mention problems that resending as text cannot fix.
+export function flexRejected(messages, error) {
+  const flexAt = new Set(
+    messages.flatMap((m, i) => (m.type === 'flex' ? ['messages[' + i + ']'] : [])),
+  );
+  const named = /^messages\[\d+\]/;
+  const rejected = error?.details?.length
+    ? error.details.map(d =>
+        named.test(d.property || '')
+          ? named.exec(d.property)[0]
+          : /messages\[\d+\]/.exec(error.message || '')?.[0],
+      )
+    : [];
+  return rejected.some(at => flexAt.has(at));
+}
+
 // Called only after lineWebhook verifies the signature. Never links a LINE user
 // to a player, changes a booking, or falls back to the chargeable Push API.
 export async function replyToGroupCommand(event, env) {
@@ -817,18 +834,7 @@ export async function replyToGroupCommand(event, env) {
     // LINE names the message either in each detail's property
     // ("messages[0].contents.body") or only in the error message, with properties
     // relative to the card ("A message (messages[0]) …" + "/body/contents/3").
-    const flexAt = new Set(
-      messages.flatMap((m, i) => (m.type === 'flex' ? ['messages[' + i + ']'] : [])),
-    );
-    const named = /^messages\[\d+\]/;
-    const rejected = evidence?.error?.details?.length
-      ? evidence.error.details.map(d =>
-          named.test(d.property || '')
-            ? named.exec(d.property)[0]
-            : /messages\[\d+\]/.exec(evidence.error.message || '')?.[0],
-        )
-      : [];
-    if (response?.status === 400 && rejected.some(at => flexAt.has(at))) {
+    if (response?.status === 400 && flexRejected(messages, evidence?.error)) {
       logError('line-reply:flex-rejected', evidence.error?.message, {
         command: action.kind,
         details: evidence.error?.details,
