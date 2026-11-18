@@ -56,5 +56,12 @@ npm run format:check
 - ส่งต่อได้เมื่อ `npm test` และ `npm run build` ผ่านเท่านั้น
 - merge เข้า `main` เมื่อเจ้าของโปรเจกต์สั่งเท่านั้น
 
+## Antigravity Remote Agent
+- ใช้กฎในหัวข้อนี้เฉพาะตอนทำงานผ่าน Antigravity Remote Agent เท่านั้น
+- งานที่ขอให้แก้โค้ด: ให้เริ่มจาก `main` ล่าสุดและสร้าง branch ใหม่สำหรับงานนั้น
+- รัน `npm run format`, `npm test` และ `npm run build` ตามกฎเดิมของโปรเจกต์ — หากเช็กที่บังคับรันไม่ได้ ให้รายงานคำสั่งกับ error ที่เจอ แล้วรอเจ้าของโปรเจกต์ตัดสินใจก่อนส่งงาน
+- เมื่อ checks ผ่าน: ให้ใช้ GitHub plugin (`gh api` / `gh pr create`) ส่งไฟล์ที่แก้ขึ้น branch แล้วเปิด Draft PR เข้า `main` พร้อมส่งลิงก์ PR, สรุปสิ่งที่แก้ และผล checks ให้เจ้าของโปรเจกต์ตรวจและกด merge เอง
+- หากถามให้วิเคราะห์หรือรีวิวอย่างเดียว ให้ตอบในแชตโดยไม่ต้องสร้าง branch หรือเปิด PR
+
 ## เอกสารเพิ่มเติม
 `README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md` (สรุปสั้น; ฉบับเต็มใน `docs/archive/` ไม่ต้องอ่านถ้าไม่ได้แก้เรื่องแท็ก)
