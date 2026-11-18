@@ -29,6 +29,9 @@
     prevStats = null,
     soundOn = false,
     audio,
+    wakeLock = null,
+    swapFrom = null, // pid selected in a called court for manual swap
+    courtLabels = null, // setup: editable court numbers string
     walkins = [], // setup: typed-in players before the queue starts
     picked = null; // setup: Set of chosen ids
 
@@ -59,10 +62,17 @@
     }
   }
   function take(data) {
+    // POST responses omit `roster`/`session` to save D1 reads; keep the cached copies.
+    if (D) {
+      if (data.roster === undefined) data.roster = D.roster;
+      if (data.session === undefined) data.session = D.session;
+    }
     D = data;
     S = data.state;
+    if (!S || !S.players[swapFrom] || S.players[swapFrom].status !== 'called') swapFrom = null;
     $('#status').hidden = true;
     render();
+    syncWakeLock();
   }
   async function send(action, extra = {}, after) {
     if (busy || !D) return;
@@ -177,11 +187,15 @@
     return `<div class="side ${k}">${team
       .map((id, i) => {
         const p = P(id);
-        const rest =
-          c.phase === 'called' && admin()
-            ? `<button class="rest" type="button" data-act="rest" data-court="${c.n - 1}" data-pid="${esc(id)}" aria-label="พัก ${esc(p.name)}">พัก</button>`
-            : '';
-        return `<div class="who" style="--i:${i + (k === 'b' ? 2 : 0)}"><span class="n">${esc(p.name)}</span>${lvTag(p)}${rest}</div>`;
+        const canSwap = c.phase === 'called' && admin();
+        const isSwap = swapFrom === id;
+        const nameEl = canSwap
+          ? `<button type="button" class="n swap-pick ${isSwap ? 'picked' : ''}" data-swap="${esc(id)}" title="แตะเพื่อสลับคน">${esc(p.name)}</button>`
+          : `<span class="n">${esc(p.name)}</span>`;
+        const rest = canSwap
+          ? `<button class="rest" type="button" data-act="rest" data-court="${c.n - 1}" data-pid="${esc(id)}" aria-label="พัก ${esc(p.name)}">พัก</button>`
+          : '';
+        return `<div class="who ${isSwap ? 'swapping' : ''}" style="--i:${i + (k === 'b' ? 2 : 0)}">${nameEl}${lvTag(p)}${rest}</div>`;
       })
       .join('')}</div>`;
   }
@@ -216,6 +230,7 @@
       roster = D.roster || [];
     const booked = session?.booked || [];
     if (!picked) picked = new Set(booked.map(p => p.id));
+    if (courtLabels === null) courtLabels = (session?.courtNumbers || []).join(', ');
     const bookedIds = new Set(booked.map(p => p.id));
     const others = roster
       .filter(p => !bookedIds.has(p.id))
@@ -226,14 +241,23 @@
     const autoCourts = session?.courtNumbers?.length || Math.max(1, Math.round(count / 6));
     const courtSel = $('#setupCourts')?.value;
     const courts = courtSel ? +courtSel : Math.min(Q.MAX_COURTS, autoCourts);
+    const sessionTag = session
+      ? (session.isToday ? 'รอบวันนี้ ' : 'ดึงจากรอบถัดไป ') +
+        esc(session.date) +
+        ' · ' +
+        esc(session.start) +
+        '–' +
+        esc(session.end)
+      : 'ไม่มีรอบที่จองไว้ เลือกจากรายชื่อสมาชิกได้';
     $('#app').innerHTML = `<section class="panel setup" aria-label="เริ่มคิว">
-      <div class="setup-head"><h3>เริ่มคิววันนี้ <small>${session ? 'รอบ ' + esc(session.date) + ' · ' + esc(session.start) + '–' + esc(session.end) + (session.courtNumbers.length ? ' · คอร์ต ' + esc(session.courtNumbers.join(', ')) : '') : 'วันนี้ไม่มีรอบที่จองไว้ เลือกจากรายชื่อสมาชิกได้'}</small></h3>${D.canUndo ? '<button type="button" id="setupUndo">↶ กู้คิวที่เพิ่งปิด</button>' : ''}</div>
-      ${booked.length ? `<p class="note">คนที่จองรอบวันนี้ (ตัวจริง) ติ๊กออกคนที่ไม่มา</p><ul class="picks">${booked.map(pick).join('')}</ul>` : ''}
+      <div class="setup-head"><h3>เริ่มคิววันนี้ <small>${sessionTag}</small></h3>${D.canUndo ? '<button type="button" id="setupUndo">↶ กู้คิวที่เพิ่งปิด</button>' : ''}</div>
+      ${booked.length ? `<p class="note">คนที่จองรอบ ${esc(session.date)} (${booked.length} คน) ติ๊กออกคนที่ไม่มา</p><ul class="picks">${booked.map(pick).join('')}</ul>` : ''}
       <details ${booked.length ? '' : 'open'}><summary>เพิ่มจากรายชื่อสมาชิก (${others.length})</summary><ul class="picks">${others.map(pick).join('')}</ul></details>
       <div><p class="note">คนนอกรายชื่อ (พิมพ์ชื่อเอง)</p>
         <form class="addpick" id="walkForm"><label>ชื่อ<input id="walkName" maxlength="40" required placeholder="ชื่อเล่น"></label><label>Lv<select id="walkLv">${LEVELS.map(n => `<option ${n === 6.5 ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>เพศ<select id="walkG"><option value="M">ชาย</option><option value="F">หญิง</option></select></label><button type="submit">เพิ่ม</button></form>
         <div class="walkins">${walkins.map((w, i) => `<span>${esc(w.name)} · ${w.g === 'F' ? '♀' : '♂'} ${w.lv}<button type="button" data-unwalk="${i}" aria-label="ลบ ${esc(w.name)}">✕</button></span>`).join('')}</div></div>
       <div class="go"><label class="note">จำนวนคอร์ต <select id="setupCourts">${Array.from({ length: Q.MAX_COURTS }, (_, n) => `<option ${n + 1 === courts ? 'selected' : ''}>${n + 1}</option>`).join('')}</select></label>
+        <label class="note">เลขคอร์ต <input id="setupLabels" class="labels-input" maxlength="40" placeholder="เช่น 6, 7" value="${esc(courtLabels)}"></label>
         <button class="call-btn" type="button" id="startQueue" ${count < 4 ? 'disabled' : ''}>เริ่มคิว ${count} คน ▶</button>
         ${count < 4 ? '<span class="note">ต้องมีอย่างน้อย 4 คน</span>' : ''}</div>
     </section>`;
@@ -244,7 +268,9 @@
     document.body.classList.toggle('readonly', !admin());
     $('#bar').hidden = !S;
     $('#sync').innerHTML = admin()
-      ? `ผู้จัด · ทุกเครื่องเห็นคิวเดียวกัน`
+      ? swapFrom && S?.players[swapFrom]
+        ? `<span class="swap-hint">กำลังเลือกสลับ <b>${esc(S.players[swapFrom].name)}</b> · แตะชื่ออีกคนในคอร์ตหรือในคิวรอเพื่อสลับ <button type="button" id="cancelSwap">ยกเลิก</button></span>`
+        : `ผู้จัด · แตะชื่อคนในคอร์ตที่ถูกเรียกเพื่อสลับคู่ได้`
       : `ดูอย่างเดียว · อัปเดตอัตโนมัติ · <a href="/court${club === '88' ? '?club=88' : ''}">ผู้จัดเข้าสู่ระบบที่หน้าหลัก</a>`;
     if (!S) {
       prevKeys = null;
@@ -257,6 +283,7 @@
     }
     $('#rules').hidden = false;
     picked = null;
+    courtLabels = null;
     walkins = [];
     const all = Object.values(S.players);
     const live = all.filter(p => p.status !== 'gone');
@@ -289,7 +316,10 @@
           .map((p, i) => {
             const skipped = p.skip > 0,
               isNext = !skipped && ++nextShown <= 4;
-            return `<li class="row ${isNext ? 'next' : ''}"><span class="pos num">${i + 1}</span><span class="nm">${esc(p.name)}${skipped ? ' <em class="skip">ข้ามรอบนี้</em>' : ''}<small>${lvOn() ? 'Lv ' + p.lv + ' · ' : ''}ตี ${p.games} เกม · รอ ${timer(p.since)}</small></span><button type="button" data-act="skip" data-pid="${esc(p.id)}" ${skipped ? 'disabled' : ''}>พักก่อน</button><button type="button" data-act="leave" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} กลับบ้าน">กลับบ้าน</button></li>`;
+            const swapBtn = swapFrom
+              ? `<button type="button" class="swap-target" data-swap="${esc(p.id)}">⇄ สลับลง</button>`
+              : '';
+            return `<li class="row ${isNext ? 'next' : ''}"><span class="pos num">${i + 1}</span><span class="nm">${esc(p.name)}${skipped ? ' <em class="skip">ข้ามรอบนี้</em>' : ''}<small>${lvOn() ? 'Lv ' + p.lv + ' · ' : ''}ตี ${p.games} เกม · รอ ${timer(p.since)}</small></span>${swapBtn}<button type="button" data-act="skip" data-pid="${esc(p.id)}" ${skipped ? 'disabled' : ''}>พักก่อน</button><button type="button" data-act="leave" data-pid="${esc(p.id)}" aria-label="${esc(p.name)} กลับบ้าน">กลับบ้าน</button></li>`;
           })
           .join('') || '<li class="note">ไม่มีคนรอ</li>'
       }</ol>
@@ -367,11 +397,13 @@
   document.addEventListener('click', e => {
     const pickBox = e.target.closest('input[data-pick]');
     if (pickBox) {
+      if ($('#setupLabels')) courtLabels = $('#setupLabels').value;
       pickBox.checked ? picked.add(pickBox.dataset.pick) : picked.delete(pickBox.dataset.pick);
       return renderSetup();
     }
     const un = e.target.closest('button[data-unwalk]');
     if (un) {
+      if ($('#setupLabels')) courtLabels = $('#setupLabels').value;
       walkins.splice(+un.dataset.unwalk, 1);
       return renderSetup();
     }
@@ -381,7 +413,27 @@
         ids: [...picked],
         extra: walkins,
         courts: +$('#setupCourts').value,
+        labels: $('#setupLabels')?.value || '',
       });
+    }
+    if (e.target.closest('#cancelSwap')) {
+      swapFrom = null;
+      return render();
+    }
+    const swapBtn = e.target.closest('[data-swap]');
+    if (swapBtn && admin() && S) {
+      const pid = swapBtn.dataset.swap;
+      if (!swapFrom) {
+        swapFrom = pid;
+        return render();
+      }
+      if (swapFrom === pid) {
+        swapFrom = null;
+        return render();
+      }
+      const a = swapFrom;
+      swapFrom = null;
+      return send('swap', { a, b: pid });
     }
     const b = e.target.closest('button[data-act]');
     if (!b || !admin() || !S) return;
@@ -399,6 +451,7 @@
     if (id === 'walkForm') {
       const name = $('#walkName').value.trim();
       if (!name) return;
+      if ($('#setupLabels')) courtLabels = $('#setupLabels').value;
       walkins.push({ name, lv: +$('#walkLv').value, g: $('#walkG').value });
       renderSetup();
       $('#walkName').focus();
@@ -410,7 +463,13 @@
     }
   });
   document.addEventListener('change', e => {
-    if (e.target.id === 'setupCourts') renderSetup();
+    if (e.target.id === 'setupCourts') {
+      if ($('#setupLabels')) courtLabels = $('#setupLabels').value;
+      renderSetup();
+    }
+  });
+  document.addEventListener('input', e => {
+    if (e.target.id === 'setupLabels') courtLabels = e.target.value;
   });
   $('#undo').onclick = () => send('undo');
   $('#courtPlus').onclick = () => send('addCourt');
@@ -550,6 +609,24 @@
     dlg.showModal();
   }
 
+  // Keep the screen awake while a queue is open on court-side phones/tablets.
+  async function syncWakeLock() {
+    try {
+      if (S && !document.hidden && navigator.wakeLock) {
+        if (!wakeLock) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener?.('release', () => {
+            wakeLock = null;
+          });
+        }
+      } else if (wakeLock) {
+        await wakeLock.release();
+        wakeLock = null;
+      }
+    } catch {
+      /* wakeLock not supported or denied */
+    }
+  }
   setInterval(() => {
     document.querySelectorAll('[data-since]').forEach(el => {
       el.textContent = mmss(Date.now() - +el.dataset.since);
@@ -563,7 +640,10 @@
     load(true);
   }, 4000);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) load(true);
+    if (!document.hidden) {
+      load(true);
+      syncWakeLock();
+    }
   });
   load();
 })();

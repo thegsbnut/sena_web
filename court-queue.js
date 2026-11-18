@@ -38,7 +38,7 @@ async function roster(DB, club) {
     return [];
   }
 }
-// Today's booked players (ตัวจริง only, in booking order) and the session's court numbers.
+// Today's booked players (or the nearest active/upcoming session) and its court numbers.
 async function todaySession(DB, club, players, now) {
   let row = null;
   try {
@@ -48,8 +48,17 @@ async function todaySession(DB, club, players, now) {
   }
   if (!row) return null;
   const doc = JSON.parse(row.payload),
-    today = bangkokDate(now);
-  const s = (doc.sessions || []).find(x => x.date === today && !x.skipped);
+    today = bangkokDate(now),
+    yesterday = bangkokDate(new Date(+now - 6 * 3600000));
+  const sessions = (doc.sessions || [])
+    .filter(x => !x.skipped)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const s =
+    sessions.find(x => x.date === today) ||
+    sessions.find(x => x.date === yesterday && x.registrations?.length) ||
+    sessions.find(x => x.date > today && !x.closed && x.registrations?.length) ||
+    sessions.find(x => x.date > today && !x.closed);
   if (!s) return null;
   const byId = new Map(players.map(p => [p.id, p]));
   const hosts = new Set(
@@ -67,7 +76,23 @@ async function todaySession(DB, club, players, now) {
     .split(',')
     .map(x => x.trim())
     .filter(Boolean);
-  return { date: s.date, start: s.start, end: s.end, booked, courtNumbers };
+  return {
+    date: s.date,
+    isToday: s.date === today,
+    start: s.start,
+    end: s.end,
+    booked,
+    courtNumbers,
+  };
+}
+function parseLabels(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string' || value.length > 80) fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(',').map(p => p.trim());
+  if (parts.some(p => !/^[1-9]\d{0,2}$/.test(p))) fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
+  return [...new Set(parts)].slice(0, Q.MAX_COURTS);
 }
 async function read(DB, club) {
   const row = await DB.prepare('SELECT revision,payload,updated_at FROM court_queue WHERE club=?')
@@ -179,8 +204,9 @@ export async function queueRoute(req, env, admin, club, now = new Date()) {
       const all = chosen.concat(extra.map(walkIn));
       const courts = input.courts == null ? undefined : input.courts;
       if (courts !== undefined && !Number.isInteger(courts)) fail('จำนวนคอร์ตไม่ถูกต้อง');
+      const labels = parseLabels(input.labels) ?? session?.courtNumbers ?? [];
       if (state) remember();
-      state = Q.create(all, courts, t, Math.random, session?.courtNumbers || []);
+      state = Q.create(all, courts, t, Math.random, labels);
       message = 'เริ่มคิว ' + all.length + ' คน ' + state.courts.length + ' คอร์ต';
     } else if (input.action === 'end') {
       if (!state) fail('ยังไม่ได้เริ่มคิว');

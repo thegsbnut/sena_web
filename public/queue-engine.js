@@ -266,7 +266,7 @@
     p.skip = 1;
     p.lastEnd = S.t++;
     p.since = now;
-    log(S, p.name + ' กดพัก (ไม่นับเกม) คอร์ต ' + c.n + ' กลับเข้าคิว', now);
+    log(S, p.name + ' กดพัก (ไม่นับเกม) คอร์ต ' + label(S, c) + ' กลับเข้าคิว', now);
     const pool = Object.values(S.players).filter(x => x.status === 'wait' && x.id !== id);
     const teams =
       choose(
@@ -294,6 +294,24 @@
       choose(S, eligible(S), [], opts, rng) || choose(S, eligible(S, true), [], opts, rng);
     if (teams) setCalled(S, c, teams);
     fill(S, rng);
+  }
+  function swapPlayers(S, aId, bId, now) {
+    const a = playerAt(S, aId),
+      b = playerAt(S, bId);
+    if (a.id === b.id) fail('เลือกคนละคนเพื่อสลับ');
+    if (!['called', 'wait'].includes(a.status) || !['called', 'wait'].includes(b.status))
+      fail('สลับได้เฉพาะคนที่ถูกเรียกหรือรออยู่ในคิว');
+    if (a.status === 'wait' && b.status === 'wait') fail('ต้องมีอย่างน้อย 1 คนที่ถูกเรียกในคอร์ต');
+    for (const c of S.courts) {
+      if (c.phase !== 'called' || !c.teams) continue;
+      c.teams = c.teams.map(team => team.map(id => (id === a.id ? b.id : id === b.id ? a.id : id)));
+    }
+    const statusA = a.status;
+    a.status = b.status;
+    b.status = statusA;
+    if (a.status === 'called') delete a.skip;
+    if (b.status === 'called') delete b.skip;
+    log(S, 'สลับ ' + a.name + ' ↔ ' + b.name, now);
   }
   function addPlayer(S, player, now, rng) {
     if (Object.hasOwn(S.players, player.id)) {
@@ -346,7 +364,11 @@
       case 'reroll': {
         const c = courtAt(S, input.court, 'called');
         reroll(S, c, rng);
-        return 'จัดคู่ใหม่ให้คอร์ต ' + c.n;
+        return 'จัดคู่ใหม่ให้คอร์ต ' + label(S, c);
+      }
+      case 'swap': {
+        swapPlayers(S, input.a, input.b, now);
+        return 'สลับ ' + S.players[input.a].name + ' ↔ ' + S.players[input.b].name;
       }
       case 'skip': {
         const p = playerAt(S, input.pid);
