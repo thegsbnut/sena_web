@@ -218,6 +218,47 @@ test('round robin covers every pair once and separates consecutive teams', () =>
     if (n === 3 || n === 4) assert.equal(globalThis.Sena.cupRestConflicts(matches), 2);
   }
 });
+test('pairing spreads partners and opponents across ten players without breaking the rules', () => {
+  const lv = [3, 4, 5, 5, 6, 6, 7, 7, 8, 4];
+  const players = lv.map((l, i) => ({ id: 'p' + i, lv: l, gender: i % 5 === 1 ? 'F' : 'M' }));
+  const womens = t => t.every(p => p.gender === 'F');
+  const bookingRule = (a, b) => womens(a) === womens(b);
+  const pair = (a, b) => [a, b].sort().join('|');
+  const runs = 30;
+  let neverMet = 0,
+    partnerRepeats = 0;
+  for (let run = 0; run < runs; run++) {
+    // Booking draws (no locks) and the organizer's manual draw with a locked game.
+    const lock = { round: 4, ids: ['p0', 'p2', 'p3', 'p4'] };
+    const { schedule, counts } =
+      run % 3
+        ? globalThis.Sena.generate(players, 10, [], 3, 40, {
+            matchAllowed: bookingRule,
+            randomWeight: 3,
+          })
+        : globalThis.Sena.generate(players, 10, [lock]);
+    if (!(run % 3)) assert.deepEqual(schedule[3].ids, lock.ids);
+    assert(Object.values(counts).every(c => c === 4));
+    const met = new Set(),
+      partners = new Map();
+    schedule.forEach(({ ids }, r) => {
+      if (r)
+        assert(!ids.some(id => schedule[r - 1].ids.includes(id)), 'nobody plays twice in a row');
+      const team = t => t.map(id => players.find(p => p.id === id));
+      const rule = run % 3 ? bookingRule : globalThis.Sena.valid;
+      assert(rule(team(ids.slice(0, 2)), team(ids.slice(2))));
+      for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) met.add(pair(ids[a], ids[b]));
+      for (const k of [pair(ids[0], ids[1]), pair(ids[2], ids[3])])
+        partners.set(k, (partners.get(k) || 0) + 1);
+    });
+    neverMet += (45 - met.size) / runs;
+    partnerRepeats += [...partners.values()].reduce((s, n) => s + n - 1, 0) / runs;
+  }
+  // Before spreading opponents too, about 8 of the 45 pairs never shared a court; ~5 is close to
+  // the best the no-back-to-back rule allows with ten players.
+  assert(neverMet < 6.5, `pairs that never met: ${neverMet}`);
+  assert(partnerRepeats < 0.5, `repeat partners: ${partnerRepeats}`);
+});
 
 import { cleanCup, standings as leaderboardStandings, leaderboardRoute } from './leaderboard.js';
 const historyFixture = () => ({

@@ -3,6 +3,17 @@
     const f = t => t.filter(p => p.gender === 'F').length;
     return !((f(a) === 2 && f(b) === 1) || (f(b) === 2 && f(a) === 1));
   }
+  // Weights: equal games per player first, then level balance, then spreading who plays
+  // with/against whom. STEP = greedy per-game penalty, SCORE = whole-schedule penalty.
+  const COUNT_STEP = 300,
+    PARTNER_STEP = 20,
+    MEET_STEP = 15,
+    COUNT_SCORE = 1000,
+    DIFF_SCORE = 5,
+    PARTNER_SCORE = 20,
+    MEET_SCORE = 20,
+    // Cap the polish work so a big roster stays cheap inside the Worker.
+    POLISH_BUDGET = 5000;
   const pairings = ([a, b, c, d]) => [
     [a, b, c, d],
     [a, c, b, d],
@@ -33,14 +44,127 @@
     for (let r = 2; r <= rounds; r++)
       if (lm[r] && lm[r - 1] && lm[r].some(p => lm[r - 1].includes(p)))
         throw Error('คู่พิเศษทำให้ผู้เล่นลงติดกัน');
-    let best = null,
-      bestScore = Infinity;
+    const n = players.length,
+      fair = (rounds * 4) / n,
+      at = new Map(players.map((p, i) => [p, i]));
+    const key = (a, b) => {
+      const i = at.get(a),
+        j = at.get(b);
+      return i < j ? i * n + j : j * n + i;
+    };
+    const meetings = q => [
+      key(q[0], q[1]),
+      key(q[0], q[2]),
+      key(q[0], q[3]),
+      key(q[1], q[2]),
+      key(q[1], q[3]),
+      key(q[2], q[3]),
+    ];
+    const diffOf = q => Math.abs(q[0].lv + q[1].lv - q[2].lv - q[3].lv);
+    // Running tallies for one schedule; add(q, ±1) updates them and returns the score change,
+    // so the polish step can try thousands of swaps cheaply.
+    function tally() {
+      const counts = new Int16Array(n),
+        pairs = new Int16Array(n * n),
+        met = new Int16Array(n * n);
+      const bump = (map, k, sign, weight) => {
+        const old = map[k];
+        map[k] = old + sign;
+        return ((old + sign) ** 2 - old ** 2) * weight;
+      };
+      return {
+        counts,
+        pairs,
+        met,
+        score: n * fair * fair * COUNT_SCORE,
+        add(q, sign) {
+          let d = diffOf(q) ** 2 * DIFF_SCORE * sign;
+          for (const p of q) {
+            const i = at.get(p),
+              old = counts[i];
+            counts[i] = old + sign;
+            d += ((old + sign - fair) ** 2 - (old - fair) ** 2) * COUNT_SCORE;
+          }
+          d += bump(pairs, key(q[0], q[1]), sign, PARTNER_SCORE);
+          d += bump(pairs, key(q[2], q[3]), sign, PARTNER_SCORE);
+          for (const k of meetings(q)) d += bump(met, k, sign, MEET_SCORE);
+          this.score += d;
+          return d;
+        },
+      };
+    }
+    // Greedy round-by-round picking can't see that today's leftovers decide who meets later,
+    // so afterwards try swapping a resting player in, or re-pairing a game, and keep any change
+    // that lowers the whole-schedule score (fewer repeat partners/opponents, same fairness).
+    function polish(games, t) {
+      const rests = (r, p) => !games[r - 1]?.includes(p) && !games[r + 1]?.includes(p);
+      // Try a list of edits ([[round, newGame], ...]); keep it if every game stays legal and the score drops.
+      let budget = POLISH_BUDGET;
+      const attempt = edits => {
+        if (--budget < 0 || !edits.every(([, o]) => allowed(o))) return false;
+        const olds = edits.map(([r]) => games[r]);
+        let d = 0;
+        edits.forEach(([r, o], i) => {
+          d += t.add(olds[i], -1) + t.add(o, 1);
+          games[r] = o;
+        });
+        const restOk = edits.every(([r, o]) => o.every(p => rests(r, p)));
+        if (restOk && d < -1e-9) return true;
+        edits.forEach(([r, o], i) => {
+          t.add(o, -1);
+          t.add(olds[i], 1);
+          games[r] = olds[i];
+        });
+        return false;
+      };
+      const swap = (q, from, to) => q.map(p => (p === from ? to : p));
+      for (let pass = 0, improved = true; improved && budget > 0; pass++) {
+        improved = false;
+        for (let r = 0; r < games.length; r++) {
+          if (lm[r + 1]) continue;
+          if (
+            pairings(games[r])
+              .slice(1)
+              .some(o => attempt([[r, o]]))
+          ) {
+            improved = true;
+            continue;
+          }
+          // x leaves game r for resting y, and y gives x their seat in another game r2,
+          // so nobody's number of games changes.
+          search: for (const x of games[r])
+            for (const y of players) {
+              if (games[r].includes(y)) continue;
+              for (let r2 = 0; r2 < games.length; r2++) {
+                if (r2 === r || lm[r2 + 1] || !games[r2].includes(y) || games[r2].includes(x))
+                  continue;
+                if (
+                  attempt([
+                    [r, swap(games[r], x, y)],
+                    [r2, swap(games[r2], y, x)],
+                  ])
+                ) {
+                  improved = true;
+                  break search;
+                }
+              }
+            }
+        }
+      }
+    }
+    const toSchedule = games =>
+      games.map((q, i) => ({
+        round: i + 1,
+        ids: q.map(p => p.id),
+        diff: diffOf(q),
+        locked: !!lm[i + 1],
+      }));
+    const drafts = [];
     for (let trial = 0; trial < trials; trial++) {
-      const counts = Object.fromEntries(players.map(p => [p.id, 0])),
-        pairs = {},
-        schedule = [];
+      const t = tally(),
+        { counts, pairs, met } = t,
+        games = [];
       let prev = [],
-        cost = 0,
         failed = false;
       for (let r = 1; r <= rounds; r++) {
         let candidates = [];
@@ -79,13 +203,12 @@
           min = Infinity;
         for (const q of candidates) {
           if (!allowed(q)) continue;
-          const diff = Math.abs(q[0].lv + q[1].lv - q[2].lv - q[3].lv);
-          const key = (a, b) => [a.id, b.id].sort().join('|');
           let s =
-            q.reduce((s, p) => s + counts[p.id] * 30, 0) +
-            diff * 4 +
-            (pairs[key(q[0], q[1])] || 0) * 4 +
-            (pairs[key(q[2], q[3])] || 0) * 4 +
+            q.reduce((s, p) => s + counts[at.get(p)] * COUNT_STEP, 0) +
+            diffOf(q) * 4 +
+            pairs[key(q[0], q[1])] * PARTNER_STEP +
+            pairs[key(q[2], q[3])] * PARTNER_STEP +
+            meetings(q).reduce((s, k) => s + met[k] * MEET_STEP, 0) +
             Math.random() * randomWeight;
           if (s < min) {
             min = s;
@@ -97,30 +220,20 @@
           break;
         }
         prev = chosen;
-        chosen.forEach(p => counts[p.id]++);
-        for (const t of [chosen.slice(0, 2), chosen.slice(2)]) {
-          let k = t
-            .map(p => p.id)
-            .sort()
-            .join('|');
-          pairs[k] = (pairs[k] || 0) + 1;
-        }
-        const diff = Math.abs(chosen[0].lv + chosen[1].lv - chosen[2].lv - chosen[3].lv);
-        cost += diff * diff;
-        schedule.push({ round: r, ids: chosen.map(p => p.id), diff, locked: !!lm[r] });
+        t.add(chosen, 1);
+        games.push(chosen);
       }
-      if (failed || (acceptSchedule && !acceptSchedule(schedule))) continue;
-      let score =
-        Object.values(counts).reduce((s, n) => s + (n - (rounds * 4) / players.length) ** 2, 0) *
-          1000 +
-        cost * 5 +
-        Object.values(pairs).reduce((s, n) => s + n * n, 0);
-      if (score < bestScore) {
-        bestScore = score;
-        best = { schedule, counts };
-      }
+      if (failed || (acceptSchedule && !acceptSchedule(toSchedule(games)))) continue;
+      drafts.push({ games, t });
     }
-    if (!best) throw Error('ยังจัดตารางตามเงื่อนไขนี้ไม่ได้ ลองเพิ่มผู้เล่นหรือลดคู่ล็อก');
+    if (!drafts.length) throw Error('ยังจัดตารางตามเงื่อนไขนี้ไม่ได้ ลองเพิ่มผู้เล่นหรือลดคู่ล็อก');
+    const draft = drafts.reduce((a, b) => (b.t.score < a.t.score ? b : a));
+    const polished = draft.games.slice();
+    polish(polished, draft.t);
+    let schedule = toSchedule(polished);
+    if (acceptSchedule && !acceptSchedule(schedule)) schedule = toSchedule(draft.games);
+    const best = { schedule, counts: Object.fromEntries(players.map(p => [p.id, 0])) };
+    for (const g of schedule) for (const id of g.ids) best.counts[id]++;
     return best;
   }
   function cupRestConflicts(matches) {
