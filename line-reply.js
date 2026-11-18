@@ -232,13 +232,13 @@ function boundedSection(lines) {
   return result.join('\n');
 }
 
-// shortGuests: game lists show a guest by name only ("แขกของ …" is for roster lists).
+// shortGuests: game lists show guests and invited friends by name only ("แขกของ …" / "จองโดย …" is for roster lists).
 function displayNames(data, session, shortGuests = false) {
   const names = new Map(
     data.roster.map(p => [p.id, clean([p.award, p.name].filter(Boolean).join(' '))]),
   );
   for (const r of session.registrations) {
-    if (r.invitedBy)
+    if (r.invitedBy && !shortGuests)
       names.set(
         r.playerId,
         (names.get(r.playerId) || 'ผู้เล่น') +

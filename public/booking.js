@@ -57,19 +57,20 @@
     data?.sessions.find(s => s.id === focusId)?.registrations.find(r => r.playerId === id)?.guest;
   const player = id => data?.roster.find(p => p.id === id) ?? guest(id);
   const rawName = id => player(id)?.name || 'ผู้เล่นที่นำออกจากก๊วน';
-  const name = id => {
+  const name = (id, short = false) => {
     const invited = data?.sessions
       .find(s => s.id === focusId)
       ?.registrations.find(r => r.playerId === id)?.invitedBy;
-    if (invited) return rawName(id) + ' (จองโดย ' + rawName(invited) + ' · จ่ายแทน)';
+    if (invited && !short) return rawName(id) + ' (จองโดย ' + rawName(invited) + ' · จ่ายแทน)';
     const extra = guest(id);
-    if (extra) return extra.name + ' (แขกของ ' + rawName(extra.hostId) + ')';
+    if (extra) return short ? extra.name : extra.name + ' (แขกของ ' + rawName(extra.hostId) + ')';
     // The job badge crown replaces 🥇; the 💩 joke stays in front of the name.
     const award = player(id)?.award === '🥇' ? '' : player(id)?.award;
     return award ? award + ' ' + rawName(id) : rawName(id);
   };
-  // Game lists: a guest is shown by their own name only; the roster keeps "แขกของ …".
-  const gameName = id => guest(id)?.name || name(id);
+  // Game lists: guests and invited friends are shown by their own name only; the roster keeps
+  // "แขกของ …" / "จองโดย …".
+  const gameName = id => name(id, true);
   const level = id => player(id)?.lv;
   const rosterBadge = r => (!r.guest && data?.roster.find(p => p.id === r.playerId)?.badge) || null;
   let jobTarget = null;
