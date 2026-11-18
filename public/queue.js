@@ -5,15 +5,15 @@
   const params = new URLSearchParams(location.search);
   const club = params.get('club') === '88' ? '88' : 'sena';
   const clubQuery = club === '88' ? '?club=88' : '';
+  const api = '/api/queue' + clubQuery;
+  const Q = window.SenaQueue;
+  const $ = s => document.querySelector(s);
   $('#clubSelect').value = club;
   $('#clubSelect').onchange = () =>
     location.assign('/queue' + ($('#clubSelect').value === '88' ? '?club=88' : ''));
   $('#homeLink').href = '/court' + clubQuery;
   $('#clubBrand').textContent = club === '88' ? '88' : 'SENA';
   $('#clubSub').textContent = club === '88' ? '88 BADMINTON CLUB' : 'SENA BADMINTON CLUB';
-  const api = '/api/queue' + (club === '88' ? '?club=88' : '');
-  const Q = window.SenaQueue;
-  const $ = s => document.querySelector(s);
   const esc = s =>
     String(s).replace(
       /[&<>"']/g,
