@@ -1280,7 +1280,7 @@ export async function billingLineMessages(
   origin,
   groupId,
   diagnostics = [],
-  { tagsFrom = null, rosterOf } = {},
+  { tagsFrom = null, rosterOf, quietIfEmpty = false } = {},
 ) {
   if (!memberMode(env) || !env.LINE_LIFF_ID) return null;
   await prepare(env.DB);
@@ -1300,12 +1300,14 @@ export async function billingLineMessages(
     .flatMap(g => g.results.slice(0, limit))
     .sort((a, b) => a.session_date.localeCompare(b.session_date));
   if (!rows.length)
-    return [
-      {
-        type: 'text',
-        text: '✅ ไม่มีบิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
-      },
-    ];
+    return quietIfEmpty
+      ? []
+      : [
+          {
+            type: 'text',
+            text: '✅ ไม่มีบิลค้าง · ' + (scope === 'all' ? 'ทุกสนาม' : clubName(scope)),
+          },
+        ];
   // The summary lists everyone (a Flex card, or plain text when the card would not
   // fit). Tags follow in grouped text messages (see planMentionMessages); what
   // does not fit in the 5-message reply is offered as a "tag the rest" button.

@@ -1759,3 +1759,136 @@ test('claimNudge: one claim per group per day, releasable, old rows pruned', asy
     0,
   );
 });
+
+// --- morning bill nudge: first plain message of the Thai day gets the open bills ---
+const thaiAt = (date, time) => Date.parse(date + 'T' + time + ':00+07:00');
+const nudgeRows = f =>
+  f.db.prepare("SELECT name FROM sqlite_master WHERE name='line_daily_nudges'").get()
+    ? f.db.prepare('SELECT COUNT(*) n FROM line_daily_nudges').get().n
+    : 0;
+const morning = (f, text = 'สวัสดี', time = '09:00', date = future(0), extra = {}) =>
+  f.event(text, { timestamp: thaiAt(date, time), ...extra });
+
+test('morning nudge: first plain message gets one bill reply, later ones none', async t => {
+  const f = await billFixture(t);
+  const first = morning(f);
+  assert.equal((await f.hook([first])).status, 200);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].replyToken, first.replyToken);
+  assert.equal(f.calls[0].messages[0].type, 'flex');
+  assert.equal(f.calls[0].notificationDisabled, false);
+  await f.hook([morning(f, 'ใครไปบ้าง', '09:05')]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('morning nudge: two simultaneous messages send one reminder', async t => {
+  const f = await billFixture(t);
+  await Promise.all([f.hook([morning(f, 'a')]), f.hook([morning(f, 'b')])]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('morning nudge: ignored before 08:00 Thai, starts at 08:00', async t => {
+  const f = await billFixture(t);
+  await f.hook([morning(f, 'เช้ามาก', '07:59')]);
+  assert.equal(f.calls.length, 0);
+  assert.equal(nudgeRows(f), 0);
+  await f.hook([morning(f, 'เช้าแล้ว', '08:00')]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('morning nudge: the next Thai day reminds again while bills stay open', async t => {
+  const f = await billFixture(t);
+  await f.hook([morning(f, 'วันนี้', '09:00', future(0))]);
+  await f.hook([morning(f, 'พรุ่งนี้', '09:00', future(1))]);
+  assert.equal(f.calls.length, 2);
+});
+
+test('morning nudge: silent without open bills, reminds once one appears', async t => {
+  const f = await billFixture(t);
+  f.db.prepare('UPDATE bills SET closed_at=1').run();
+  await f.hook([morning(f)]);
+  assert.equal(f.calls.length, 0);
+  assert.equal(nudgeRows(f), 0);
+  f.db.prepare('UPDATE bills SET closed_at=NULL').run();
+  await f.hook([morning(f, 'อีกที', '09:10')]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('morning nudge: a failed reply is retried by the next message', async t => {
+  const f = await billFixture(t);
+  f.replyStatus(500);
+  assert.equal((await f.hook([morning(f)])).status, 503);
+  assert.equal(nudgeRows(f), 0);
+  f.replyStatus(200);
+  assert.equal((await f.hook([morning(f, 'ลองใหม่', '09:01')])).status, 200);
+  assert.equal(f.calls.length, 2);
+  assert.equal(nudgeRows(f), 1);
+});
+
+test('morning nudge: ignores stickers, standby events and unlinked groups', async t => {
+  const f = await billFixture(t);
+  await f.hook([morning(f, '', '09:00', future(0), { message: { type: 'sticker' } })]);
+  await f.hook([morning(f, 'standby', '09:00', future(0), { mode: 'standby' })]);
+  const other = morning(f, 'ห้องอื่น');
+  other.source.groupId = 'C' + 'b'.repeat(32);
+  await f.hook([other]);
+  assert.equal(f.calls.length, 0);
+  assert.equal(nudgeRows(f), 0);
+});
+
+test('morning nudge: a Badbot command does not use up the day', async t => {
+  const f = await billFixture(t);
+  await f.hook([morning(f, 'badbot list')]);
+  assert.equal(f.calls.length, 1);
+  await f.hook([morning(f, 'สวัสดี', '09:02')]);
+  assert.equal(f.calls.length, 2);
+  assert.match(textOf(f.calls[1]), /บิลค้าง|ค้าง/);
+});
+
+test('morning nudge: badbot bill counts as the day reminder', async t => {
+  const f = await billFixture(t);
+  await f.hook([morning(f, 'badbot bill')]);
+  assert.equal(f.calls.length, 1);
+  await f.hook([morning(f, 'สวัสดี', '09:02')]);
+  assert.equal(f.calls.length, 1);
+});
+
+test('morning nudge: a group linked to both clubs gets one reply for both', async t => {
+  const f = await billFixture(t);
+  f.db.prepare('INSERT INTO line_groups (club,group_id) VALUES (?,?)').run('88', group);
+  f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+    'bill-88',
+    '88',
+    future(0),
+    JSON.stringify({
+      payers: [{ name: 'คน88', payerKey: 'member:x88', amount: 5000, status: 'unpaid' }],
+    }),
+  );
+  await f.hook([morning(f)]);
+  await f.hook([morning(f, 'อีกที', '09:30')]);
+  assert.equal(f.calls.length, 1);
+  assert.match(textOf(f.calls[0]), /คน88/);
+});
+
+test('morning nudge: a group linked to one club only hears about that club', async t => {
+  const f = await billFixture(t);
+  f.db.prepare('INSERT INTO bills VALUES(?,?,?,0,?,NULL,0)').run(
+    'bill-88',
+    '88',
+    future(0),
+    JSON.stringify({
+      payers: [{ name: 'คน88', payerKey: 'member:x88', amount: 5000, status: 'unpaid' }],
+    }),
+  );
+  await f.hook([morning(f)]);
+  assert.equal(f.calls.length, 1);
+  assert.doesNotMatch(textOf(f.calls[0]), /คน88/);
+});
+
+test('morning nudge: stays silent when member login is off', async t => {
+  const f = await billFixture(t);
+  f.env.LINE_MEMBER_AUTH_ENABLED = 'false';
+  await f.hook([morning(f)]);
+  assert.equal(f.calls.length, 0);
+  assert.equal(nudgeRows(f), 0);
+});

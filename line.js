@@ -1,5 +1,6 @@
 import { billingLineMessages } from './billing.js';
-import { normalizeLineText, replyToGroupCommand } from './line-reply.js';
+import { groupCommand, normalizeLineText, replyToGroupCommand } from './line-reply.js';
+import { morningNudge, recordNudged } from './line-nudge.js';
 import { logError } from './log.js';
 
 const reply = (data, status = 200) =>
@@ -74,7 +75,11 @@ export async function lineWebhook(req, env, ctx) {
     let failed = false;
     for (const event of replyEvents) {
       try {
-        await replyToGroupCommand(event, env);
+        if (groupCommand(event)) {
+          const answered = await replyToGroupCommand(event, env);
+          if (answered === 'bill')
+            await recordNudged(env, event.source.groupId, event.timestamp ?? Date.now());
+        } else await morningNudge(event, env);
       } catch (error) {
         logError('line-webhook:reply', error, { eventType: event?.type });
         failed = true;

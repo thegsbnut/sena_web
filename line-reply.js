@@ -67,7 +67,7 @@ const shortcuts = new Map([
   ['help', { kind: 'help', description: 'รายการคำสั่ง' }],
 ]);
 
-function command(event) {
+export function groupCommand(event) {
   if (event.mode === 'standby') return null;
   if (event.type === 'postback') {
     const data = event.postback?.data;
@@ -110,7 +110,7 @@ function bookingUrl(env, club = DEFAULT_CLUB) {
 }
 // Where the web app (and its public/ images) lives. Not the booking link: with
 // LINE login that is liff.line.me, which does not serve our mascot or badges.
-const siteOrigin = env => new URL(courtUrl(env)).origin;
+export const siteOrigin = env => new URL(courtUrl(env)).origin;
 function courtUrl(env, club = DEFAULT_CLUB) {
   const url = new URL(env.LINE_BOOKING_URL || defaultBookingUrl);
   if (url.protocol !== 'https:' || url.username || url.password) throw Error('Invalid booking URL');
@@ -255,7 +255,7 @@ function displayNames(data, session) {
 }
 
 // Player list (ids, job badges, latest Cup 🥇/💩) for the bill cards.
-const rosterOf = env => async club => (await bookingData(env, club))?.roster ?? [];
+export const rosterOf = env => async club => (await bookingData(env, club))?.roster ?? [];
 async function bookingData(env, club) {
   const response = await bookingRoute(
     new Request('https://badbot.internal/api/booking'),
@@ -656,7 +656,7 @@ async function eventKey(event) {
 // Called only after lineWebhook verifies the signature. Never links a LINE user
 // to a player, changes a booking, or falls back to the chargeable Push API.
 export async function replyToGroupCommand(event, env) {
-  const action = command(event),
+  const action = groupCommand(event),
     group = event.source?.groupId;
   if (!action || event.source?.type !== 'group' || !group || !event.replyToken) return;
   await env.DB.prepare(
@@ -872,6 +872,8 @@ export async function replyToGroupCommand(event, env) {
       });
     // Expired/used tokens and other permanent failures must never become Pushes.
     if (!response.ok && response.status !== 400) throw Error('LINE reply unavailable');
+    // The caller counts an answered bill as the day's reminder (line-nudge.js).
+    return response.ok && (action.kind === 'bill' || notice?.kind === 'bill') ? 'bill' : undefined;
   } catch (error) {
     await db.prepare('DELETE FROM line_reply_events WHERE id=?').bind(id).run();
     if (notice) await releaseNotice(db, action.code);

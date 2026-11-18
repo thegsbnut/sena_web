@@ -1,4 +1,8 @@
 import { bangkokDate } from './booking.js';
+import { billingLineMessages } from './billing.js';
+import { rosterOf, siteOrigin } from './line-reply.js';
+import { flexFallback } from './line-roster-card.js';
+import { logError } from './log.js';
 
 const DAY_MS = 86400000;
 const NUDGE_FROM_HOUR = 8;
@@ -42,4 +46,67 @@ export async function releaseNudge(env, group, day) {
   await env.DB.prepare('DELETE FROM line_daily_nudges WHERE group_id=? AND day=?')
     .bind(group, day)
     .run();
+}
+
+// A bill answer (badbot bill, or the card after a bill is opened) counts as today's reminder.
+export async function recordNudged(env, group, timestamp) {
+  const day = nudgeDay(timestamp);
+  if (day) await claimNudge(env, group, day);
+}
+
+async function reply(env, event, messages) {
+  const post = body =>
+    fetch('https://api.line.me/v2/bot/message/reply', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + env.LINE_CHANNEL_ACCESS_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        replyToken: event.replyToken,
+        messages: body,
+        notificationDisabled: false,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+  let response = await post(messages);
+  // LINE refusing a Flex card must not mean silence: send the same thing as text once.
+  if (response.status === 400) response = await post(messages.map(flexFallback));
+  if (!response.ok) throw Error('LINE reply unavailable (' + response.status + ')');
+}
+
+// Ordinary text in a linked group, first one after 08:00 Thai: remind the open bills,
+// once per group per day, using the message's own (free) reply token.
+export async function morningNudge(event, env) {
+  const group = event.source?.groupId;
+  if (
+    event.type !== 'message' ||
+    event.message?.type !== 'text' ||
+    event.source?.type !== 'group' ||
+    !group ||
+    !event.replyToken ||
+    event.mode === 'standby' ||
+    !env.LINE_CHANNEL_ACCESS_TOKEN
+  )
+    return;
+  const day = nudgeDay(Number.isFinite(event.timestamp) ? event.timestamp : Date.now());
+  if (!day) return;
+  const { results } = await env.DB.prepare('SELECT club FROM line_groups WHERE group_id=?')
+    .bind(group)
+    .all();
+  if (!results.length) return;
+  const scope = results.length > 1 ? 'all' : results[0].club;
+  if (!(await claimNudge(env, group, day))) return;
+  try {
+    const messages = await billingLineMessages(env, scope, siteOrigin(env), group, [], {
+      rosterOf: rosterOf(env),
+      quietIfEmpty: true,
+    });
+    if (!messages?.length) return await releaseNudge(env, group, day);
+    await reply(env, event, messages);
+  } catch (error) {
+    await releaseNudge(env, group, day);
+    logError('line-nudge:send', error);
+    throw error;
+  }
 }
