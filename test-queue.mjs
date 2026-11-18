@@ -32,7 +32,8 @@ function fixture({ session = true } = {}) {
     JSON.stringify({ players, selected: [], rounds: 10, locks: [], result: null, cup: null }),
     'before',
   );
-  const today = bangkokDate(new Date());
+  const today = bangkokDate(new Date()),
+    future = bangkokDate(new Date(Date.now() + 3 * 86400000));
   const regs = players.slice(0, 9).map((p, i) => ({ id: 'r' + i, playerId: p.id, seq: i + 1 }));
   regs.splice(2, 0, {
     id: 'rg',
@@ -48,8 +49,8 @@ function fixture({ session = true } = {}) {
       sessions: session
         ? [
             {
-              id: today,
-              date: today,
+              id: session === 'future' ? future : today,
+              date: session === 'future' ? future : today,
               start: '19:00',
               end: '22:00',
               capacity: 8,
@@ -439,4 +440,53 @@ test('page: queue.js boots and renders guest and organizer views without errors'
     assert.equal(els.get('status').hidden, true, name + ': ' + els.get('status').textContent);
     assert.ok(check(els.get('app').innerHTML), name);
   }
+});
+
+test('engine & api: swap players, custom court labels, and fallback to upcoming booking session', async t => {
+  const rng = seeded(11);
+  const S = Q.create(qp(8), 2, 0, rng, ['6', '7']);
+  const [a0, a1] = S.courts[0].teams[0];
+  const [b0] = S.courts[0].teams[1];
+  const msgReroll = Q.apply(S, { action: 'reroll', court: 0 }, { now: 1, rng });
+  assert.equal(msgReroll, 'จัดคู่ใหม่ให้คอร์ต 6');
+
+  const S2 = Q.create(qp(6), 1, 0, rng, ['9']);
+  const called0 = S2.courts[0].teams[0][0];
+  const calledOpp = S2.courts[0].teams[1][0];
+  const waiting = Object.values(S2.players).find(p => p.status === 'wait');
+  // Swap two called players across teams on the same court.
+  Q.apply(S2, { action: 'swap', a: called0, b: calledOpp }, { now: 2 });
+  assert.equal(S2.courts[0].teams[0][0], calledOpp);
+  assert.equal(S2.courts[0].teams[1][0], called0);
+  // Swap a called player with a waiting player.
+  Q.apply(S2, { action: 'swap', a: calledOpp, b: waiting.id }, { now: 3 });
+  assert.equal(S2.players[waiting.id].status, 'called');
+  assert.equal(S2.players[calledOpp].status, 'wait');
+  assert.ok(S2.courts[0].teams.flat().includes(waiting.id));
+
+  // Fallback to future booking session when today has no session, and override court labels.
+  const f = fixture({ session: 'future' });
+  t.after(() => f.db.close());
+  const cookie = await f.login();
+  const info = await (await f.call(null, cookie)).json();
+  assert.equal(info.session.isToday, false);
+  assert.equal(info.session.booked.length, 8);
+  const start = await (
+    await f.call(
+      {
+        action: 'start',
+        revision: 0,
+        ids: ['p0', 'p1', 'p2', 'p3', 'p4'],
+        courts: 1,
+        labels: '10, 11',
+      },
+      cookie,
+    )
+  ).json();
+  assert.deepEqual(start.state.labels, ['10', '11']);
+  const c0 = start.state.courts[0].teams[0][0];
+  const w0 = Object.values(start.state.players).find(p => p.status === 'wait').id;
+  const swapped = await f.call({ action: 'swap', revision: start.revision, a: c0, b: w0 }, cookie);
+  assert.equal(swapped.status, 200);
+  assert.equal((await swapped.json()).state.players[w0].status, 'called');
 });
