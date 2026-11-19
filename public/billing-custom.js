@@ -49,7 +49,7 @@
     const state = {
       title: initial?.title ?? '',
       date: initial?.date ?? thaiToday(),
-      transfer: initial?.transfer ?? remembered(),
+      transfer: initial?.transfer || people.myPromptpay || remembered(),
       chosen: [], // member keys in the order they were ticked
       guests: [], // { id, name, guestOf }
       receiver: '',
@@ -312,7 +312,17 @@
     root.addEventListener('change', event => {
       const t = event.target;
       if (t.id === 'cbReceiver') {
+        const prev = state.receiver;
         state.receiver = t.value;
+        if (!editing && people.me) {
+          if (state.receiver === people.me && prev !== people.me && !state.transfer.trim()) {
+            state.transfer = people.myPromptpay || remembered();
+            $('#cbTransfer').value = state.transfer;
+          } else if (state.receiver !== people.me && prev === people.me) {
+            state.transfer = '';
+            $('#cbTransfer').value = '';
+          }
+        }
         preview();
       } else if (t.dataset?.cb === 'member') {
         if (t.checked) state.chosen.push(t.value);
@@ -382,7 +392,8 @@
       if ($('#cbSubmit').disabled) return message('ตรวจรายละเอียดและยอดก่อนเปิดบิล', true);
       const draft = draftFromState();
       run(async () => {
-        if (!editing) remember(state.transfer.trim());
+        if (!editing && (!people.me || state.receiver === people.me))
+          remember(state.transfer.trim());
         await submit(body(draft));
       });
     });

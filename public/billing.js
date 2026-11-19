@@ -386,17 +386,18 @@
     const total = draft.court + draft.shuttle;
     const byPayer = new Map();
     draft.attendees.forEach(p => {
-      const row = byPayer.get(p.payerKey) || { name: p.payer, seats: 0 };
+      const row = byPayer.get(p.payerKey) || { name: p.payer, payerKey: p.payerKey, seats: 0 };
       row.seats++;
       byPayer.set(p.payerKey, row);
     });
+    const ownerKey = editing ? bill.receiver : adminList?.me;
     const payers = [...byPayer.values()];
     for (const p of payers)
       p.amount = Math.ceil((total * p.seats) / (100 * draft.attendees.length)) * 100;
     const collection = payers.reduce((sum, p) => sum + p.amount, 0);
     out.innerHTML = `<strong>ยอดเรียกเก็บ ${money(collection)} บาท · ผู้ถูกเรียกเก็บ ${draft.attendees.length} คน</strong>
    <p>ค่าใช้จ่าย ${money(total)} บาท${collection > total ? ' · ปัดขึ้นรวม ' + money(collection - total) + ' บาท' : ''}</p>
-   ${payers.map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · ' + p.seats + ' คน' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
+   ${payers.map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · ' + p.seats + ' คน' : ''}${ownerKey && p.payerKey === ownerKey ? ' · จ่ายแล้ว (คนสร้างบิล)' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
   }
   function showDraft() {
     document.body.classList.remove('home');
@@ -559,6 +560,7 @@
     sessions = draft.sessions;
     adminList.storageReady = draft.storageReady;
     adminList.promptpay = draft.promptpay;
+    adminList.me = draft.me || null;
     showDraft();
   }
   // Home page (no ?bill=): "ของฉัน" for any logged-in player, plus the overview for organizers.

@@ -129,6 +129,32 @@ async function promptPaySettings(db) {
     .run();
   return await db.prepare('SELECT promptpay FROM billing_settings WHERE id=1').first();
 }
+async function prepareMemberPromptPay(db) {
+  await db
+    .prepare(
+      'CREATE TABLE IF NOT EXISTS member_promptpay (user_id TEXT PRIMARY KEY, promptpay TEXT NOT NULL, updated_at TEXT NOT NULL)',
+    )
+    .run();
+}
+async function getMemberPromptPay(db, userId) {
+  if (!userId) return '';
+  await prepareMemberPromptPay(db);
+  const row = await db
+    .prepare('SELECT promptpay FROM member_promptpay WHERE user_id=?')
+    .bind(userId)
+    .first();
+  return row?.promptpay || '';
+}
+async function saveMemberPromptPay(db, userId, promptpay) {
+  if (!userId || !promptPayPattern.test(promptpay || '')) return;
+  await prepareMemberPromptPay(db);
+  await db
+    .prepare(
+      'INSERT INTO member_promptpay (user_id, promptpay, updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET promptpay=excluded.promptpay, updated_at=excluded.updated_at',
+    )
+    .bind(userId, promptpay, new Date().toISOString())
+    .run();
+}
 async function updateBill(db, bill, payload) {
   const result = await db
     .prepare(
@@ -207,7 +233,9 @@ function billView(bill, admin, payer) {
     people: bill.people,
     ...(bill.kind === 'custom'
       ? { mode: bill.mode, items: bill.items, receiver: bill.receiver }
-      : {}),
+      : bill.receiver
+        ? { receiver: bill.receiver }
+        : {}),
     ...(admin || (!bill.cancelled && (payer || promptPayPattern.test(bill.transfer)))
       ? { transfer: bill.transfer }
       : {}),
@@ -284,7 +312,7 @@ function readDraft(input) {
   }
   return { date, court, shuttle, transfer, people };
 }
-function splitBill(draft, existing = []) {
+function splitBill(draft, existing = [], receiver = null) {
   const total = draft.court + draft.shuttle;
   const each = Math.floor(total / draft.people.length),
     remainder = total % draft.people.length;
@@ -294,6 +322,7 @@ function splitBill(draft, existing = []) {
     let p = byPayer.get(person.payerKey);
     if (!p) {
       const old = previous.get(person.payerKey);
+      const isOwner = Boolean(receiver) && person.payerKey === receiver;
       p = {
         id: old?.id ?? randomId(),
         token: old?.token ?? token(),
@@ -301,7 +330,9 @@ function splitBill(draft, existing = []) {
         name: person.payer,
         shares: [],
         amount: 0,
-        status: 'unpaid',
+        ...(isOwner
+          ? { status: 'paid', method: 'owner', paidAt: new Date().toISOString() }
+          : { status: 'unpaid' }),
       };
       byPayer.set(person.payerKey, p);
     }
@@ -322,6 +353,7 @@ function splitBill(draft, existing = []) {
     total,
     transfer: draft.transfer,
     people: draft.people.length,
+    ...(receiver ? { receiver } : {}),
     payers: [...byPayer.values()],
   };
 }
@@ -550,7 +582,7 @@ const customItems = draft =>
 // Recalculate an unpaid custom bill from the same form fields; payer ids and pay links
 // stay the same for anyone still in the bill. Only the title and PromptPay may change
 // besides the split: the date and the creator are fixed.
-async function editCustom(env, bill, payload, input) {
+async function editCustom(env, bill, payload, input, member = null) {
   if (input?.revision !== bill.revision) return fail('ข้อมูลบิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
   const read = readCustomInput(
     { ...input, date: billDate(bill) },
@@ -573,6 +605,12 @@ async function editCustom(env, bill, payload, input) {
     payers: customPayers(read.split, bill.payers),
   };
   if (!(await updateBill(env.DB, bill, next))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+  if (
+    member?.userId &&
+    member?.link?.status === 'approved' &&
+    read.draft.receiver === 'member:' + member.link.player_id
+  )
+    await saveMemberPromptPay(env.DB, member.userId, read.transfer);
   return json({
     ok: true,
     notice: await codedNotice(
@@ -593,11 +631,13 @@ async function customRoute(req, env, admin, club, action) {
   const members = await approvedMembers(db, club);
   if (action === 'people') {
     if (req.method !== 'GET') return fail('Method not allowed', 405);
+    const myPromptpay = await getMemberPromptPay(db, member?.userId);
     return json({
       members: members
         .map(m => ({ payerKey: 'member:' + m.playerId, name: m.name }))
         .sort((a, b) => a.name.localeCompare(b.name, 'th')),
       me: approved ? 'member:' + member.link.player_id : null,
+      myPromptpay,
     });
   }
   if (req.method !== 'POST') return fail('Method not allowed', 405);
@@ -636,10 +676,15 @@ async function customRoute(req, env, admin, club, action) {
     ...(customItems(read.draft) ? { items: customItems(read.draft) } : {}),
     payers: customPayers(read.split),
   };
+  const closedAt = payload.payers.every(p => p.status === 'paid') ? Date.now() : null;
   await db
-    .prepare('INSERT INTO bills (id,club,session_date,revision,payload) VALUES (?,?,?,0,?)')
-    .bind(billId, club, dateKey, JSON.stringify(payload))
+    .prepare(
+      'INSERT INTO bills (id,club,session_date,revision,payload,closed_at) VALUES (?,?,?,0,?,?)',
+    )
+    .bind(billId, club, dateKey, JSON.stringify(payload), closedAt)
     .run();
+  if (member?.userId && approved && read.draft.receiver === 'member:' + member.link.player_id)
+    await saveMemberPromptPay(db, member.userId, read.transfer);
   return json({
     id: billId,
     existing: false,
@@ -660,9 +705,15 @@ export async function billingRoute(req, env, admin, club, ctx) {
     return await customRoute(req, env, admin, club, action);
   if (!id) {
     if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);
+    const member = memberMode(env) ? await memberFor(req, env, club) : null;
+    const creatorKey =
+      member?.link?.status === 'approved' ? 'member:' + member.link.player_id : null;
     if (req.method === 'GET') {
-      const setting = await promptPaySettings(db);
-      const promptpay = setting?.promptpay || env.BILL_PROMPTPAY || '';
+      const [setting, myPromptpay] = await Promise.all([
+        promptPaySettings(db),
+        getMemberPromptPay(db, member?.userId),
+      ]);
+      const promptpay = myPromptpay || setting?.promptpay || env.BILL_PROMPTPAY || '';
       if (action === 'sessions') {
         const date = url.searchParams.get('date');
         const existing = validDate(date)
@@ -676,6 +727,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
           sessions: await recentSessions(db, club),
           storageReady: Boolean(env.SLIPS_DB),
           promptpay,
+          me: creatorKey,
         });
       }
       const rows = await db
@@ -752,17 +804,20 @@ export async function billingRoute(req, env, admin, club, ctx) {
     }
     const dateKey = extra ? draft.date + '/' + extra : draft.date;
     const billId = randomId();
+    const built = splitBill(draft, [], creatorKey);
+    const closedAt = built.payers.every(p => p.status === 'paid') ? Date.now() : null;
     await db
       .prepare(
-        'INSERT OR IGNORE INTO bills (id,club,session_date,revision,payload) VALUES (?,?,?,0,?)',
+        'INSERT OR IGNORE INTO bills (id,club,session_date,revision,payload,closed_at) VALUES (?,?,?,0,?,?)',
       )
-      .bind(billId, club, dateKey, JSON.stringify(splitBill(draft)))
+      .bind(billId, club, dateKey, JSON.stringify(built), closedAt)
       .run();
     const existing = await db
       .prepare('SELECT id FROM bills WHERE club=? AND session_date=?')
       .bind(club, dateKey)
       .first();
     if (existing.id !== billId) return json({ id: existing.id, existing: true });
+    if (member?.userId) await saveMemberPromptPay(db, member.userId, draft.transfer);
     return json({
       id: billId,
       existing: false,
@@ -1021,7 +1076,9 @@ export async function billingRoute(req, env, admin, club, ctx) {
   }
   if (action === 'edit') {
     if (bill.kind === 'custom' && !bill.payers.some(started))
-      return await editCustom(env, bill, payload, input);
+      return await editCustom(env, bill, payload, input, member);
+    const memberKey =
+      member?.link?.status === 'approved' ? 'member:' + member.link.player_id : null;
     if (bill.payers.some(started)) {
       if (input?.revision !== bill.revision || !promptPayPattern.test(input?.transfer || ''))
         return fail('กรุณาตรวจเลขพร้อมเพย์และโหลดบิลใหม่', 409);
@@ -1031,6 +1088,8 @@ export async function billingRoute(req, env, admin, club, ctx) {
       payload.transfer = input.transfer;
       if (accountChanged) payload.paymentRevision = bill.revision + 1;
       if (!(await updateBill(db, bill, payload))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+      if (member?.userId && bill.receiver && bill.receiver === memberKey)
+        await saveMemberPromptPay(db, member.userId, input.transfer);
       return json({
         ok: true,
         ...(accountChanged
@@ -1046,9 +1105,11 @@ export async function billingRoute(req, env, admin, club, ctx) {
     const draft = input && readDraft({ ...input, date: billDate(bill) });
     if (!draft || input.revision !== bill.revision)
       return fail('ข้อมูลบิลไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
-    const next = splitBill(draft, bill.payers);
+    const next = splitBill(draft, bill.payers, bill.receiver);
     next.paymentRevision = bill.revision + 1;
     if (!(await updateBill(db, bill, next))) return fail('บิลเปลี่ยนแล้ว กรุณาโหลดใหม่', 409);
+    if (member?.userId && bill.receiver && bill.receiver === memberKey)
+      await saveMemberPromptPay(db, member.userId, draft.transfer);
     return json({
       ok: true,
       notice: await codedNotice(
