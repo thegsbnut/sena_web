@@ -337,7 +337,7 @@ export function standings(history, club = DEFAULT_CLUB, ident = identityFrom([],
     change: ranks.has(id) ? ranks.get(id) - (i + 1) : 'NEW',
   }));
 }
-export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
+export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB, member = null) {
   const reply = (value, status = 200) =>
     Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } });
   if (req.method !== 'GET' && !isAdmin) return reply({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);
@@ -424,9 +424,12 @@ export async function leaderboardRoute(req, env, isAdmin, club = DEFAULT_CLUB) {
     revision: row.revision,
     sequence: row.sequence,
   }));
+  const meId = member?.link?.status === 'approved' ? member.link.player_id : null;
+  const me = meId ? ident.nameOf.get(meId) || null : null;
   return reply({
     history: stored.map(cup => displayCup(cup, ident)),
     standings: standings(stored, club, ident),
     canEdit: isAdmin,
+    ...(me ? { me } : {}),
   });
 }

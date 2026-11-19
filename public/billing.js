@@ -182,15 +182,26 @@
       })
       .join('');
   }
-  function message(text, error = false) {
+  let statusTimer = null;
+  function message(text, error = false, { persist = false } = {}) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
     status.textContent = text;
     status.classList.toggle('error', error);
+    if (text && !error && !persist) {
+      statusTimer = setTimeout(() => {
+        if (!busy && status.textContent === text) message('');
+      }, 3500);
+    }
   }
+  status.addEventListener('click', () => {
+    if (!busy) message('');
+  });
   async function run(operation) {
     if (busy) return;
     busy = true;
     root.setAttribute('aria-busy', 'true');
-    message('กำลังดำเนินการ…');
+    message('กำลังดำเนินการ…', false, { persist: true });
     try {
       await operation();
     } catch (error) {
@@ -198,6 +209,7 @@
     } finally {
       busy = false;
       root.removeAttribute('aria-busy');
+      if (status.textContent === 'กำลังดำเนินการ…') message('');
     }
   }
   function linkToBill(billId, admin = false) {
@@ -209,7 +221,22 @@
     }
     return url;
   }
-  async function copy(value) {
+  const copyFeedback = new WeakMap();
+  function flashCopied(button, label = 'คัดลอกแล้ว ✓') {
+    if (!button) return;
+    const prev = copyFeedback.get(button);
+    const originalText = prev ? prev.text : button.textContent;
+    if (prev) clearTimeout(prev.timer);
+    button.textContent = label;
+    button.classList.add('is-copied');
+    const timer = setTimeout(() => {
+      button.textContent = originalText;
+      button.classList.remove('is-copied');
+      copyFeedback.delete(button);
+    }, 2000);
+    copyFeedback.set(button, { text: originalText, timer });
+  }
+  async function copy(value, trigger) {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -221,10 +248,11 @@
       box.select();
       if (document.execCommand('copy')) box.remove();
       else {
-        message('กดค้างในช่องข้อความเพื่อคัดลอก');
+        message('กดค้างในช่องข้อความเพื่อคัดลอก', false, { persist: true });
         return;
       }
     }
+    if (trigger) flashCopied(trigger);
     message('คัดลอกแล้ว');
   }
   let additionalKey, additionalDate, originalBillId;
@@ -1168,12 +1196,12 @@
           root.prepend(report);
         }
         report.value = lines.join('\n');
-        message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้');
+        message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้', false, { persist: true });
       });
     if (action === 'nag' || action === 'nag-all') {
       const groups = window.BillingOverview.owing(adminList.bills).groups;
       const chosen = action === 'nag' ? groups.filter(g => g.name === target.dataset.name) : groups;
-      return copy(window.BillingOverview.reminderText(chosen, clubName(club), money));
+      return copy(window.BillingOverview.reminderText(chosen, clubName(club), money), target);
     }
     if (action === 'mine-slip') {
       const input = root.querySelector('#mineSlip');
@@ -1273,7 +1301,7 @@
       openBill = target.dataset.bill;
       return showHome();
     }
-    if (action === 'mine-copy') return copy(target.dataset.value);
+    if (action === 'mine-copy') return copy(target.dataset.value, target);
     if (action === 'mine-view-slip')
       return run(async () => {
         const item = mineItem(target.dataset.bill);
@@ -1386,7 +1414,7 @@
       nameInput.value = hostInput.value = '';
       return renderAttendees();
     }
-    if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
+    if (action === 'copy-promptpay') return copy(bill.transfer, target);
     if (action === 'qr' && payer)
       return run(async () => {
         qrPhoto = await qrPng(
@@ -1450,7 +1478,7 @@
       const reviewing = bill.payers.filter(p => p.status === 'review').length;
       if (reviewing) lines.push('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
       lines.push(linkToBill(id).href);
-      return run(() => copy(lines.join('\n')));
+      return copy(lines.join('\n'), target);
     }
     if (action === 'ai-recheck' && payer)
       return run(async () => {

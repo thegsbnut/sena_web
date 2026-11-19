@@ -573,6 +573,46 @@ body.nxc.embedded main {
   padding-bottom: 1.5rem;
 }
 
+/* Floating status toast: visible regardless of scroll position; clears the bottom tabbar when standalone. */
+#status {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 90;
+  margin: 0;
+  width: max-content;
+  max-width: min(92vw, 34rem);
+  padding: 0.65rem 1.1rem;
+  border-radius: 1.4rem;
+  background: #102219;
+  color: #f6f7ee;
+  border: 1.5px solid var(--lime);
+  box-shadow: 0 8px 24px #00000055;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.4;
+  pointer-events: none;
+}
+body.nxc:not(.embedded) #status {
+  bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+}
+#status.error {
+  background: #7c1f1a;
+  color: #fff;
+  border-color: #ffb4a6;
+  pointer-events: auto;
+  cursor: pointer;
+}
+button.is-copied,
+body.nxc.home button.is-copied,
+body.nxc.home .actions button.is-copied {
+  background: #176342;
+  color: #fff;
+  border-color: #176342;
+}
+
 /* "ของฉัน": the payment buttons are a stack of full-width buttons. */
 body.nxc.home .pay-actions {
   display: grid;
