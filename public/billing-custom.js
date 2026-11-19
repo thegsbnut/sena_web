@@ -89,8 +89,7 @@
      <h2>1. รายละเอียด</h2>
      <label>ชื่อบิล<input id="cbTitle" maxlength="40" placeholder="เช่น ข้าวหลังตี" value="${esc(state.title)}" required></label>
      <label>วันที่<input id="cbDate" type="date" value="${esc(state.date)}" ${editing ? 'readonly' : ''} required></label>
-     <label>คนออกเงิน<select id="cbReceiver"></select></label>
-     <label>เลขพร้อมเพย์ของคนออกเงิน<input id="cbTransfer" inputmode="numeric" maxlength="13" pattern="[0-9]{10}|[0-9]{13}" value="${esc(state.transfer)}" required></label>
+     <label>เลขพร้อมเพย์<input id="cbTransfer" inputmode="numeric" maxlength="13" pattern="[0-9]{10}|[0-9]{13}" value="${esc(state.transfer)}" required></label>
     </section>
     <section>
      <h2>2. ใครร่วมจ่าย</h2>
@@ -166,14 +165,8 @@
     }
 
     function renderReceiver() {
-      if (!state.chosen.includes(state.receiver)) state.receiver = state.chosen[0] || '';
-      const options = state.chosen
-        .map(
-          key =>
-            `<option value="${esc(key)}" ${key === state.receiver ? 'selected' : ''}>${esc(nameOf(key))}</option>`,
-        )
-        .join('');
-      $('#cbReceiver').innerHTML = options || '<option value="">เลือกผู้ร่วมจ่ายก่อน</option>';
+      if (!editing && people.me && state.chosen.includes(people.me)) state.receiver = people.me;
+      else if (!state.chosen.includes(state.receiver)) state.receiver = state.chosen[0] || '';
       const guestOf = $('#cbGuestOf');
       const keep = guestOf.value;
       guestOf.innerHTML =
@@ -311,20 +304,7 @@
     });
     root.addEventListener('change', event => {
       const t = event.target;
-      if (t.id === 'cbReceiver') {
-        const prev = state.receiver;
-        state.receiver = t.value;
-        if (!editing && people.me) {
-          if (state.receiver === people.me && prev !== people.me && !state.transfer.trim()) {
-            state.transfer = people.myPromptpay || remembered();
-            $('#cbTransfer').value = state.transfer;
-          } else if (state.receiver !== people.me && prev === people.me) {
-            state.transfer = '';
-            $('#cbTransfer').value = '';
-          }
-        }
-        preview();
-      } else if (t.dataset?.cb === 'member') {
+      if (t.dataset?.cb === 'member') {
         if (t.checked) state.chosen.push(t.value);
         else {
           state.chosen = state.chosen.filter(key => key !== t.value);
