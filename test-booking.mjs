@@ -1302,10 +1302,10 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   const css = readFileSync(new URL('./public/booking.css', import.meta.url), 'utf8');
   const courtHtml = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
 
-  // Day card quick-withdraw button targets the exact session via data-book-session and follows roster button
+  // Day card quick-withdraw button targets the exact session via data-book-session and follows details button
   assert.match(
     js,
-    /class="booking-date-actions">[\s\S]*class="booking-roster-action"[\s\S]*class="booking-withdraw-action"\s+data-book-cancel="\$\{html\(mine\.id\)\}"\s+data-book-session="\$\{html\(s\.id\)\}"/,
+    /class="booking-date-actions">[\s\S]*class="booking-roster-action"[\s\S]*\? 'รายละเอียด' : 'รายละเอียด \/ ถอนตัว'[\s\S]*class="booking-withdraw-action"\s+data-book-cancel="\$\{html\(mine\.id\)\}"\s+data-book-session="\$\{html\(s\.id\)\}"/,
   );
   assert.match(js, /ถอนชื่อฉัน<\/button>/);
   assert.match(js, /button\.dataset\.bookSession \|\| focusId/);
@@ -1328,5 +1328,5 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
   assert.match(courtHtml, /\/booking\.css\?v=20261119-withdraw/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw2/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw3/);
 });
