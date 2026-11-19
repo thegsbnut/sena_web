@@ -372,7 +372,8 @@ export function publicBooking(
               !s.skipped &&
               (s.registrations.length || s.withdrawals?.length),
           )
-          .reverse(),
+          .reverse()
+          .slice(0, 3),
       ]
     : upcoming;
   return {

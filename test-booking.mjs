@@ -873,6 +873,23 @@ test('Cup dates use calendar-month boundaries with distinct defaults for Sena an
   assert.equal(read('sena').sessions[1].isCup, false);
 });
 
+test('organizer list shows only the 3 latest past sessions with bookings, after the upcoming ones', () => {
+  const reg = [{ id: 'r', playerId: 'p0', status: 'confirmed', seq: 1 }];
+  const dates = ['2027-02-01', '2027-02-08', '2027-02-15', '2027-02-22', '2027-03-08'];
+  const doc = {
+    settings: defaultSettings(),
+    sessions: dates.map(date => ({
+      id: date,
+      date,
+      start: '19:00',
+      capacity: 10,
+      registrations: reg,
+    })),
+  };
+  const ids = publicBooking(doc, 0, [], true, new Date('2027-03-01')).sessions.map(s => s.id);
+  assert.deepEqual(ids, ['2027-03-08', '2027-02-22', '2027-02-15', '2027-02-08']);
+});
+
 test('organizers can move Cup dates without rewriting bookings, and overrides survive weekly changes', async () => {
   const f = fixture(),
     { cookie, settings } = await f.open(['p0']);
