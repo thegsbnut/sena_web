@@ -121,10 +121,11 @@
     receipt.showModal();
     message('');
   }
-  let previewUrl, previewResolve;
+  let previewUrl, previewResolve, previewOnRetake;
   slipPreview.addEventListener('close', () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = undefined;
+    previewOnRetake = undefined;
     slipPreview.querySelector('img').removeAttribute('src');
     const resolve = previewResolve;
     previewResolve = undefined;
@@ -137,15 +138,19 @@
   ])
     slipPreview.querySelector(id).addEventListener('click', () => {
       const resolve = previewResolve;
+      const onRetake = previewOnRetake;
       previewResolve = undefined;
+      previewOnRetake = undefined;
       slipPreview.close();
+      if (result === 'retake') onRetake?.();
       resolve?.(result);
     });
-  function previewSlip(file, metaText) {
+  function previewSlip(file, metaText, onRetake) {
     if (!file || file.size > 20 * 1024 * 1024)
       return Promise.reject(Error('เลือกรูปสลิปขนาดไม่เกิน 20 MB'));
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = URL.createObjectURL(file);
+    previewOnRetake = onRetake;
     slipPreview.querySelector('#slipPreviewMeta').textContent = metaText;
     slipPreview.querySelector('img').src = previewUrl;
     slipPreview.showModal();
@@ -1077,8 +1082,8 @@
         const choice = await previewSlip(
           file,
           `${dateLabel(item.date)}${item.title ? ' · ' + item.title : ''} · ${payer.name} · ${money(payer.amount)} บาท`,
+          () => input.click(),
         );
-        if (choice === 'retake') return input.click();
         if (choice !== 'confirm') return;
         return run(async () => {
           const blob = await compress(file);
@@ -1109,8 +1114,8 @@
         const choice = await previewSlip(
           file,
           `${payer.name} · ยอดที่ต้องจ่าย ${money(payer.amount)} บาท`,
+          () => input.click(),
         );
-        if (choice === 'retake') return input.click();
         if (choice !== 'confirm') return;
         return run(async () => {
           const blob = await compress(file);
