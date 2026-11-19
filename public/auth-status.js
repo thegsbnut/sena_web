@@ -3,6 +3,7 @@
   const bar = document.createElement('aside');
   bar.id = 'senaAuthBar';
   bar.className = 'sena-authbar';
+  bar.hidden = true;
   bar.dataset.role = 'pending';
   bar.setAttribute('aria-label', 'สถานะการเข้าสู่ระบบ');
   bar.innerHTML =
@@ -34,26 +35,31 @@
       const d = await venueSession(fresh === true);
       const changed = role !== null && role !== d.canEdit;
       role = d.canEdit;
+      const passwordAdmin = role && d.via !== 'line';
       bar.dataset.role = role ? 'admin' : 'guest';
-      // LINE admins stay organizers while their LINE session lasts; the
-      // ADMIN_KEY logout button does not apply to them.
+      // Show the sticky auth bar only for password admins (who need the logout button);
+      // regular members and LINE admins see a single compact profile strip on the booking page.
+      bar.hidden = !passwordAdmin;
       label.textContent = role
         ? d.via === 'line'
           ? 'ผู้ดูแลระบบ (LINE)'
           : 'ผู้ดูแลระบบ'
         : 'ผู้ใช้งานทั่วไป';
-      logout.hidden = !role || d.via === 'line';
+      logout.hidden = !passwordAdmin;
       login.hidden = role;
       retry.hidden = true;
       error.hidden = true;
       document
         .querySelectorAll('#club-tools a[href*="/admin"]')
         .forEach(link => (link.hidden = role));
-      window.dispatchEvent(new CustomEvent('sena-auth-change', { detail: { canEdit: role } }));
+      window.dispatchEvent(
+        new CustomEvent('sena-auth-change', { detail: { canEdit: role, via: d.via || null } }),
+      );
       // Refresh all protected views when a session expires or changes in another tab.
       if (changed) leavePage();
     } catch {
       bar.dataset.role = 'unknown';
+      bar.hidden = role !== true;
       label.textContent = 'ตรวจสอบสถานะไม่ได้';
       retry.hidden = false;
       logout.hidden = role !== true;

@@ -24,10 +24,16 @@ document.querySelector('#login').onsubmit = async e => {
 };
 window.addEventListener('sena-auth-change', event => {
   const admin = event.detail.canEdit;
+  const viaLine = event.detail.via === 'line';
   document.querySelector('#login').hidden = admin;
   document.querySelector('#adminIntro').hidden = admin;
   document.querySelector('#adminTitle').textContent = admin
-    ? 'คุณอยู่ในสถานะผู้ดูแลระบบ'
+    ? viaLine
+      ? 'คุณอยู่ในสถานะผู้ดูแลระบบ (LINE)'
+      : 'คุณอยู่ในสถานะผู้ดูแลระบบ'
     : 'เข้าสู่ระบบผู้จัด';
-  if (admin) statusEl.textContent = 'จัดการก๊วนได้ทุกส่วน หรือออกจากระบบได้จากแถบด้านบน';
+  if (admin)
+    statusEl.textContent = viaLine
+      ? 'จัดการก๊วนได้ทุกส่วนด้วยสิทธิ์ผู้จัดจากบัญชี LINE ของคุณ'
+      : 'จัดการก๊วนได้ทุกส่วน หรือออกจากระบบได้จากแถบด้านบน';
 });
