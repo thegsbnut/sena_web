@@ -69,6 +69,8 @@
     embedded = true;
   }
   document.body.classList.toggle('embedded', embedded);
+  // In the court page's frame: keep swipes at the top/bottom edge inside the frame.
+  document.documentElement.classList.toggle('embedded', embedded);
   document.querySelector('#back').href = '/court' + clubQuery + '#booking';
   const picker = document.querySelector('#venuePicker');
   const clubSelect = picker.querySelector('select');

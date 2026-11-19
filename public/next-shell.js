@@ -86,13 +86,20 @@
       }
       tab.addEventListener('click', () => {
         if (id === 'bills') billsFrame();
-        document.body.dataset.tab = id;
+        setTab(id);
         window.scrollTo({ top: 0 });
       });
     });
     const active = document.querySelector('.next-tabbar .tab.active');
-    document.body.dataset.tab = active ? active.dataset.tab : 'booking';
+    setTab(active ? active.dataset.tab : 'booking');
     if (active?.dataset.tab === 'bills') billsFrame();
+  }
+
+  // While the bills frame covers the screen, lock the page behind it. Otherwise iOS / LINE's
+  // browser sometimes hands a swipe to the (still scrollable) page underneath instead of the frame.
+  function setTab(id) {
+    document.body.dataset.tab = id;
+    document.documentElement.classList.toggle('bills-open', id === 'bills');
   }
 
   tabs();

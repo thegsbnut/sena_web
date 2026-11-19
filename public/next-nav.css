@@ -124,6 +124,11 @@ body.nxc #bills:not([hidden]) {
   padding: 0;
   background: #0b1c15;
 }
+html.bills-open,
+html.bills-open body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 body.nxc #bills iframe {
   display: block;
   width: 100%;

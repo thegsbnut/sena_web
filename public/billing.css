@@ -780,3 +780,6 @@ body.collecting #billing > h1,
 body.collecting #billing > div > h1 {
   display: none;
 }
+html.embedded {
+  overscroll-behavior-y: contain;
+}
