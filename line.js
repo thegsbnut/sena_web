@@ -2,17 +2,14 @@ import { billingLineMessages } from './billing.js';
 import { groupCommand, normalizeLineText, replyToGroupCommand } from './line-reply.js';
 import { morningNudge, recordNudged } from './line-nudge.js';
 import { logError } from './log.js';
+import { SQL } from './schema.js';
 
 const reply = (data, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const encode = new TextEncoder();
 
 async function prepare(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS line_groups (club TEXT PRIMARY KEY, group_id TEXT, pair_code TEXT, expires_at INTEGER)',
-    )
-    .run();
+  await db.prepare(SQL.lineGroups).run();
 }
 
 export async function lineWebhook(req, env, ctx) {

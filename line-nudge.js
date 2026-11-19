@@ -3,6 +3,7 @@ import { billingLineMessages } from './billing.js';
 import { flexRejected, rosterOf, siteOrigin } from './line-reply.js';
 import { flexFallback } from './line-roster-card.js';
 import { logError } from './log.js';
+import { SQL } from './schema.js';
 
 const DAY_MS = 86400000;
 const NUDGE_FROM_HOUR = 8;
@@ -20,11 +21,7 @@ export function nudgeDay(timestamp) {
 }
 
 async function prepare(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS line_daily_nudges (group_id TEXT NOT NULL, day TEXT NOT NULL, claimed_at INTEGER NOT NULL, PRIMARY KEY (group_id, day))',
-    )
-    .run();
+  await db.prepare(SQL.lineDailyNudges).run();
 }
 
 // True only for the caller that gets to send today's reminder for this group.

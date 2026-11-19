@@ -6,6 +6,7 @@
 import './public/queue-engine.js';
 import { clubOf } from './clubs.js';
 import { bangkokDate } from './booking.js';
+import { SQL } from './schema.js';
 
 const Q = globalThis.SenaQueue;
 const UNDO_SIZE = 10;
@@ -25,9 +26,7 @@ const fail = (message, status = 400) => {
 
 async function prepare(DB) {
   // schema-cache.js skips this after the first success in an isolate.
-  await DB.prepare(
-    'CREATE TABLE IF NOT EXISTS court_queue (club TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)',
-  ).run();
+  await DB.prepare(SQL.courtQueue).run();
 }
 async function roster(DB, club) {
   const table = clubOf(club).stateTable;

@@ -1,3 +1,4 @@
+import { SQL, stateTableSql } from './schema.js';
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import { memberMode } from './member.js';
 import { once } from './schema-cache.js';
@@ -132,9 +133,7 @@ export function validateSettings(input, roster) {
   };
 }
 async function prepare(DB) {
-  await DB.prepare(
-    'CREATE TABLE IF NOT EXISTS booking_clubs (club TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)',
-  ).run();
+  await DB.prepare(SQL.bookingClubs).run();
   // The two starter rows only need to exist once; do not repeat them on every request.
   await once(DB, 'booking_clubs:seed', () =>
     Promise.all(
@@ -160,9 +159,7 @@ async function prepare(DB) {
 async function clubStateFor(DB, club) {
   const table = clubOf(club).stateTable;
   // A newly configured club need not have a roster yet.
-  await DB.prepare(
-    `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
-  ).run();
+  await DB.prepare(stateTableSql(table)).run();
   const row = await DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
   return row ? JSON.parse(row.payload) : { players: [], cup: null };
 }

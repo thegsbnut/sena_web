@@ -1,4 +1,5 @@
 import { logError } from './log.js';
+import { SQL } from './schema.js';
 
 // AI-assisted slip checking. Everything here is advisory: it never changes a
 // payment status, and billing.js treats it as removable (see the design spec).
@@ -200,17 +201,8 @@ export async function readSlip(env, bytes, contentType) {
 // ---- storage: derived data in its own table, never in the bill payload ----
 const KEEP_DAYS = 180;
 async function ensureTable(db) {
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS slip_checks (
-  slip_key TEXT PRIMARY KEY, club TEXT NOT NULL, bill_id TEXT NOT NULL, payer_id TEXT NOT NULL,
-  state TEXT NOT NULL, labels TEXT, read_amount INTEGER, read_date TEXT, read_ref TEXT,
-  ref_norm TEXT, model TEXT, checked_at INTEGER)`,
-    )
-    .run();
-  await db
-    .prepare('CREATE INDEX IF NOT EXISTS slip_checks_ref_norm ON slip_checks (ref_norm)')
-    .run();
+  await db.prepare(SQL.slipChecks).run();
+  await db.prepare(SQL.slipChecksRefIndex).run();
 }
 
 async function findDuplicate(db, { norm, billId, payerId, slipKey }) {

@@ -1,3 +1,4 @@
+import { SQL, stateTableSql } from './schema.js';
 import { clubOf, CLUB_IDS, DEFAULT_CLUB } from './clubs.js';
 import {
   lineReplyEvidence,
@@ -326,9 +327,7 @@ async function matchupRound(env) {
 
 async function cupMatches(env, club) {
   const table = clubOf(club).stateTable;
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)`,
-  ).run();
+  await env.DB.prepare(stateTableSql(table)).run();
   const row = await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
   const cup = row ? JSON.parse(row.payload).cup : null;
   if (
@@ -679,9 +678,7 @@ export async function replyToGroupCommand(event, env) {
   const action = groupCommand(event),
     group = event.source?.groupId;
   if (!action || event.source?.type !== 'group' || !group || !event.replyToken) return;
-  await env.DB.prepare(
-    'CREATE TABLE IF NOT EXISTS line_groups (club TEXT PRIMARY KEY, group_id TEXT, pair_code TEXT, expires_at INTEGER)',
-  ).run();
+  await env.DB.prepare(SQL.lineGroups).run();
   const linked = await env.DB.prepare('SELECT club FROM line_groups WHERE group_id=? LIMIT 1')
     .bind(group)
     .first();
@@ -691,11 +688,7 @@ export async function replyToGroupCommand(event, env) {
     collectUrls = Object.fromEntries(clubs.map(club => [club, collectUrl(env, club)])),
     now = new Date();
   const db = env.DB;
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS line_reply_events (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL)',
-    )
-    .run();
+  await db.prepare(SQL.lineReplyEvents).run();
   await db
     .prepare('DELETE FROM line_reply_events WHERE created_at<?')
     .bind(+now - 7 * day)
@@ -846,11 +839,7 @@ export async function replyToGroupCommand(event, env) {
     }
     if (action.kind === 'bill')
       try {
-        await db
-          .prepare(
-            'CREATE TABLE IF NOT EXISTS line_bill_diagnostics (group_id TEXT PRIMARY KEY,payload TEXT NOT NULL,updated_at TEXT NOT NULL)',
-          )
-          .run();
+        await db.prepare(SQL.lineBillDiagnostics).run();
         const report = {
           ...evidence,
           command: 'badbot bill',

@@ -27,7 +27,7 @@
 
 ## ข้อตกลงสำคัญ
 - ก๊วนมีสองค่าเท่านั้น: `'sena'` (ค่าเริ่มต้น) และ `'88'` เลือกด้วย query `?club=` ข้อมูลแยกกัน (เช่น `club_state` / `club_state_88`)
-- ตารางสร้างแบบ lazy ด้วย `CREATE TABLE IF NOT EXISTS` ในโค้ดแต่ละโมดูล (`schema.sql` ไม่ครบ)
+- ตารางสร้างแบบ lazy (`CREATE … IF NOT EXISTS`) แต่คำสั่งทั้งหมดอยู่ที่ `schema.js` ที่เดียว: โมดูลเรียก `db.prepare(SQL.xxx).run()` ก่อนใช้ตาราง และ `schema-cache.js` รวมทั้งรายการเป็น `db.batch` เดียวต่อ isolate — ตารางใหม่ให้เพิ่มใน `schema.js` เท่านั้น (`test-schema.mjs` ตรวจ; `schema.sql` ไม่ครบ ไม่ต้องอ่าน)
 - ข้อมูลส่วนใหญ่เก็บเป็น JSON payload + `revision` — ทุกการเขียนต้องเป็น optimistic concurrency (`WHERE revision=?`) แล้วตอบ 409 เมื่อชน
 - ทุก POST ใต้ `/api/` ต้องผ่านการเช็ก Origin (ยกเว้น LINE webhook)
 - ฝั่ง frontend ต้อง escape ข้อความก่อนใส่ `innerHTML` (helper `html()`)

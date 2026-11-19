@@ -12,6 +12,7 @@ import qrcode from 'qrcode-generator';
 import { slipAiEnabled, checkSlip, slipChecksFor } from './slip-check.js';
 import { owedMessage } from './line-bill-card.js';
 import './public/custom-split.js';
+import { SLIPS_SQL, SQL } from './schema.js';
 
 const day = 86400000;
 const maxSlipBytes = 1024 * 1024;
@@ -82,23 +83,12 @@ export function promptPayPayload(number, amount) {
 }
 
 async function prepare(db) {
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS bills (
-  id TEXT PRIMARY KEY, club TEXT NOT NULL, session_date TEXT NOT NULL,
-  revision INTEGER NOT NULL, payload TEXT NOT NULL, closed_at INTEGER,
-  slips_removed INTEGER NOT NULL DEFAULT 0, UNIQUE (club, session_date)
- )`,
-    )
-    .run();
+  await db.prepare(SQL.bills).run();
   // Bills are never deleted, so these keep the hot reads from growing with history:
   // the organizer list (same ORDER BY expressions, no full sort) and the open-bill
   // lookups behind LINE replies (closed bills are skipped instead of scanned).
   // Only a speed-up: if one cannot be built the queries still work, so log and go on.
-  for (const sql of [
-    "CREATE INDEX IF NOT EXISTS bills_list ON bills (COALESCE(json_extract(payload, '$.cancelled'), 0), closed_at IS NOT NULL, session_date DESC)",
-    'CREATE INDEX IF NOT EXISTS bills_open ON bills (club, session_date) WHERE closed_at IS NULL',
-  ])
+  for (const sql of [SQL.billsListIndex, SQL.billsOpenIndex])
     try {
       await db.prepare(sql).run();
     } catch (error) {
@@ -107,34 +97,19 @@ async function prepare(db) {
 }
 export { prepare as prepareBills };
 async function prepareSlips(db) {
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS bill_slips (
-  key TEXT PRIMARY KEY, bill_id TEXT NOT NULL, content_type TEXT NOT NULL,
-  bytes INTEGER NOT NULL, body BLOB NOT NULL
- )`,
-    )
-    .run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS bill_slips_bill_id ON bill_slips (bill_id)').run();
+  await db.prepare(SLIPS_SQL.billSlips).run();
+  await db.prepare(SLIPS_SQL.billSlipsBillIndex).run();
 }
 async function readBill(db, id) {
   const row = await db.prepare('SELECT * FROM bills WHERE id=?').bind(id).first();
   return row ? { ...row, ...JSON.parse(row.payload) } : null;
 }
 async function promptPaySettings(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS billing_settings (id INTEGER PRIMARY KEY CHECK(id=1), promptpay TEXT NOT NULL)',
-    )
-    .run();
+  await db.prepare(SQL.billingSettings).run();
   return await db.prepare('SELECT promptpay FROM billing_settings WHERE id=1').first();
 }
 async function prepareMemberPromptPay(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_promptpay (user_id TEXT PRIMARY KEY, promptpay TEXT NOT NULL, updated_at TEXT NOT NULL)',
-    )
-    .run();
+  await db.prepare(SQL.memberPromptPay).run();
 }
 async function getMemberPromptPay(db, userId) {
   if (!userId) return '';

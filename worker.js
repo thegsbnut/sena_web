@@ -13,11 +13,12 @@ import './public/engine.js';
 import seed from './seed.json' with { type: 'json' };
 import { logError } from './log.js';
 import { withSchemaCache } from './schema-cache.js';
+import { DB_SCHEMA, SLIPS_SCHEMA, SQL, stateTableSql } from './schema.js';
 
 const cachedEnv = env => ({
   ...env,
-  DB: withSchemaCache(env.DB),
-  SLIPS_DB: withSchemaCache(env.SLIPS_DB),
+  DB: withSchemaCache(env.DB, DB_SCHEMA),
+  SLIPS_DB: withSchemaCache(env.SLIPS_DB, SLIPS_SCHEMA),
 });
 const enc = new TextEncoder();
 const json = (data, status = 200, headers = {}) =>
@@ -46,9 +47,7 @@ async function sign(value, key) {
 }
 async function sessionSignature(exp, env, initialize = false) {
   if (initialize) {
-    await env.DB.prepare(
-      'CREATE TABLE IF NOT EXISTS session_signing (id INTEGER PRIMARY KEY, secret TEXT NOT NULL)',
-    ).run();
+    await env.DB.prepare(SQL.sessionSigning).run();
     await env.DB.prepare(
       'INSERT OR IGNORE INTO session_signing (id,secret) VALUES (1,lower(hex(randomblob(32))))',
     ).run();
@@ -221,9 +220,7 @@ export default {
       const stateTable = clubOf(club).stateTable;
       // The default club's table comes from schema.sql; every other club's is created on demand.
       if (club !== DEFAULT_CLUB && env.DB && ['/api/state', '/api/generate'].includes(path))
-        await env.DB.prepare(
-          `CREATE TABLE IF NOT EXISTS ${stateTable} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
-        ).run();
+        await env.DB.prepare(stateTableSql(stateTable)).run();
       if (path === '/') return Response.redirect(url.origin + '/court.html', 302);
       if (path === '/api/line/webhook') return await lineWebhook(req, env, ctx);
       if (path.startsWith('/api/') && req.method !== 'GET' && !originOK(req))

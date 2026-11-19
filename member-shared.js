@@ -1,4 +1,5 @@
 import { clubOf, CLUB_IDS } from './clubs.js';
+import { SQL, stateTableSql } from './schema.js';
 export class MappingError extends Error {
   constructor(message) {
     super(message);
@@ -11,11 +12,7 @@ const fail = message => {
 const key = name => name.normalize('NFC').trim().toLowerCase();
 async function readRoster(db, club) {
   const table = clubOf(club).stateTable;
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
-    )
-    .run();
+  await db.prepare(stateTableSql(table)).run();
   const row = await db.prepare(`SELECT revision,payload FROM ${table} WHERE id=1`).first();
   return {
     table,
@@ -157,11 +154,7 @@ export async function mapBoth(
         .bind(userId, c, target.id, target.name, create ? 'new' : 'existing', time),
     );
   }
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_write_guards (id TEXT PRIMARY KEY,ok INTEGER NOT NULL CHECK(ok=1))',
-    )
-    .run();
+  await db.prepare(SQL.memberWriteGuards).run();
   const operation = crypto.randomUUID();
   const guard = db
     .prepare(

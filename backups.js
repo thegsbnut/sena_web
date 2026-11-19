@@ -1,5 +1,6 @@
 import { clubOf } from './clubs.js';
 import { cleanCup } from './leaderboard.js';
+import { SQL, backupTriggerSql, cupTableSql, stateTableSql } from './schema.js';
 const reply = (data, status = 200) =>
   Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const tables = club => ({ state: clubOf(club).stateTable, history: clubOf(club).cupTable });
@@ -7,35 +8,11 @@ const tables = club => ({ state: clubOf(club).stateTable, history: clubOf(club).
 // A rejected revision never creates a misleading backup; a failed backup aborts the write.
 export async function prepareBackups(db, club) {
   const t = tables(club);
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS backups (seq INTEGER PRIMARY KEY AUTOINCREMENT, club TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, reason TEXT NOT NULL)',
-    )
-    .run();
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS ${t.state} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
-    )
-    .run();
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS ${t.history} (id TEXT PRIMARY KEY,revision INTEGER NOT NULL,sequence INTEGER NOT NULL,payload TEXT NOT NULL)`,
-    )
-    .run();
-  await db
-    .prepare(
-      `CREATE TRIGGER IF NOT EXISTS backups_retention AFTER INSERT ON backups BEGIN DELETE FROM backups WHERE club=NEW.club AND seq NOT IN (SELECT seq FROM backups WHERE club=NEW.club ORDER BY seq DESC LIMIT 30); END`,
-    )
-    .run();
-  for (const kind of ['state', 'history'])
-    await db
-      .prepare(
-        `CREATE TRIGGER IF NOT EXISTS backup_${t[kind]} BEFORE UPDATE OF payload ON ${t[kind]} WHEN OLD.payload <> NEW.payload BEGIN
- INSERT INTO backups (club,kind,target,revision,payload,created_at,reason) VALUES ('${club}','${kind}',OLD.id,OLD.revision,OLD.payload,strftime('%Y-%m-%dT%H:%M:%fZ','now'),'${kind === 'state' ? 'ก่อนบันทึกข้อมูลออนไลน์ / กู้คืน' : 'ก่อนแก้ประวัติ / กู้คืน'}');
- DELETE FROM backups WHERE club='${club}' AND seq NOT IN (SELECT seq FROM backups WHERE club='${club}' ORDER BY seq DESC LIMIT 30);
- END`,
-      )
-      .run();
+  await db.prepare(SQL.backups).run();
+  await db.prepare(stateTableSql(t.state)).run();
+  await db.prepare(cupTableSql(t.history)).run();
+  await db.prepare(SQL.backupsRetention).run();
+  for (const kind of ['state', 'history']) await db.prepare(backupTriggerSql(club, kind)).run();
 }
 export async function backupsRoute(req, env, isAdmin, club, valid) {
   if (!isAdmin) return reply({ error: 'กรุณาเข้าสู่ระบบผู้จัด' }, 401);

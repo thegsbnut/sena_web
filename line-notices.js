@@ -1,4 +1,5 @@
 import { clubOf } from './clubs.js';
+import { SQL } from './schema.js';
 
 // Group notices: the LIFF page posts a plain text message into the group in the
 // player's name (free). When the bot should add something (tag the waitlisted
@@ -33,11 +34,7 @@ const randomCode = () =>
   [...crypto.getRandomValues(new Uint8Array(5))].map(b => alphabet[b % 36]).join('');
 
 async function prepare(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS line_notices (code TEXT PRIMARY KEY, club TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL, used_at INTEGER)',
-    )
-    .run();
+  await db.prepare(SQL.lineNotices).run();
 }
 
 export async function createNotice(db, { club, kind, payload }, now = Date.now()) {

@@ -1,6 +1,7 @@
 import { clubOf, counterpartClub, CLUB_IDS, DEFAULT_CLUB, isClub } from './clubs.js';
 import { mapBoth, MappingError } from './member-shared.js';
 import { prepareBills } from './billing.js';
+import { SQL, stateTableSql } from './schema.js';
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
     status,
@@ -42,32 +43,12 @@ const sessionCookie = value =>
   '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=' +
   (value ? SESSION_MS / 1000 : 0);
 export async function prepareMembers(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_profiles (user_id TEXT PRIMARY KEY,line_name TEXT NOT NULL)',
-    )
-    .run();
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_sessions (token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at INTEGER NOT NULL)',
-    )
-    .run();
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_links (user_id TEXT NOT NULL,club TEXT NOT NULL,player_id TEXT,name TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(user_id,club))',
-    )
-    .run();
-  await db
-    .prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS member_player_unique ON member_links(club,player_id) WHERE status='approved'",
-    )
-    .run();
+  await db.prepare(SQL.memberProfiles).run();
+  await db.prepare(SQL.memberSessions).run();
+  await db.prepare(SQL.memberLinks).run();
+  await db.prepare(SQL.memberPlayerUnique).run();
   // LINE accounts the organizer marked as admins: same rights as the ADMIN_KEY login.
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS member_admins (user_id TEXT PRIMARY KEY,granted_at TEXT NOT NULL)',
-    )
-    .run();
+  await db.prepare(SQL.memberAdmins).run();
 }
 
 // One round trip per request for everything the auth checks need: the live
@@ -156,11 +137,7 @@ export async function memberFor(req, env, club) {
 
 async function roster(db, club) {
   const table = clubOf(club).stateTable;
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,updated_at TEXT NOT NULL)`,
-    )
-    .run();
+  await db.prepare(stateTableSql(table)).run();
   const row = await db.prepare(`SELECT revision,payload FROM ${table} WHERE id=1`).first();
   return {
     row,

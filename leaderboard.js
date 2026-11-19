@@ -1,6 +1,7 @@
 import { clubOf, DEFAULT_CLUB } from './clubs.js';
 import { baseline } from './leaderboard-data.js';
 import './public/engine.js';
+import { SQL, cupTableSql } from './schema.js';
 // Built-in spelling aliases (clubs.js) only fold legacy names together: who a player
 // IS comes from their roster id, so renaming someone keeps their Cup history.
 const canonicalName = (name, club = DEFAULT_CLUB) => {
@@ -75,11 +76,7 @@ async function rosterOf(db, club) {
 // The frozen name→id map. The first call per club builds it from the roster of the day
 // (marker row name_key=''), so renaming a player later cannot cut them off their history.
 export async function legacyNames(db, club) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS cup_name_ids (club TEXT NOT NULL, name_key TEXT NOT NULL, player_id TEXT NOT NULL, PRIMARY KEY (club, name_key))',
-    )
-    .run();
+  await db.prepare(SQL.cupNameIds).run();
   const read = async () =>
     (await db.prepare('SELECT name_key,player_id FROM cup_name_ids WHERE club=?').bind(club).all())
       .results;
@@ -191,11 +188,7 @@ const key = (name, club = DEFAULT_CLUB) => canonicalName(name, club).toLowerCase
 export { key as cupPlayerKey };
 export async function cupHistoryTable(db, club) {
   const table = clubOf(club).cupTable;
-  await db
-    .prepare(
-      `CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL)`,
-    )
-    .run();
+  await db.prepare(cupTableSql(table)).run();
   return table;
 }
 export async function latestCup(db, club) {

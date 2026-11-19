@@ -4,6 +4,7 @@
 import './public/job-rules.js';
 import './public/engine.js';
 import { cupHistoryTable, cupMedals, identityFrom, legacyNames } from './leaderboard.js';
+import { SQL } from './schema.js';
 
 // A night that has a Cup counts as this many plays toward the badge level (normal night = 1).
 export const CUP_DAY_PLAYS = 3;
@@ -11,16 +12,8 @@ export const CUP_DAY_PLAYS = 3;
 export const CUP_DAY_SINCE = '2026-11-17';
 
 export async function prepareJobTables(db) {
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS attendance (club TEXT NOT NULL, session_date TEXT NOT NULL, player_id TEXT NOT NULL, PRIMARY KEY (club, session_date, player_id))',
-    )
-    .run();
-  await db
-    .prepare(
-      'CREATE TABLE IF NOT EXISTS player_jobs (club TEXT NOT NULL, player_id TEXT NOT NULL, line TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (club, player_id))',
-    )
-    .run();
+  await db.prepare(SQL.attendance).run();
+  await db.prepare(SQL.playerJobs).run();
 }
 
 // Count confirmed roster players (not guests, not waitlist) of every session
