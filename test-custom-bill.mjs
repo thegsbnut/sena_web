@@ -643,8 +643,14 @@ test('collect page: two tabs, the court tab only for organizers, organizers star
   );
   assert.match(js, /เก็บเงินทั่วไป/);
   assert.match(js, /tab = organizer \? tab \|\| 'court' : 'general'/);
-  // Every entry point goes to the collect page.
-  assert.equal((js.match(/collect=1&club=\$\{club\}/g) || []).length, 2);
+  // Single unified entry point visible to everyone on the bills home page, styled green (.create-bill).
+  assert.equal((js.match(/collect=1&club=\$\{club\}/g) || []).length, 1);
+  assert.match(
+    js,
+    /class="button create-bill" href="\/billing\.html\?collect=1&club=\$\{club\}">💸 เก็บเงิน/,
+  );
+  assert.doesNotMatch(js, /สร้างบิลใหม่/);
+  assert.doesNotMatch(js, /canCollect/);
   assert.doesNotMatch(js, /manage=1&new=1&club=/);
 });
 

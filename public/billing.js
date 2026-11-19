@@ -522,7 +522,6 @@
        <span class="bar"><i style="width:${Math.round(overview.progress(b) * 100)}%"></i></span>
        <small>${b.cancelled ? 'ยกเลิกแล้ว' : b.outstanding ? 'ค้าง ' + money(b.outstanding) + ' บาท' : 'รวม ' + money(b.collection) + ' บาท'}</small></a>`;
     const inner = `
-   <div class="actions"><a class="button create-bill" href="/billing.html?collect=1&club=${club}">+ สร้างบิลใหม่</a></div>
    <div class="hero"><small>ค้างรวมทั้งก๊วน</small>
     <div class="big">${money(owe.totalCents)} <span>บาท · ${owe.people} คน</span></div>
     ${review.length ? `<p class="flag">รอตรวจ ${review.length} รายการ</p>` : ''}</div>
@@ -781,12 +780,9 @@
   }
   function showHome() {
     document.body.classList.add('home');
-    const canCollect = Boolean(adminList) || memberSession?.link?.status === 'approved';
     root.innerHTML =
       mineHtml() +
-      (canCollect
-        ? `<div class="actions collect-entry"><a class="button create-custom" href="/billing.html?collect=1&club=${club}">💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)</a></div>`
-        : '') +
+      `<div class="actions collect-entry"><a class="button create-bill" href="/billing.html?collect=1&club=${club}">💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)</a></div>` +
       createdHtml() +
       (adminList ? adminOverviewHtml() : '');
     const roster = document.querySelector('.next-tabbar [data-go=roster]');

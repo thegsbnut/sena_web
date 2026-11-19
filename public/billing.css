@@ -706,9 +706,8 @@ body.nxc.home .mine .copy-row {
 }
 
 /* custom bill form */
-.create-custom {
-  display: inline-block;
-  margin-bottom: 0.4rem;
+.collect-entry {
+  margin: 0 0 1rem;
 }
 .cb-members {
   display: grid;
