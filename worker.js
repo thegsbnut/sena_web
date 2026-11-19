@@ -256,7 +256,8 @@ export default {
       if (path === '/api/leaderboard') {
         const admin = await authorized(req, env);
         if (admin && env.DB && req.method === 'POST') await prepareBackups(env.DB, club);
-        return await leaderboardRoute(req, env, admin, club);
+        const member = req.method === 'GET' ? await memberFor(req, env, club) : null;
+        return await leaderboardRoute(req, env, admin, club, member);
       }
       if (path === '/api/login' && req.method === 'POST') {
         if (!env.DB)

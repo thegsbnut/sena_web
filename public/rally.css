@@ -258,6 +258,8 @@ summary:focus-visible {
   max-width: 100%;
 }
 .leaderboard-scroll table {
+  border-collapse: separate;
+  border-spacing: 0;
   white-space: nowrap;
   margin: 12px 0;
   min-width: 790px;
@@ -265,17 +267,69 @@ summary:focus-visible {
 .leaderboard-scroll th {
   font-weight: 800;
 }
+.leaderboard-scroll th:first-child,
+.leaderboard-scroll td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+  background: var(--paper);
+}
 .leaderboard-scroll td:first-child {
   font-weight: 900;
 }
-.rank-1 {
+.leaderboard-scroll th:nth-child(2) {
+  position: sticky;
+  left: 40px;
+  z-index: 2;
+  background: var(--paper);
+  box-shadow:
+    inset -1px 0 0 var(--line),
+    4px 0 6px -4px #092e2438;
+}
+.leaderboard-scroll td.rank-1 {
   background: #e9d44b;
 }
-.rank-2 {
+.leaderboard-scroll td.rank-2 {
   background: #d6dfd3;
 }
-.rank-3 {
+.leaderboard-scroll td.rank-3 {
   background: #cd9d66;
+}
+.leaderboard-scroll tr.is-me > td,
+.leaderboard-scroll tr.is-me > th {
+  background: #e8f5c8;
+}
+.leaderboard-scroll tr.is-me > td.rank-1 {
+  background: #e9d44b;
+}
+.leaderboard-scroll tr.is-me > td.rank-2 {
+  background: #d6dfd3;
+}
+.leaderboard-scroll tr.is-me > td.rank-3 {
+  background: #cd9d66;
+}
+.leaderboard-scroll tr.is-me > td:first-child {
+  box-shadow: inset 4px 0 0 #237342;
+}
+.leaderboard-scroll tr.is-me > td.up {
+  background: #d6f0a5;
+}
+.leaderboard-scroll tr.is-me > td.down {
+  background: #ffd6c6;
+}
+.me-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--green);
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
 }
 .up {
   color: #235f28;
@@ -314,11 +368,6 @@ summary:focus-visible {
   .leaderboard-scroll th,
   .leaderboard-scroll td {
     padding: 10px 8px;
-  }
-  .leaderboard-scroll th:nth-child(2) {
-    position: sticky;
-    left: 0;
-    background: var(--paper);
   }
 }
 

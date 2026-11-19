@@ -68,11 +68,12 @@
           : '↓ ' + Math.abs(value);
   function draw() {
     const rows = data.standings;
+    const meKey = data.me ? data.me.trim().toLowerCase() : '';
     document.querySelector('#leaderboardRows').innerHTML = rows
-      .map(
-        p =>
-          `<tr><td class="rank-${p.position}">${p.position}</td><th scope="row">${esc(p.name)}</th><td>${p.played}</td><td>${p.w}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pa}</td><td>${p.diff > 0 ? '+' : ''}${p.diff}</td><td>${p.winPercent.toFixed(2)}%</td><td>${p.crown || '—'}</td><td>${p.poo || '—'}</td><td class="${typeof p.change === 'number' ? (p.change > 0 ? 'up' : p.change < 0 ? 'down' : '') : ''}">${esc(changeText(p.change))}</td></tr>`,
-      )
+      .map(p => {
+        const isMe = Boolean(meKey) && p.name.trim().toLowerCase() === meKey;
+        return `<tr${isMe ? ' class="is-me"' : ''}><td class="rank-${p.position}">${p.position}</td><th scope="row">${esc(p.name)}${isMe ? ' <span class="me-tag">คุณ</span>' : ''}</th><td>${p.played}</td><td>${p.w}</td><td>${p.l}</td><td>${p.pf}</td><td>${p.pa}</td><td>${p.diff > 0 ? '+' : ''}${p.diff}</td><td>${p.winPercent.toFixed(2)}%</td><td>${p.crown || '—'}</td><td>${p.poo || '—'}</td><td class="${typeof p.change === 'number' ? (p.change > 0 ? 'up' : p.change < 0 ? 'down' : '') : ''}">${esc(changeText(p.change))}</td></tr>`;
+      })
       .join('');
     document.querySelector('#manualHistory').hidden = !data.canEdit;
     document.querySelector('#cupArchiveHint').textContent = data.canEdit
@@ -98,7 +99,11 @@
     if (!res.ok) throw Error(body.error);
     data = body;
     draw();
-    window.SenaLeaderboardSnapshot = { history: data.history, standings: data.standings };
+    window.SenaLeaderboardSnapshot = {
+      history: data.history,
+      standings: data.standings,
+      me: data.me || null,
+    };
     window.dispatchEvent(
       new CustomEvent('sena:leaderboard', { detail: window.SenaLeaderboardSnapshot }),
     );
