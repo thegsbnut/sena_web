@@ -15,9 +15,16 @@
   const svg = d => '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + d + '</svg>';
 
   // Bills live in an iframe inside the page, so switching tabs never reloads the page.
+  let preloadedAt = 0;
   function billsFrame() {
     const frame = document.querySelector('#billsFrame');
     if (!frame) return;
+    // Loaded in the background a moment ago: already fresh, skip the refresh once.
+    if (preloadedAt) {
+      const fresh = Date.now() - preloadedAt < 60000;
+      preloadedAt = 0;
+      if (fresh) return;
+    }
     document.documentElement.style.setProperty(
       '--nav-h',
       document.querySelector('.next-tabbar').offsetHeight + 'px',
@@ -101,6 +108,24 @@
     document.body.dataset.tab = id;
     document.documentElement.classList.toggle('bills-open', id === 'bills');
   }
+
+  // Start the bills page in the background once this page is idle, so the first tap on
+  // the bills tab shows it straight away. Not on data saver, and not when the link
+  // itself asks for a bill (that opens on the bills tab at once anyway).
+  function preloadBills() {
+    const frame = document.querySelector('#billsFrame');
+    if (!frame || frame.getAttribute('src') || navigator.connection?.saveData) return;
+    const query = new URLSearchParams(location.search);
+    if (query.has('bills') || query.has('bill')) return;
+    billsFrame();
+    preloadedAt = Date.now();
+  }
+  function whenIdle() {
+    if ('requestIdleCallback' in window) requestIdleCallback(preloadBills, { timeout: 3000 });
+    else setTimeout(preloadBills, 1500);
+  }
+  if (document.readyState === 'complete') whenIdle();
+  else window.addEventListener('load', whenIdle, { once: true });
 
   tabs();
   checkDue();

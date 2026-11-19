@@ -1009,7 +1009,10 @@
     if (tab === 'court') await openDraft();
     else await showCustom();
   }
-  async function load() {
+  // Both lists, fetched together. Neither depends on the member session, so the first
+  // load starts them alongside /api/member instead of after it.
+  const fetchLists = () => Promise.all([request().catch(() => null), loadMine()]);
+  async function load(prefetched) {
     document.body.classList.remove('home');
     picker.hidden = Boolean(id);
     if (id) {
@@ -1018,7 +1021,7 @@
       return;
     }
     mineCache.clear();
-    const [list, memberBills] = await Promise.all([request().catch(() => null), loadMine()]);
+    const [list, memberBills] = await (prefetched ?? fetchLists());
     adminList = list;
     mine = memberBills;
     // Tell the menu around this page (court.html) whether to show the red "!" on the bills tab.
@@ -1623,7 +1626,10 @@
   });
   run(async () => {
     try {
-      const memberResponse = await fetch('/api/member?club=' + club, { cache: 'no-store' });
+      const memberRequest = fetch('/api/member?club=' + club, { cache: 'no-store' });
+      // The home page (the bills tab) needs the lists whatever the session says: start them now.
+      const lists = !id && !collect && params.get('custom') !== 'new' ? fetchLists() : null;
+      const memberResponse = await memberRequest;
       if (memberResponse.ok) memberSession = await memberResponse.json();
       if (
         memberSession?.requireLogin &&
@@ -1644,7 +1650,7 @@
         showCustom();
         return;
       }
-      await load();
+      await load(lists);
       if (!id && manage && (params.has('date') || params.has('new'))) await openDraft();
     } catch (error) {
       if (manage && !payerToken)
