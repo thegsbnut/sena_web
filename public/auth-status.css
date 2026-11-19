@@ -80,6 +80,7 @@
   width: 100%;
   margin: 0;
 }
+.sena-authbar[hidden],
 .sena-authbar [hidden] {
   display: none !important;
 }

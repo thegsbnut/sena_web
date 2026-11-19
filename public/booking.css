@@ -75,6 +75,73 @@
   font-weight: 800;
   letter-spacing: 1px;
 }
+.booking-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #133128;
+  border: 1px solid #2f6252;
+  color: #f6f7ee;
+}
+.booking-profile[hidden] {
+  display: none;
+}
+.booking-profile-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.booking-profile-info {
+  min-width: 0;
+}
+.booking-profile-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+.booking-profile-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.booking-profile-role {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #24574a;
+  border: 1px solid #6f8d7c;
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 800;
+}
+.booking-profile-meta {
+  font-size: 12px;
+  color: #b8cdbf;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booking-profile-pick {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: #102219;
+  border: 1.5px solid #445321;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
 .booking-status {
   font-size: 13px;
   color: var(--paper);
@@ -950,6 +1017,12 @@ main:has(#booking:not([hidden])) > .venue-picker small {
   font-size: 11px;
 }
 
+.booking-date-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .booking-date-bottom .booking-roster-action {
   min-height: 44px;
   padding: 8px 12px;
@@ -964,6 +1037,75 @@ main:has(#booking:not([hidden])) > .venue-picker small {
 .booking-date-bottom .booking-roster-action:hover {
   background: #d8eadd;
 }
+.booking-date-bottom .booking-withdraw-action {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #dfa8a0;
+  border-radius: 8px;
+  background: #fff1ee;
+  color: #9f2424;
+  font-size: 14px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.booking-date-bottom .booking-withdraw-action:hover {
+  background: #fde3dd;
+}
+.booking-person.is-me {
+  background: #eef6dc;
+  border-radius: 10px;
+  padding: 11px 10px;
+  margin: 4px -6px;
+  border-bottom-color: #d4e0b8;
+  box-shadow: inset 3px 0 #3f7c33;
+}
+.booking-me-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1f6b3a;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+.booking-player-locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 10px 0 6px;
+  border-radius: 10px;
+  background: #eaf3d8;
+  border: 1px solid #b8cf96;
+  color: #183d29;
+  font-size: 14px;
+}
+.booking-player-locked[hidden] {
+  display: none;
+}
+.booking-player-locked-label {
+  color: #49664c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.booking-player-locked strong {
+  font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.booking-player-locked-via {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1f6b3a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
 .booking-person .booking-cancel {
   min-height: 44px;
   flex-shrink: 0;
@@ -973,8 +1115,12 @@ main:has(#booking:not([hidden])) > .venue-picker small {
   .booking-date-bottom {
     flex-wrap: wrap;
   }
-  .booking-date-bottom .booking-roster-action {
+  .booking-date-actions {
     width: 100%;
+  }
+  .booking-date-bottom .booking-roster-action,
+  .booking-date-bottom .booking-withdraw-action {
+    flex: 1;
     text-align: center;
   }
 }

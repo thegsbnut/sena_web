@@ -627,19 +627,48 @@ async function customRoute(req, env, admin, club, action) {
   const member = memberMode(env) ? await memberFor(req, env, club) : null;
   const approved = member?.link?.status === 'approved';
   if (!admin && !approved) return fail('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว', 401);
-  await prepareMembers(db);
-  const members = await approvedMembers(db, club);
   if (action === 'people') {
     if (req.method !== 'GET') return fail('Method not allowed', 405);
-    const myPromptpay = await getMemberPromptPay(db, member?.userId);
+    await prepareMembers(db);
+    const [members, myPromptpay, bookingDoc] = await Promise.all([
+      approvedMembers(db, club),
+      getMemberPromptPay(db, member?.userId),
+      Promise.resolve()
+        .then(() => db.prepare('SELECT payload FROM booking_clubs WHERE club=?').bind(club).first())
+        .catch(() => null),
+    ]);
+    const memberIds = new Set(members.map(m => m.playerId));
+    const sessions = bookingDoc
+      ? (JSON.parse(bookingDoc.payload).sessions || [])
+          .filter(s => !s.skipped && s.registrations?.length)
+          .sort((a, b) => b.date.localeCompare(a.date))
+      : [];
+    const today = thaiDay(0);
+    const picked = sessions.find(s => s.date <= today) || sessions[0] || null;
+    const recentKeys = picked
+      ? [
+          ...new Set(
+            picked.registrations
+              .slice(0, picked.capacity)
+              .map(r => r.guest?.hostId || r.invitedBy || r.playerId)
+              .filter(id => memberIds.has(id))
+              .map(id => 'member:' + id),
+          ),
+        ]
+      : [];
     return json({
       members: members
         .map(m => ({ payerKey: 'member:' + m.playerId, name: m.name }))
         .sort((a, b) => a.name.localeCompare(b.name, 'th')),
       me: approved ? 'member:' + member.link.player_id : null,
       myPromptpay,
+      recentSession: recentKeys.length
+        ? { date: picked.date, time: picked.start + '–' + picked.end, payerKeys: recentKeys }
+        : null,
     });
   }
+  await prepareMembers(db);
+  const members = await approvedMembers(db, club);
   if (req.method !== 'POST') return fail('Method not allowed', 405);
   if (!env.SLIPS_DB) return fail('ยังไม่พร้อมรับสลิป กรุณาติดต่อผู้จัดระบบ', 503);
   const read = readCustomInput(await readLimitedJson(req), members);

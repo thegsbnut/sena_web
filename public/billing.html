@@ -12,7 +12,7 @@
  <script defer src="/billing-overview.js?v=20261113-sorted"></script>
  <script defer src="/line-notice.js?v=20261115-report"></script>
  <script defer src="/custom-split.js?v=20261117-collect"></script>
- <script defer src="/billing-custom.js?v=20261118-hide-receiver"></script>
+ <script defer src="/billing-custom.js?v=20261119-slip-custom"></script>
  <script defer src="/billing.js?v=20261119-scroll"></script>
 </head>
 <body class="nxc">
@@ -22,7 +22,23 @@
   <p id="status" role="status">กำลังโหลดบิล…</p>
   <div id="billing"></div>
  </main>
- <dialog id="receipt"><form method="dialog"><button>ปิดสลิป</button></form><img alt="สลิปโอนเงิน"></dialog>
+ <dialog id="receipt" aria-labelledby="receiptInfo">
+  <div id="receiptInfo" class="receipt-info"></div>
+  <div id="receiptAi" class="receipt-ai"></div>
+  <img alt="สลิปโอนเงิน">
+  <div id="receiptActions" class="actions receipt-actions"><button type="button" data-receipt-action="close">ปิดสลิป</button></div>
+ </dialog>
+ <dialog id="slipPreview" aria-labelledby="slipPreviewTitle">
+  <h2 id="slipPreviewTitle">ตรวจสลิปก่อนส่ง</h2>
+  <p id="slipPreviewMeta" class="muted"></p>
+  <img alt="พรีวิวรูปสลิป">
+  <p class="muted">ส่งแล้วจะบันทึกว่าจ่ายทันที กรุณาตรวจยอดและบัญชีปลายทางก่อนยืนยัน</p>
+  <div class="actions receipt-actions">
+   <button id="slipPreviewConfirm" class="primary" type="button">ยืนยันส่งสลิป</button>
+   <button id="slipPreviewRetake" type="button">เลือกรูปใหม่</button>
+   <button id="slipPreviewCancel" type="button">ยกเลิก</button>
+  </div>
+ </dialog>
  <dialog id="paymentQr" aria-labelledby="paymentQrTitle">
   <h2 id="paymentQrTitle">จ่ายด้วย QR พร้อมเพย์</h2>
   <p id="paymentQrAmount"></p>

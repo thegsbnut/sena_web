@@ -1078,3 +1078,32 @@ test('member bills come from SQL: own payer rows only, newest first, no cancelle
     ['old'],
   );
 });
+
+test('GET /api/leaderboard returns current roster name in me for approved linked member only', async t => {
+  const f = fixture(t);
+  // Guest (unauthenticated) does not get me
+  const guestBoard = await (await f.request('/api/leaderboard')).json();
+  assert.equal(guestBoard.me, undefined);
+
+  // Logged-in but not yet linked does not get me
+  const member = await f.login();
+  const unlinkedBoard = await (await f.request('/api/leaderboard', null, member)).json();
+  assert.equal(unlinkedBoard.me, undefined);
+
+  // Approved link returns current roster name
+  assert.equal((await f.request('/api/member/link', { playerId: 'p0' }, member)).status, 200);
+  const linkedBoard = await (await f.request('/api/leaderboard', null, member)).json();
+  assert.equal(linkedBoard.me, 'Nut');
+
+  // If the roster player is renamed, leaderboard.me reflects the new name
+  f.db.prepare('UPDATE club_state SET payload = ? WHERE id = 1').run(
+    JSON.stringify({
+      players: [
+        { id: 'p0', name: 'NutNew', thai: '', lv: 8, gender: 'M' },
+        { id: 'p1', name: 'Pete', thai: '', lv: 7, gender: 'M' },
+      ],
+    }),
+  );
+  const renamedBoard = await (await f.request('/api/leaderboard', null, member)).json();
+  assert.equal(renamedBoard.me, 'NutNew');
+});

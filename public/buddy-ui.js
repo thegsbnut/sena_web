@@ -10,7 +10,8 @@
   ];
   let profiles = [],
     current = null,
-    category = 0;
+    category = 0,
+    userPicked = false;
   const percent = n => Number(n.toFixed(1)).toString();
   function tab(name) {
     document.querySelectorAll('[data-board-tab]').forEach(button => {
@@ -37,13 +38,17 @@
       ...data.standings.map(p => p.name),
       ...profiles.map(p => p.name),
       ...state.players.map(p => p.name),
+      ...(data.me ? [data.me] : []),
     ])
-      if (!names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
     const old = select.value;
     select.innerHTML = [...names.values()]
       .map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>')
       .join('');
-    if ([...select.options].some(o => o.value === old)) select.value = old;
+    const meKey = data.me ? data.me.trim().toLowerCase() : '';
+    const meOption = meKey && [...select.options].find(o => o.value.trim().toLowerCase() === meKey);
+    if (!userPicked && meOption) select.value = meOption.value;
+    else if ([...select.options].some(o => o.value === old)) select.value = old;
     select.disabled = !names.size;
     render();
   }
@@ -94,7 +99,10 @@
         button.setAttribute('aria-pressed', String(+button.dataset.buddyCategory === category)),
       );
   }
-  select.onchange = render;
+  select.onchange = () => {
+    userPicked = true;
+    render();
+  };
   document.getElementById('buddyCards').onclick = event => {
     const button = event.target.closest('[data-buddy-category]');
     if (!button) return;

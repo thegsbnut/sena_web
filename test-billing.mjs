@@ -518,6 +518,35 @@ test('"ของฉัน" attaches a slip and declares cash on the home page it
   assert.match(src, /id="mineSlip"/);
 });
 
+test('billing #status is a floating toast and copy buttons show inline feedback', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('./public/billing.css', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('./public/billing.js', import.meta.url), 'utf8');
+  assert.match(css, /#status\s*\{[^}]*position:\s*fixed;/);
+  assert.match(css, /body\.nxc:not\(\.embedded\)\s+#status\s*\{[^}]*bottom:\s*calc\(74px/);
+  assert.match(css, /#status\.error\s*\{[^}]*pointer-events:\s*auto;/);
+  assert.match(css, /button\.is-copied/);
+  assert.match(js, /function flashCopied\(button, label = 'คัดลอกแล้ว ✓'\)/);
+  assert.match(js, /status\.addEventListener\('click'/);
+  assert.match(js, /if \(action === 'mine-copy'\) return copy\(target\.dataset\.value, target\)/);
+  assert.match(js, /if \(action === 'copy-promptpay'\) return copy\(bill\.transfer, target\)/);
+  assert.match(js, /return copy\(lines\.join\('\\n'\), target\)/);
+});
+
+test('slip upload uses preview dialog instead of confirm(), receipt modal has actions, and owner paid row is labelled', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('./public/billing.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./public/billing.css', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('./public/billing.js', import.meta.url), 'utf8');
+  assert.match(html, /<dialog id="slipPreview"/);
+  assert.match(html, /id="receiptInfo"/);
+  assert.match(html, /id="receiptActions"/);
+  assert.match(css, /body\.nxc\.home dialog \.actions button/);
+  assert.match(js, /function previewSlip\(file, metaText, onRetake\)/);
+  assert.match(js, /function openReceiptModal\(blob, ctx = \{\}\)/);
+  assert.match(js, /b\.method === 'owner' \? '<small>คนออกเงิน<\/small>'/);
+});
+
 test('payments return a group notice; the payment that completes the bill carries a code', async t => {
   const f = fixture(t),
     cookie = await f.login();

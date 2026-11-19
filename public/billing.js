@@ -81,11 +81,85 @@
   for (const link of document.querySelectorAll('.next-tabbar [data-go]'))
     link.href = '/court' + clubQuery + '#' + link.dataset.go;
   document.querySelector('.next-tabbar .tab.active').href = '/billing.html' + clubQuery;
+  const slipPreview = document.querySelector('#slipPreview');
+  const receiptInfo = receipt.querySelector('#receiptInfo');
+  const receiptAi = receipt.querySelector('#receiptAi');
+  const receiptActions = receipt.querySelector('#receiptActions');
+  let receiptContext = null;
   receipt.addEventListener('close', () => {
     if (slipUrl) URL.revokeObjectURL(slipUrl);
     slipUrl = undefined;
+    receiptContext = null;
     receipt.querySelector('img').removeAttribute('src');
+    receiptInfo.textContent = '';
+    receiptAi.innerHTML = '';
+    receiptActions.innerHTML = '<button type="button" data-receipt-action="close">ปิดสลิป</button>';
   });
+  receiptActions.addEventListener('click', event => {
+    const btn = event.target.closest('[data-receipt-action]');
+    if (!btn) return;
+    const act = btn.dataset.receiptAction;
+    const ctx = receiptContext;
+    receipt.close();
+    if (act === 'approve') ctx?.onApprove?.();
+    if (act === 'reject') ctx?.onReject?.();
+  });
+  function openReceiptModal(blob, ctx = {}) {
+    if (slipUrl) URL.revokeObjectURL(slipUrl);
+    slipUrl = URL.createObjectURL(blob);
+    receiptContext = ctx;
+    receiptInfo.textContent = ctx.title || '';
+    receiptAi.innerHTML = ctx.aiHtml || '';
+    receipt.querySelector('img').src = slipUrl;
+    const buttons = [];
+    if (ctx.onApprove)
+      buttons.push(
+        '<button type="button" class="primary" data-receipt-action="approve">ยืนยันจ่าย</button>',
+      );
+    if (ctx.onReject)
+      buttons.push('<button type="button" data-receipt-action="reject">ให้ส่งใหม่</button>');
+    buttons.push('<button type="button" data-receipt-action="close">ปิดสลิป</button>');
+    receiptActions.innerHTML = buttons.join('');
+    receipt.showModal();
+    message('');
+  }
+  let previewUrl, previewResolve, previewOnRetake;
+  slipPreview.addEventListener('close', () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = undefined;
+    previewOnRetake = undefined;
+    slipPreview.querySelector('img').removeAttribute('src');
+    const resolve = previewResolve;
+    previewResolve = undefined;
+    resolve?.('cancel');
+  });
+  for (const [id, result] of [
+    ['#slipPreviewConfirm', 'confirm'],
+    ['#slipPreviewRetake', 'retake'],
+    ['#slipPreviewCancel', 'cancel'],
+  ])
+    slipPreview.querySelector(id).addEventListener('click', () => {
+      const resolve = previewResolve;
+      const onRetake = previewOnRetake;
+      previewResolve = undefined;
+      previewOnRetake = undefined;
+      slipPreview.close();
+      if (result === 'retake') onRetake?.();
+      resolve?.(result);
+    });
+  function previewSlip(file, metaText, onRetake) {
+    if (!file || file.size > 20 * 1024 * 1024)
+      return Promise.reject(Error('เลือกรูปสลิปขนาดไม่เกิน 20 MB'));
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    previewOnRetake = onRetake;
+    slipPreview.querySelector('#slipPreviewMeta').textContent = metaText;
+    slipPreview.querySelector('img').src = previewUrl;
+    slipPreview.showModal();
+    return new Promise(resolve => {
+      previewResolve = resolve;
+    });
+  }
   paymentQr.addEventListener('close', () => {
     if (qrPhotoUrl) URL.revokeObjectURL(qrPhotoUrl);
     qrPhoto = qrPhotoUrl = undefined;
@@ -184,15 +258,26 @@
       })
       .join('');
   }
-  function message(text, error = false) {
+  let statusTimer = null;
+  function message(text, error = false, { persist = false } = {}) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
     status.textContent = text;
     status.classList.toggle('error', error);
+    if (text && !error && !persist) {
+      statusTimer = setTimeout(() => {
+        if (!busy && status.textContent === text) message('');
+      }, 3500);
+    }
   }
+  status.addEventListener('click', () => {
+    if (!busy) message('');
+  });
   async function run(operation) {
     if (busy) return;
     busy = true;
     root.setAttribute('aria-busy', 'true');
-    message('กำลังดำเนินการ…');
+    message('กำลังดำเนินการ…', false, { persist: true });
     try {
       await operation();
     } catch (error) {
@@ -200,6 +285,7 @@
     } finally {
       busy = false;
       root.removeAttribute('aria-busy');
+      if (status.textContent === 'กำลังดำเนินการ…') message('');
     }
   }
   function linkToBill(billId, admin = false) {
@@ -211,7 +297,22 @@
     }
     return url;
   }
-  async function copy(value) {
+  const copyFeedback = new WeakMap();
+  function flashCopied(button, label = 'คัดลอกแล้ว ✓') {
+    if (!button) return;
+    const prev = copyFeedback.get(button);
+    const originalText = prev ? prev.text : button.textContent;
+    if (prev) clearTimeout(prev.timer);
+    button.textContent = label;
+    button.classList.add('is-copied');
+    const timer = setTimeout(() => {
+      button.textContent = originalText;
+      button.classList.remove('is-copied');
+      copyFeedback.delete(button);
+    }, 2000);
+    copyFeedback.set(button, { text: originalText, timer });
+  }
+  async function copy(value, trigger) {
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -223,10 +324,11 @@
       box.select();
       if (document.execCommand('copy')) box.remove();
       else {
-        message('กดค้างในช่องข้อความเพื่อคัดลอก');
+        message('กดค้างในช่องข้อความเพื่อคัดลอก', false, { persist: true });
         return;
       }
     }
+    if (trigger) flashCopied(trigger);
     message('คัดลอกแล้ว');
   }
   let additionalKey, additionalDate, originalBillId;
@@ -743,7 +845,7 @@
      )
      .join('')}
    ${waiting.map(b => `<div class="mine collapsed" data-bill="${b.id}"><div class="t"><div><strong>${title(b)}</strong><br><small>${b.hasSlip ? 'ส่งสลิปแล้ว' : 'แจ้งจ่ายเงินสดแล้ว'} · รอผู้จัดตรวจ</small></div><span class="amt">${money(b.amount)} บ.</span>${slipButton(b)}</div></div>`).join('')}
-   ${paid.length ? `<details${paid.some(b => b.id === openBill) && openBill === focusBill ? ' open' : ''}><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe" data-bill="${b.id}"><div><strong>${title(b)}</strong>${b.method === 'cash' ? '<small>เงินสด</small>' : ''}</div><div class="r">✓ ${money(b.amount)} บ.${slipButton(b)}</div></div>`).join('')}</details>` : ''}`);
+   ${paid.length ? `<details${paid.some(b => b.id === openBill) && openBill === focusBill ? ' open' : ''}><summary>จ่ายแล้ว (${paid.length})</summary>${paid.map(b => `<div class="owe" data-bill="${b.id}"><div><strong>${title(b)}</strong>${b.method === 'owner' ? '<small>คนออกเงิน</small>' : b.method === 'cash' ? '<small>เงินสด</small>' : ''}</div><div class="r">✓ ${money(b.amount)} บ.${slipButton(b)}</div></div>`).join('')}</details>` : ''}`);
   }
 
   async function fillMine() {
@@ -970,55 +1072,54 @@
     }
     preview();
   });
-  root.addEventListener('change', e => {
+  root.addEventListener('change', async e => {
     if (e.target.id === 'mineSlip') {
       const input = e.target,
         item = mineItem(input.dataset.bill),
         file = input.files[0];
       input.value = '';
       if (!file || !item) return;
-      return run(async () => {
+      try {
         const { detail, payer } = await mineDetail(item);
-        if (
-          !confirm(
-            'แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ ' +
-              payer.name +
-              ' จำนวน ' +
-              money(payer.amount) +
-              ' บาท?',
-          )
-        )
-          return;
-        const blob = await compress(file);
-        await mineCall(
-          item,
-          'upload',
-          { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob },
-          payer.id,
-          payer.amount,
-          detail.paymentRevision,
+        const choice = await previewSlip(
+          file,
+          `${dateLabel(item.date)}${item.title ? ' · ' + item.title : ''} · ${payer.name} · ${money(payer.amount)} บาท`,
+          () => input.click(),
         );
-        await mineChanged();
-        message('แนบสลิปแล้ว · จ่ายแล้ว');
-      });
+        if (choice !== 'confirm') return;
+        return run(async () => {
+          const blob = await compress(file);
+          await mineCall(
+            item,
+            'upload',
+            { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob },
+            payer.id,
+            payer.amount,
+            detail.paymentRevision,
+          );
+          await mineChanged();
+          message('แนบสลิปแล้ว · จ่ายแล้ว');
+        });
+      } catch (error) {
+        message(error.message, true);
+      }
+      return;
     }
     if (e.target.id === 'paymentSlip') {
       const input = e.target,
         payer = bill.payers.find(p => p.id === input.dataset.payer),
         paymentRevision = bill.paymentRevision;
       const file = input.files[0];
-      if (
-        file &&
-        payer &&
-        confirm(
-          'แนบสลิปและบันทึกว่าจ่ายแล้วสำหรับ ' +
-            payer.name +
-            ' จำนวน ' +
-            money(payer.amount) +
-            ' บาท?',
-        )
-      )
-        run(async () => {
+      input.value = '';
+      if (!file || !payer) return;
+      try {
+        const choice = await previewSlip(
+          file,
+          `${payer.name} · ยอดที่ต้องจ่าย ${money(payer.amount)} บาท`,
+          () => input.click(),
+        );
+        if (choice !== 'confirm') return;
+        return run(async () => {
           const blob = await compress(file);
           await request(
             'upload',
@@ -1030,7 +1131,9 @@
           await load();
           message('แนบสลิปแล้ว · จ่ายแล้ว');
         });
-      input.value = '';
+      } catch (error) {
+        message(error.message, true);
+      }
       return;
     }
     if (!e.target.closest('#draft') || editing) return;
@@ -1170,12 +1273,12 @@
           root.prepend(report);
         }
         report.value = lines.join('\n');
-        message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้');
+        message('ตรวจแล้ว คัดลอกผลตรวจด้านบนส่งให้ผู้จัดหรือผู้พัฒนาได้', false, { persist: true });
       });
     if (action === 'nag' || action === 'nag-all') {
       const groups = window.BillingOverview.owing(adminList.bills).groups;
       const chosen = action === 'nag' ? groups.filter(g => g.name === target.dataset.name) : groups;
-      return copy(window.BillingOverview.reminderText(chosen, clubName(club), money));
+      return copy(window.BillingOverview.reminderText(chosen, clubName(club), money), target);
     }
     if (action === 'mine-slip') {
       const input = root.querySelector('#mineSlip');
@@ -1211,14 +1314,7 @@
     if (action.startsWith('rv-')) {
       const name = target.dataset.name,
         amount = money(Number(target.dataset.amount));
-      if (action === 'rv-slip')
-        return run(async () => {
-          slipUrl = URL.createObjectURL(await adminCall(target, 'slip'));
-          receipt.querySelector('img').src = slipUrl;
-          receipt.showModal();
-          message('');
-        });
-      if (action === 'rv-approve') {
+      const approveRow = () => {
         if (!confirm('ตรวจยอดและบัญชีรับเงินแล้ว ยืนยันว่า ' + name + ' จ่าย ' + amount + ' บาท?'))
           return;
         return run(async () => {
@@ -1231,8 +1327,8 @@
           await load();
           message('ยืนยันแล้ว · ' + name + ' จ่ายแล้ว');
         });
-      }
-      if (action === 'rv-reject') {
+      };
+      const rejectRow = () => {
         const aiCheck = adminList.bills
           .find(b => b.id === target.dataset.bill)
           ?.payers.find(p => p.id === target.dataset.payer)?.aiCheck;
@@ -1251,7 +1347,25 @@
           await load();
           message('ให้ ' + name + ' ส่งสลิปใหม่แล้ว');
         });
-      }
+      };
+      if (action === 'rv-slip')
+        return run(async () => {
+          const row = adminList.bills
+            .find(b => b.id === target.dataset.bill)
+            ?.payers.find(p => p.id === target.dataset.payer);
+          const blob = await adminCall(target, 'slip');
+          openReceiptModal(blob, {
+            title: `${name} · ยอดบิล ${amount} บาท`,
+            aiHtml: row ? aiLines({ hasSlip: true, aiCheck: row.aiCheck }) : '',
+            onApprove: row?.status === 'review' ? approveRow : undefined,
+            onReject:
+              !row || (row.method !== 'cash' && ['review', 'paid'].includes(row.status))
+                ? rejectRow
+                : undefined,
+          });
+        });
+      if (action === 'rv-approve') return approveRow();
+      if (action === 'rv-reject') return rejectRow();
       const received = action === 'rv-cash';
       if (
         !confirm(
@@ -1275,7 +1389,7 @@
       openBill = target.dataset.bill;
       return showHome();
     }
-    if (action === 'mine-copy') return copy(target.dataset.value);
+    if (action === 'mine-copy') return copy(target.dataset.value, target);
     if (action === 'mine-view-slip')
       return run(async () => {
         const item = mineItem(target.dataset.bill);
@@ -1284,10 +1398,9 @@
           { headers: { 'X-Bill-Token': payTokenOf(item) }, cache: 'no-store' },
         );
         if (!response.ok) throw Error('ไม่พบสลิป (อาจถูกลบหลังจ่ายครบแล้ว)');
-        slipUrl = URL.createObjectURL(await response.blob());
-        receipt.querySelector('img').src = slipUrl;
-        receipt.showModal();
-        message('');
+        openReceiptModal(await response.blob(), {
+          title: `${item.name} · ${money(item.amount)} บาท`,
+        });
       });
     if (action === 'save-qr')
       return shareQrPhoto(
@@ -1388,7 +1501,7 @@
       nameInput.value = hostInput.value = '';
       return renderAttendees();
     }
-    if (action === 'copy-promptpay') return run(() => copy(bill.transfer));
+    if (action === 'copy-promptpay') return copy(bill.transfer, target);
     if (action === 'qr' && payer)
       return run(async () => {
         qrPhoto = await qrPng(
@@ -1452,48 +1565,61 @@
       const reviewing = bill.payers.filter(p => p.status === 'review').length;
       if (reviewing) lines.push('รอตรวจสลิป/เงินสด ' + reviewing + ' คน');
       lines.push(linkToBill(id).href);
-      return run(() => copy(lines.join('\n')));
+      return copy(lines.join('\n'), target);
     }
     if (action === 'ai-recheck' && payer)
       return run(async () => {
         await post('slip-check', { payer: payer.id });
         await load();
       });
-    if (action === 'slip' && payer)
-      return run(async () => {
-        const blob = await request('slip', {}, payer.id);
-        slipUrl = URL.createObjectURL(blob);
-        receipt.querySelector('img').src = slipUrl;
-        receipt.showModal();
-        message('');
-      });
-    if ((action === 'approve' || action === 'reject') && payer) {
+    const reviewBill = (reviewAction, who) => {
       const note =
-        action === 'reject'
-          ? prompt('เหตุผลที่ให้ส่งสลิปใหม่', window.SlipCheckText?.rejectNote(payer.aiCheck) || '')
+        reviewAction === 'reject'
+          ? prompt('เหตุผลที่ให้ส่งสลิปใหม่', window.SlipCheckText?.rejectNote(who.aiCheck) || '')
           : '';
       if (
         note === null ||
-        (action === 'approve' &&
+        (reviewAction === 'approve' &&
           !confirm(
             'ตรวจยอดและบัญชีรับเงินแล้ว ยืนยันว่า ' +
-              payer.name +
+              who.name +
               ' จ่าย ' +
-              money(payer.amount) +
+              money(who.amount) +
               ' บาท?',
           ))
       )
         return;
       run(async () => {
         await post('review', {
-          payer: payer.id,
-          receiptId: payer.receiptId,
-          status: action === 'approve' ? 'paid' : 'rejected',
+          payer: who.id,
+          receiptId: who.receiptId,
+          status: reviewAction === 'approve' ? 'paid' : 'rejected',
           note,
         });
         await load();
       });
-    }
+    };
+    if (action === 'slip' && payer)
+      return run(async () => {
+        const blob = await request('slip', {}, payer.id);
+        const organizer = manage && Number.isInteger(bill.revision);
+        openReceiptModal(blob, {
+          title: `${payer.name} · ยอดบิล ${money(payer.amount)} บาท`,
+          aiHtml: organizer ? aiLines(payer) : '',
+          onApprove:
+            organizer && !bill.cancelled && payer.status === 'review'
+              ? () => reviewBill('approve', payer)
+              : undefined,
+          onReject:
+            organizer &&
+            !bill.cancelled &&
+            payer.method !== 'cash' &&
+            ['review', 'paid'].includes(payer.status)
+              ? () => reviewBill('reject', payer)
+              : undefined,
+        });
+      });
+    if ((action === 'approve' || action === 'reject') && payer) return reviewBill(action, payer);
   });
   run(async () => {
     try {
