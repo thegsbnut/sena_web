@@ -420,3 +420,79 @@ test('a night with a Cup counts as 3 plays, including a Cup recorded afterwards'
     .run('old', 2, JSON.stringify({ date: '2026-11-01', teams: [['A', 'B']], matches: [] }));
   assert.equal((await own('p2')).roster[2].badge.plays, 4);
 });
+
+test('auth-status bar shows only for password admins; booking page renders compact mini-profile strip', async () => {
+  const { readFileSync } = await import('node:fs');
+  const vm = await import('node:vm');
+  const authSrc = readFileSync(new URL('./public/auth-status.js', import.meta.url), 'utf8');
+
+  async function runAuth(sessionReply) {
+    let created = null;
+    const dispatched = [];
+    const makeEl = () => ({
+      hidden: false,
+      disabled: false,
+      textContent: '',
+      dataset: {},
+      className: '',
+      id: '',
+      setAttribute() {},
+      querySelector(sel) {
+        this._children ??= new Map();
+        if (!this._children.has(sel)) this._children.set(sel, makeEl());
+        return this._children.get(sel);
+      },
+    });
+    const sandbox = {
+      document: {
+        hidden: true,
+        createElement: () => (created = makeEl()),
+        body: { prepend() {} },
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        addEventListener() {},
+      },
+      window: {
+        addEventListener() {},
+        dispatchEvent: ev => dispatched.push(ev),
+      },
+      CustomEvent: class {
+        constructor(type, init = {}) {
+          this.type = type;
+          this.detail = init.detail;
+        }
+      },
+      venueUrl: p => p,
+      venueSession: async () => sessionReply,
+      venueFetch: async () => ({ ok: true }),
+      location: { reload() {} },
+      setInterval: () => 0,
+      confirm: () => true,
+      localStorage: { setItem() {} },
+    };
+    vm.runInNewContext(authSrc, sandbox);
+    await new Promise(r => setTimeout(r, 10));
+    return { bar: created, dispatched };
+  }
+
+  const guest = await runAuth({ canEdit: false });
+  assert.equal(guest.bar.hidden, true);
+
+  const lineAdmin = await runAuth({ canEdit: true, via: 'line' });
+  assert.equal(lineAdmin.bar.hidden, true);
+  assert.equal(lineAdmin.dispatched.at(-1)?.detail?.canEdit, true);
+  assert.equal(lineAdmin.dispatched.at(-1)?.detail?.via, 'line');
+
+  const keyAdmin = await runAuth({ canEdit: true, via: 'key' });
+  assert.equal(keyAdmin.bar.hidden, false);
+  assert.equal(keyAdmin.bar.querySelector('#senaAuthLogout').hidden, false);
+
+  const bookingJs = readFileSync(new URL('./public/booking.js', import.meta.url), 'utf8');
+  const bookingCss = readFileSync(new URL('./public/booking.css', import.meta.url), 'utf8');
+  const authCss = readFileSync(new URL('./public/auth-status.css', import.meta.url), 'utf8');
+  assert.match(bookingJs, /id="bookingProfile"/);
+  assert.match(bookingJs, /function renderProfile\(\)/);
+  assert.match(bookingJs, /booking-profile-role">ผู้จัด</);
+  assert.match(bookingCss, /\.booking-profile\s*\{/);
+  assert.match(authCss, /\.sena-authbar\[hidden\]/);
+});

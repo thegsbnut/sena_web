@@ -75,6 +75,73 @@
   font-weight: 800;
   letter-spacing: 1px;
 }
+.booking-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #133128;
+  border: 1px solid #2f6252;
+  color: #f6f7ee;
+}
+.booking-profile[hidden] {
+  display: none;
+}
+.booking-profile-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.booking-profile-info {
+  min-width: 0;
+}
+.booking-profile-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+.booking-profile-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.booking-profile-role {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #24574a;
+  border: 1px solid #6f8d7c;
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 800;
+}
+.booking-profile-meta {
+  font-size: 12px;
+  color: #b8cdbf;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booking-profile-pick {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: #102219;
+  border: 1.5px solid #445321;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
 .booking-status {
   font-size: 13px;
   color: var(--paper);
