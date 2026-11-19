@@ -80,6 +80,18 @@
       state.chosen.push(people.me);
       state.receiver = people.me;
     }
+    const memberKeySet = new Set(people.members.map(m => m.payerKey));
+    const recentKeys = (people.recentSession?.payerKeys || []).filter(k => memberKeySet.has(k));
+    const recentLabel = people.recentSession
+      ? people.recentSession.date === thaiToday()
+        ? 'วันนี้'
+        : 'ล่าสุด ' +
+          new Intl.DateTimeFormat('th-TH', {
+            day: 'numeric',
+            month: 'short',
+            timeZone: 'Asia/Bangkok',
+          }).format(new Date(people.recentSession.date + 'T12:00:00+07:00'))
+      : '';
 
     root.innerHTML = `
    <h1>${editing ? 'แก้ไขบิล' : 'สร้างบิลอื่นๆ'}</h1>
@@ -92,7 +104,10 @@
      <label>เลขพร้อมเพย์<input id="cbTransfer" inputmode="numeric" maxlength="13" pattern="[0-9]{10}|[0-9]{13}" value="${esc(state.transfer)}" required></label>
     </section>
     <section>
-     <h2>2. ใครร่วมจ่าย</h2>
+     <div class="cb-head-row">
+      <h2>2. ใครร่วมจ่าย (<span id="cbCount">เลือกแล้ว 0 คน</span>)</h2>
+      ${recentKeys.length ? `<button type="button" id="cbPullRecent" class="cb-pull" data-cb="pull-recent">⚡ ดึงคนตี${esc(recentLabel)} (${recentKeys.length})</button>` : ''}
+     </div>
      <input id="cbSearch" type="search" placeholder="ค้นหาชื่อสมาชิก" aria-label="ค้นหาชื่อสมาชิก" autocomplete="off">
      <div id="cbMembers"></div>
      <div class="cb-guest-add">
@@ -280,6 +295,7 @@
       $('#cbSubmit').disabled = Boolean(problem);
     }
     const structure = () => {
+      $('#cbCount').textContent = `เลือกแล้ว ${state.chosen.length + state.guests.length} คน`;
       renderReceiver();
       renderGuests();
       renderMode();
@@ -322,7 +338,12 @@
       if (!t) return;
       const kind = t.dataset.cb;
       if (kind === 'cancel') return cancel();
-      if (kind === 'mode') {
+      if (kind === 'pull-recent') {
+        for (const key of recentKeys) if (!state.chosen.includes(key)) state.chosen.push(key);
+        renderMembers();
+        structure();
+        message(`เลือกคนตี${recentLabel}แล้ว (${recentKeys.length} คน)`);
+      } else if (kind === 'mode') {
         state.mode = t.dataset.mode;
         if (state.mode === 'items' && !state.items.length)
           state.items.push({ name: '', price: '', who: new Set(everyone().map(p => p.id)) });
@@ -358,11 +379,13 @@
       } else if (kind === 'item-who') {
         const who = state.items[Number(t.dataset.item)].who;
         who.has(t.dataset.id) ? who.delete(t.dataset.id) : who.add(t.dataset.id);
-        renderMode();
+        t.setAttribute('aria-pressed', String(who.has(t.dataset.id)));
         preview();
       } else if (kind === 'item-all') {
-        state.items[Number(t.dataset.item)].who = new Set(everyone().map(p => p.id));
-        renderMode();
+        const itemIdx = Number(t.dataset.item);
+        state.items[itemIdx].who = new Set(everyone().map(p => p.id));
+        for (const btn of root.querySelectorAll(`[data-cb="item-who"][data-item="${itemIdx}"]`))
+          btn.setAttribute('aria-pressed', 'true');
         preview();
       }
     });

@@ -631,13 +631,31 @@ async function customRoute(req, env, admin, club, action) {
   const members = await approvedMembers(db, club);
   if (action === 'people') {
     if (req.method !== 'GET') return fail('Method not allowed', 405);
-    const myPromptpay = await getMemberPromptPay(db, member?.userId);
+    const [myPromptpay, sessions] = await Promise.all([
+      getMemberPromptPay(db, member?.userId),
+      recentSessions(db, club),
+    ]);
+    const today = thaiDay(0);
+    const picked = sessions.find(s => s.date <= today) || sessions[0] || null;
+    const memberKeys = new Set(members.map(m => 'member:' + m.playerId));
+    const recentKeys = picked
+      ? [
+          ...new Set(
+            picked.attendees
+              .filter(a => a.attended && memberKeys.has(a.payerKey))
+              .map(a => a.payerKey),
+          ),
+        ]
+      : [];
     return json({
       members: members
         .map(m => ({ payerKey: 'member:' + m.playerId, name: m.name }))
         .sort((a, b) => a.name.localeCompare(b.name, 'th')),
       me: approved ? 'member:' + member.link.player_id : null,
       myPromptpay,
+      recentSession: recentKeys.length
+        ? { date: picked.date, time: picked.time, payerKeys: recentKeys }
+        : null,
     });
   }
   if (req.method !== 'POST') return fail('Method not allowed', 405);

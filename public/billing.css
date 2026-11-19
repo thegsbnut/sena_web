@@ -174,14 +174,74 @@ dialog {
   border-radius: 0.8rem;
   width: min(92vw, 32rem);
   max-height: 92vh;
-  color: inherit;
+  background: #fff;
+  color: var(--green);
+}
+body.nxc.home dialog h2 {
+  color: var(--green);
+}
+body.nxc.home dialog .muted,
+body.nxc.home dialog small {
+  color: var(--muted);
+}
+body.nxc.home dialog .ai-check.warn {
+  color: #863815;
+}
+body.nxc.home dialog .actions button {
+  background: #edf2e8;
+  color: var(--green);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  min-height: 44px;
+  font-weight: 700;
+}
+body.nxc.home dialog .actions button.primary {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
 }
 dialog img {
   display: block;
   max-width: 100%;
-  max-height: 76vh;
+  max-height: 58vh;
   margin: 0.65rem auto;
   object-fit: contain;
+}
+.receipt-info {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+.receipt-info:empty,
+.receipt-ai:empty {
+  display: none;
+}
+.receipt-ai {
+  margin-top: 0.25rem;
+}
+.receipt-actions {
+  margin-top: 0.75rem;
+  justify-content: flex-end;
+}
+.cb-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.cb-head-row h2 {
+  margin: 0;
+}
+.cb-pull {
+  min-height: 36px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: var(--lime);
+  color: #102219;
+  border: 1.5px solid #445321;
+  font-weight: 800;
+  font-size: 0.88rem;
 }
 dialog::backdrop {
   background: #10281fd9;
