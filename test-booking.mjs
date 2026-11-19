@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
@@ -1294,4 +1295,38 @@ test('booking and withdrawing return a group notice with a one-time code for the
   [text, code] = split((await r.json()).notice.text);
   assert.equal(text, `➖ Player 8 ถอน SENA ${day(second)} · พร้อมแขก/เพื่อน 1 คน`);
   assert.deepEqual((await claimNotice(f.env.DB, code)).payload.promotedIds, []);
+});
+
+test('booking UI supports quick-withdraw on day cards, clean locked LINE review bar, and own-row highlight', () => {
+  const js = readFileSync(new URL('./public/booking.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./public/booking.css', import.meta.url), 'utf8');
+  const courtHtml = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
+
+  // Day card quick-withdraw button targets the exact session via data-book-session
+  assert.match(
+    js,
+    /class="booking-withdraw-action"\s+data-book-cancel="\$\{html\(mine\.id\)\}"\s+data-book-session="\$\{html\(s\.id\)\}"/,
+  );
+  assert.match(js, /ถอนชื่อฉัน<\/button>/);
+  assert.match(js, /button\.dataset\.bookSession \|\| focusId/);
+  assert.match(js, /name\(registration\.playerId,\s*false,\s*session\)/);
+
+  // Locked LINE member bar replaces disabled select in #bookingReview
+  assert.match(js, /id="bookingPlayerLocked"/);
+  assert.match(js, /id="bookingPlayerLabel"/);
+  assert.match(js, /const showLocked = locked && Boolean\(picker\.value\)/);
+  assert.match(js, /picker\.hidden = showLocked/);
+  assert.match(js, /จองในชื่อ/);
+
+  // Own row highlighted in roster detail
+  assert.match(js, /booking-person\$\{isMe\(r\) \? ' is-me' : ''\}/);
+  assert.match(js, /class="booking-me-tag">ฉัน<\/span>/);
+
+  // CSS rules & cache-busting query params
+  assert.match(css, /\.booking-date-actions\s*\{/);
+  assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
+  assert.match(css, /\.booking-person\.is-me\s*\{/);
+  assert.match(css, /\.booking-player-locked\s*\{/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261119-withdraw/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw/);
 });
