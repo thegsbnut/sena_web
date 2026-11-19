@@ -435,11 +435,15 @@
     box.innerHTML = `<div class="booking-profile-main"><button type="button" class="jb-own" data-job-pick="${html(me.id)}" aria-label="เลือกสาย job ของฉัน">${SenaJobs.badgeHtml(badge, 40, { mine: true })}</button><div class="booking-profile-info"><div class="booking-profile-name"><strong>${html(me.name)}</strong>${roleTag}</div><div class="booking-profile-meta">${html(jobTh)}${lineTh ? ' · ' + html(lineTh) : ''} · ${html(playsText)}</div></div></div><button type="button" class="booking-profile-pick" data-job-pick="${html(me.id)}">${ready ? 'เลือกสาย !' : 'เปลี่ยนสาย'}</button>`;
   }
   function render() {
+    const linked = data.member?.playerId;
     if (data.requireLogin && !data.canEdit) {
-      const linked = data.member?.playerId;
       q('#bookingMemberLogin').hidden = Boolean(linked);
       if (linked) playerId = linked;
-    } else q('#bookingMemberLogin').hidden = true;
+    } else {
+      q('#bookingMemberLogin').hidden = true;
+      if (!playerId && linked) playerId = linked;
+    }
+    const selfId = linked || playerId;
     renderProfile();
     const cfg = data.settings,
       map = q('#bookingVenueMap'),
@@ -491,7 +495,7 @@
               s.skipped ||
               !cfg.enabled ||
               (data.requireLogin && !data.canEdit && !data.member?.playerId);
-            const mine = s.registrations.find(r => r.playerId === playerId);
+            const mine = s.registrations.find(r => r.playerId === selfId);
             const tone = closed
               ? 'closed'
               : available === 0
@@ -629,7 +633,8 @@
         '<p class="hint">เมื่อคนครบ ระบบจะบันทึกตารางคู่ให้อัตโนมัติ</p>';
       return;
     }
-    const isMe = r => Boolean(playerId && r.playerId === playerId);
+    const selfId = data.member?.playerId || playerId;
+    const isMe = r => Boolean(selfId && r.playerId === selfId);
     const row = r =>
       `<div class="booking-person${isMe(r) ? ' is-me' : ''}">${badgeFor(r)}<div><strong>${html(name(r.playerId))}</strong> ${isMe(r) ? '<span class="booking-me-tag">ฉัน</span> ' : ''}${levelBadge(r.playerId)}<small>${rosterBadge(r) ? html(SenaJobs.jobName(rosterBadge(r)) + playCount(r)) + ' · ' : ''}${r.source === 'regular' ? '↻ ขาประจำ' : r.status === 'waitlist' ? 'สำรอง #' + r.position : 'ลงชื่อออนไลน์'}</small></div>${r.canCancel ? `<button type="button" class="booking-cancel" data-book-cancel="${html(r.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อ ${html(name(r.playerId))}">ถอนชื่อ</button>` : ''}</div>`;
     q('#bookingDetail').innerHTML =
