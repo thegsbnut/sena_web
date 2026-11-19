@@ -719,3 +719,137 @@ test('LIFF sends a logged-in member to the page they asked for (book, collect, p
     ['/court?bills=collect#bills'],
   );
 });
+
+test('member_promptpay: จำเลขเฉพาะของตัวเอง ใช้ได้ทั้งสองก๊วน ไม่เปิดเผยให้คนอื่น และไม่ทับเมื่อสร้างแทนเพื่อน', async t => {
+  const f = fixture(t),
+    a = await f.login(users.a, 'p0'),
+    b = await f.login(users.b, 'p1');
+  // Before creating any bill, myPromptpay is empty.
+  const before = await (await f.request('/api/billing?action=people&club=sena', null, a)).json();
+  assert.equal(before.myPromptpay, '');
+
+  // User A creates a custom bill as receiver -> saved to member_promptpay.
+  assert.equal(
+    (await f.create(a, base({ transfer: '0891112222', receiver: 'member:p0' }))).status,
+    200,
+  );
+  const afterA = await (await f.request('/api/billing?action=people&club=sena', null, a)).json();
+  assert.equal(afterA.myPromptpay, '0891112222');
+
+  // Privacy: user B never sees user A's PromptPay.
+  const afterB = await (await f.request('/api/billing?action=people&club=sena', null, b)).json();
+  assert.equal(afterB.myPromptpay, '');
+
+  // User A creates a bill on behalf of B (receiver !== me) -> must NOT overwrite A's saved PromptPay.
+  assert.equal(
+    (await f.create(a, base({ transfer: '0899998888', receiver: 'member:p1' }))).status,
+    200,
+  );
+  const stillA = await (await f.request('/api/billing?action=people&club=sena', null, a)).json();
+  assert.equal(stillA.myPromptpay, '0891112222');
+
+  // Shared across clubs (user_id is global across Sena and 88).
+  const adminCookie = await f.admin();
+  const s88 = await (
+    await f.request('/api/billing?action=people&club=88', null, `${a}; ${adminCookie}`)
+  ).json();
+  assert.equal(s88.myPromptpay, '0891112222');
+});
+
+test('court bill: คนสร้างบิลขึ้นสถานะ paid/owner อัตโนมัติ จำเลขพร้อมเพย์รายคน และแก้บิลแล้วยังคงสถานะเดิม', async t => {
+  const f = fixture(t),
+    a = await f.login(users.a, 'p0'),
+    b = await f.login(users.b, 'p1'),
+    adminCookie = await f.admin();
+  const orgA = `${adminCookie}; ${a}`;
+  const orgB = `${adminCookie}; ${b}`;
+
+  // Set global default promptpay in billing_settings.
+  assert.equal(
+    (await f.request('/api/billing?action=promptpay&club=sena', { promptpay: '0800000000' }, orgA))
+      .status,
+    200,
+  );
+
+  // Before organizer A saves their own number, sessions falls back to global default and exposes me.
+  const s1 = await (await f.request('/api/billing?action=sessions&club=sena', null, orgA)).json();
+  assert.equal(s1.me, 'member:p0');
+  assert.equal(s1.promptpay, '0800000000');
+
+  // Organizer A creates a court bill with A (p0) and B (p1) using A's personal PromptPay.
+  const d = today();
+  const created = await f.request(
+    '/api/billing?club=sena',
+    {
+      date: d,
+      court: 40000,
+      shuttle: 20000,
+      transfer: '0812223333',
+      attendees: [
+        { name: 'เอ', payer: 'เอ', payerKey: 'member:p0' },
+        { name: 'บี', payer: 'บี', payerKey: 'member:p1' },
+      ],
+    },
+    orgA,
+  );
+  assert.equal(created.status, 200);
+  const { id } = await created.json();
+  const bill = row(f, id);
+  assert.equal(bill.receiver, 'member:p0');
+  assert.equal(bill.closed_at, null);
+  const payerA = bill.payers.find(p => p.payerKey === 'member:p0');
+  const payerB = bill.payers.find(p => p.payerKey === 'member:p1');
+  assert.equal(payerA.status, 'paid');
+  assert.equal(payerA.method, 'owner');
+  assert.equal(payerB.status, 'unpaid');
+
+  // Bill remains editable because only the owner is marked paid; editing preserves owner paid status.
+  const view = await (await f.request(`/api/billing?club=sena&bill=${id}`, null, orgA)).json();
+  assert.equal(view.editable, true);
+  assert.equal(view.receiver, 'member:p0');
+  const edited = await f.request(
+    `/api/billing?club=sena&bill=${id}&action=edit`,
+    {
+      revision: view.revision,
+      court: 50000,
+      shuttle: 20000,
+      transfer: '0812223333',
+      attendees: [
+        { name: 'เอ', payer: 'เอ', payerKey: 'member:p0' },
+        { name: 'บี', payer: 'บี', payerKey: 'member:p1' },
+      ],
+    },
+    orgA,
+  );
+  assert.equal(edited.status, 200);
+  const afterEdit = row(f, id);
+  assert.equal(afterEdit.payers.find(p => p.payerKey === 'member:p0').method, 'owner');
+  assert.equal(afterEdit.payers.find(p => p.payerKey === 'member:p0').status, 'paid');
+  assert.equal(afterEdit.payers.find(p => p.payerKey === 'member:p1').status, 'unpaid');
+
+  // Organizer A now gets their own saved PromptPay in both court sessions and custom people endpoints;
+  // organizer B still falls back to global default (never sees A's number).
+  const s2A = await (await f.request('/api/billing?action=sessions&club=sena', null, orgA)).json();
+  assert.equal(s2A.promptpay, '0812223333');
+  const p2A = await (await f.request('/api/billing?action=people&club=sena', null, orgA)).json();
+  assert.equal(p2A.myPromptpay, '0812223333');
+  const s2B = await (await f.request('/api/billing?action=sessions&club=sena', null, orgB)).json();
+  assert.equal(s2B.promptpay, '0800000000');
+
+  // A court bill with ONLY the creator as attendee starts closed immediately.
+  const solo = await f.request(
+    '/api/billing?club=sena',
+    {
+      date: '2026-12-01',
+      court: 20000,
+      shuttle: 0,
+      transfer: '0812223333',
+      attendees: [{ name: 'เอ', payer: 'เอ', payerKey: 'member:p0' }],
+    },
+    orgA,
+  );
+  assert.equal(solo.status, 200);
+  const soloRow = row(f, (await solo.json()).id);
+  assert.ok(soloRow.closed_at > 0);
+  assert.equal(soloRow.payers[0].method, 'owner');
+});
