@@ -179,9 +179,45 @@ dialog {
 dialog img {
   display: block;
   max-width: 100%;
-  max-height: 76vh;
+  max-height: 58vh;
   margin: 0.65rem auto;
   object-fit: contain;
+}
+.receipt-info {
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+.receipt-info:empty,
+.receipt-ai:empty {
+  display: none;
+}
+.receipt-ai {
+  margin-top: 0.25rem;
+}
+.receipt-actions {
+  margin-top: 0.75rem;
+  justify-content: flex-end;
+}
+.cb-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.cb-head-row h2 {
+  margin: 0;
+}
+.cb-pull {
+  min-height: 36px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: var(--lime);
+  color: #102219;
+  border: 1.5px solid #445321;
+  font-weight: 800;
+  font-size: 0.88rem;
 }
 dialog::backdrop {
   background: #10281fd9;

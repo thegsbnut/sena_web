@@ -338,7 +338,43 @@ test('custom bill: action=people คืนสมาชิก approved และ 
   const r = await (await f.request('/api/billing?action=people&club=sena', null, a)).json();
   assert.deepEqual(r.members.map(m => m.name).sort(), ['Nut', 'Pete']);
   assert.equal(r.me, 'member:p0');
+  assert.equal(r.recentSession, null);
   assert.equal((await f.request('/api/billing?action=people&club=sena')).status, 401);
+});
+
+test('custom bill: action=people คืน recentSession และ billing-custom มีตัวนับ/ปุ่มดึงคนตี/ไม่ rebuild DOM ตอนกด item-who', async t => {
+  const f = fixture(t),
+    a = await f.login(users.a, 'p0');
+  await f.login(users.b, 'p1');
+  const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+  f.db.exec(
+    'CREATE TABLE IF NOT EXISTS booking_clubs (club TEXT PRIMARY KEY, payload TEXT NOT NULL)',
+  );
+  f.db.prepare('INSERT INTO booking_clubs (club, payload) VALUES (?, ?)').run(
+    'sena',
+    JSON.stringify({
+      sessions: [
+        {
+          date: today,
+          start: '19:00',
+          end: '21:00',
+          capacity: 2,
+          registrations: [{ playerId: 'p0' }, { playerId: 'p1' }, { playerId: 'p2' }],
+          withdrawals: [],
+        },
+      ],
+    }),
+  );
+  const r = await (await f.request('/api/billing?action=people&club=sena', null, a)).json();
+  assert.deepEqual(r.recentSession, {
+    date: today,
+    time: '19:00–21:00',
+    payerKeys: ['member:p0', 'member:p1'],
+  });
+  const js = read('./public/billing-custom.js');
+  assert.match(js, /id="cbCount"/);
+  assert.match(js, /id="cbPullRecent"/);
+  assert.match(js, /t\.setAttribute\('aria-pressed', String\(who\.has\(t\.dataset\.id\)\)\)/);
 });
 
 test('custom bill: ป้ายใช้ชื่อบิลแทน "บิลเพิ่มเติม"', async t => {
