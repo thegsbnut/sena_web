@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (เป้าหมาย ≤ ~40 บรรทัด):** งานที่เสร็จแล้ว → ย่อเป็นบรรทัดเดียวใน "ประวัติ" พร้อมลิงก์ spec/plan; ความรู้ถาวรย้ายไป spec หรือ `CLAUDE.md`; เก็บข้างบนเฉพาะสิ่งที่ session ถัดไปต้องรู้
 
 ## อัปเดตล่าสุด
+- 2026-11-19 · Antigravity · **UX รอบใหญ่ & Perf (#76–#80)** merge เข้า `main` แล้ว (ขึ้น production): **#76** floating `#status` toast + ฟีดแบ็ก `คัดลอกแล้ว ✓` หน้าบิล, ไฮไลต์แถวตัวเอง + sticky คอลัมน์ `#`/`ผู้เล่น` ใน Leaderboard, Buddy auto-select ชื่อตัวเอง · **#77** modal พรีวิวรูปสลิปก่อนส่ง (`#slipPreview`) แทน `confirm()`, modal ตรวจสลิปผู้จัด (`#receipt`) พร้อมผล AI และปุ่มอนุมัติ/ให้ส่งใหม่, หน้าบิลค่าข้าวเพิ่ม `recentSession` + ปุ่มลัดดึงคนตีรอบวันนี้ (`#cbPullRecent`), `#cbCount`, toggle `aria-pressed` แบบ in-place, ป้าย `คนออกเงิน` · **#78** ยิง D1 queries ใน `GET /api/billing?action=people` พร้อมกันด้วย `Promise.all` ลด round trips · **#79** ซ่อนแถบผู้จัด (`#senaAuthBar`) สำหรับคนทั่วไปและแอดมิน LINE (เหลือเฉพาะแอดมินรหัสผ่าน) + เพิ่มแถบโปรไฟล์สั้น (`#bookingProfile`) พร้อมป้าย `ผู้จัด` และปุ่ม `เปลี่ยนสาย` Job Badge · **#80** ปุ่ม `ถอนชื่อฉัน` บนการ์ดวัน (ใช้ `data-book-session` เปิด `#bookingCancelDialog` ตรงรอบ + กติกา 48 ชม.), ไฮไลต์ `.booking-person.is-me` + แท็ก `ฉัน` ในรายชื่อ, และแถบ `#bookingPlayerLocked` (`จองในชื่อ <ชื่อ> · LINE ✓`) แทน dropdown disabled ในหน้าต่างยืนยันจอง · รอลองเทสบน LINE/มือถือจริงหลัง deploy
 - 2026-11-18 · Antigravity · **ปรับปรุงหน้าบิล & หน้าเก็บเงิน (#70–#73)** merge เข้า `main` แล้ว (ขึ้น production): รวมปุ่ม `+ สร้างบิลใหม่` กับ `เก็บเงิน` เหลือปุ่มเดียวคือ `💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)` สีเขียว (`.create-bill`) ทุกคนเห็นได้ (#70) · เพิ่มตาราง D1 `member_promptpay (user_id, promptpay, updated_at)` จำเลขพร้อมเพย์รายคนข้ามก๊วน/ข้ามอุปกรณ์ (คืนเฉพาะเลขตัวเองเพื่อ privacy) และให้คนสร้างบิลขึ้น `status: 'paid', method: 'owner'` อัตโนมัติทั้ง 2 แท็บ (#71) · หน้าเก็บเงินทั่วไปตัดช่อง dropdown `คนออกเงิน` ออก เหลือแค่ `เลขพร้อมเพย์` (#72) · หน้าเก็บเงินค่าคอร์ตลบช่องติ๊ก `savePromptPay` ออก ลดความสับสน (ค่ากลางยังตั้งได้ที่ `⋯ ตั้งค่า > ตั้งค่าเลขพร้อมเพย์เริ่มต้น`) (#73) · รอลองเทสบน LINE/มือถือจริงหลัง deploy
 - 2026-11-18 · GPT · แก้บั๊ก 1–4 ใน branch `codex/fix-payment-booking-liff` รอ merge: แนบสลิปต้องตรงทั้งยอดและ `paymentRevision` ที่หน้าเห็น (บิลเก่าเริ่มที่ 0, การจ่ายของคนอื่นไม่เปลี่ยนรุ่นการชำระ); จองตอบผลได้เมื่ออ่านข้อมูล badge ไม่สำเร็จ (log `booking:badges`); เปลี่ยนวันประจำแล้วปิดรับรอบว่างวันเดิมและเก็บรอบที่มีคนจอง; ลิงก์ LIFF ส่งต่อรหัสบิลถึงแท็บบิลและเลือกใบที่กด แม้หลุดจากรายการล่าสุด · เทส 285 เคส, build, format และ DOM จำลองสำหรับบิลค้าง/จ่ายแล้ว/ไม่พบผ่าน · หลัง merge ลองลิงก์ใน LINE จริงกับสมาชิกที่มีบิลค้างหลายใบ · งาน performance จากรีวิวยังค้าง
 - 2026-11-18 · GPT · เจ้าของยืนยันในแชตว่า "ครบหมดละ เทสผ่านหมด": รายการรอทดสอบ LINE/มือถือจริงใน handoff นี้ผ่านครบแล้ว รวมเปิดบิลหลัง #55 และการ์ดขึ้นครบ (เป็นผลทดสอบที่เจ้าของรายงาน ไม่ใช่ GPT รันทดสอบใหม่) · สถานะ merge ของ branch ด้านล่างยังไม่ได้ตรวจใหม่ · ผลรีวิว/ข้อปรับปรุงที่ยังไม่แก้ยังคงรอเจ้าของสั่ง
@@ -38,13 +39,12 @@
 - token Cloudflare: เก็บใน Network secrets ของ `api.cloudflare.com`; wrangler ใช้ `CLOUDFLARE_API_TOKEN=proxy-injected`
 
 ## สถานะเทส
-- 2026-11-18 เจ้าของยืนยันว่ารายการทดสอบใน LINE/มือถือจริงก่อนหน้านี้ผ่านครบแล้ว (รอบ #70–#73 รอตรวจบน LINE จริง)
-- `npm test` 301/301 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน
+- 2026-11-19: `npm test` 309/309 ผ่าน · `npm run build` และ `npm run format:check` ผ่าน (รอบ #70–#80 รอตรวจบน LINE/มือถือจริงหลัง deploy)
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน เก็บไว้ไม่เกิน 5 รายการ)
+- 2026-11-19 Antigravity: UX รอบใหญ่ (#76 toast/copy/leaderboard-me, #77 slip preview/organizer modal/pull-recent bill, #78 parallel D1 people queries, #79 compact header + mini profile, #80 quick-withdraw on day cards + clean LINE review bar + is-me highlight)
 - 2026-11-18 Antigravity: รวมปุ่มเก็บเงินสีเขียว + ตาราง `member_promptpay` จำเลขรายคน + คนสร้างบิลจ่ายแล้วอัตโนมัติทั้ง 2 แท็บ + ตัดช่องคนออกเงิน/ติ๊ก savePromptPay (#70–#73)
 - 2026-11-15 Claude: การ์ดบิลธีมน้องขุนเงิน + badge/🥇💩 + รูปชุดใหม่ + webhook ตอบเบื้องหลัง (#51–#55) — `BADBOT-REPLY.md`
 - 2026-11-15 Claude: Badbot ตอบเป็นการ์ด Flex ทุกแบบ (PR #39–#44 รายชื่อ/สรุปจ่ายครบ/ตาราง/อันดับ/บิลค้าง) + แก้บั๊กการ์ด + สีก๊วนไล่เฉด (#47–#49) — `BADBOT-REPLY.md`
 - 2026-11-14 Claude: แจ้งเข้ากลุ่มตอนจอง/ถอน/จ่าย (#35; `LINE-LIFF.md`, spec `2026-11-14-line-group-notices*`) · tune query บิล (#34: index `bills_list`/`bills_open`, `json_each`) · tune performance (#32: โพลล์ `/api/state` เฉพาะแท็บ, `memberSession` query เดียว, `schema-cache.js`)
-- 2026-11-13 Claude: Job badge 5 สาย × 3 job + เลือกสาย + badge ในแท็บรายชื่อ (#29, #30; `BOOKING.md`, spec `2026-11-13-job-badges*`)
