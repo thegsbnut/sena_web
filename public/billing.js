@@ -499,8 +499,13 @@
        }</div>`;
     };
     const review = overview.reviewRows(rows);
-    const slips = overview.slipRows(rows);
-    const flagged = window.SlipCheckText?.flaggedCount(slips) || 0;
+    const allSlips = overview.slipRows(rows);
+    const isFlagged = r => (window.SlipCheckText?.flaggedCount([r]) || 0) > 0;
+    // Flagged slips first (newest-first order kept inside each group), then only the latest 15 rows;
+    // a flagged slip is never cut off by the limit.
+    const slips = [...allSlips.filter(isFlagged), ...allSlips.filter(r => !isFlagged(r))];
+    const flagged = window.SlipCheckText?.flaggedCount(allSlips) || 0;
+    const shownSlips = slips.slice(0, Math.max(15, flagged));
     const slipCard = r =>
       `<div class="owe-row slip-row"><span><strong>${escape(r.name)}</strong> · ${dateLabel(r.date)} · ${money(r.amount)} บ.${aiLines(r)}</span>
        <span class="slip-buttons"><button type="button" data-action="rv-slip" ${attrs(r, r.name)}>ดูสลิป</button><button type="button" data-action="rv-reject" ${attrs(r, r.name)}>ให้ส่งใหม่</button></span></div>`;
@@ -523,7 +528,7 @@
     ${review.length ? `<p class="flag">รอตรวจ ${review.length} รายการ</p>` : ''}</div>
    ${!adminList.storageReady ? '<p class="error">ระบบเก็บสลิปยังไม่พร้อม</p>' : ''}
    ${review.length ? `<h2 class="sec">รอตรวจ (${review.length})</h2>${review.map(reviewCard).join('')}` : ''}
-   ${slips.length ? `<details class="slip-list"${flagged ? ' open' : ''}><summary>สลิปที่แนบแล้ว (${slips.length})${flagged ? ` · ⚠️ ควรเปิดดู ${flagged}` : ''} · ดูสลิป / ให้ส่งใหม่</summary>${slips.map(slipCard).join('')}</details>` : ''}
+   ${slips.length ? `<details class="slip-list"${flagged ? ' open' : ''}><summary>สลิปที่แนบแล้ว (${slips.length})${flagged ? ` · ⚠️ ควรเปิดดู ${flagged}` : ''} · ดูสลิป / ให้ส่งใหม่</summary>${shownSlips.map(slipCard).join('')}${slips.length > shownSlips.length ? `<p class="muted">แสดง ${shownSlips.length} รายการล่าสุด จากทั้งหมด ${slips.length}</p>` : ''}</details>` : ''}
    <h2 class="sec">ใครยังค้าง</h2>
    ${owe.groups.length > 5 ? '<input type="search" id="oweSearch" class="owe-search" placeholder="ค้นหาชื่อ" aria-label="ค้นหาชื่อคนค้าง" autocomplete="off">' : ''}
    ${
