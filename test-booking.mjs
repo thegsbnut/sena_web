@@ -1318,7 +1318,8 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(js, /picker\.hidden = showLocked/);
   assert.match(js, /จองในชื่อ/);
 
-  // Own row highlighted in roster detail
+  // Own row highlighted in roster detail & selfId falls back to linked LINE playerId for organizers
+  assert.match(js, /const selfId = linked \|\| playerId/);
   assert.match(js, /booking-person\$\{isMe\(r\) \? ' is-me' : ''\}/);
   assert.match(js, /class="booking-me-tag">ฉัน<\/span>/);
 
@@ -1328,5 +1329,5 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
   assert.match(courtHtml, /\/booking\.css\?v=20261119-withdraw/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw3/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw4/);
 });
