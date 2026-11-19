@@ -447,7 +447,6 @@
      <label class="attendee"><input type="checkbox" name="perShuttle"> คิดจากจำนวนลูก × ราคาต่อลูก</label>
      <label id="countLabel" hidden>จำนวนลูก<input name="shuttleCount" type="number" min="1" max="999" step="1" value="1"></label>
      <label>เลขพร้อมเพย์<input name="transfer" required inputmode="numeric" pattern="0[0-9]{9}|[0-9]{13}" maxlength="13" value="${escape(editing ? bill.transfer : adminList.promptpay)}"></label>
-     ${editing ? '' : '<label class="attendee"><input type="checkbox" name="savePromptPay"> ใช้เลขนี้เป็นค่าเริ่มต้นสำหรับบิลถัดไป</label>'}
     </section>
     <section class="summary"><h2>3. ตรวจยอดก่อนเปิดบิล</h2><div id="preview"></div></section>
     <div class="actions"><button class="primary" type="submit" ${!editing && !adminList.storageReady ? 'disabled' : ''}>${editing ? 'บันทึกการแก้ไข' : 'เปิดบิล'}</button>
@@ -1045,7 +1044,6 @@
     e.preventDefault();
     if (e.target.id === 'draft') {
       const draft = costDraft();
-      const savePromptPay = new FormData(e.target).has('savePromptPay');
       if (!draft || !draft.attendees.length || draft.court + draft.shuttle < 1) {
         message('ตรวจค่าใช้จ่ายและเลือกรายชื่อที่ต้องการเก็บเงินก่อน', true);
         return;
@@ -1056,7 +1054,6 @@
           editing = false;
           await load();
         } else {
-          if (savePromptPay) await post('promptpay', { promptpay: draft.transfer });
           window.SenaLineNotice?.preload();
           let result;
           if (additionalKey && additionalDate === draft.date) {
