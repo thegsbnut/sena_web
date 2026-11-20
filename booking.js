@@ -8,6 +8,17 @@ import { holidayOn, HOLIDAY_YEARS } from './booking-holidays.js';
 import { createNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
 import {
+  applyCupMoves,
+  cleanSponsorInput,
+  createSponsor,
+  deleteSponsor,
+  getSponsor,
+  listSponsors,
+  SPONSOR_LIMIT,
+  sponsorView,
+  updateSponsor,
+} from './sponsors.js';
+import {
   recordAttendance,
   readBadgeSource,
   latestCupOf,
@@ -79,6 +90,8 @@ const validTime = t => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test
 const integer = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const cupWeekFor = (doc, club) => doc.cupWeek ?? clubOf(club).defaultCupWeek;
 const weekOfMonth = date => Math.ceil(Number(date.slice(8, 10)) / 7);
+export const sessionIsCup = (s, cupWeek) =>
+  !s.skipped && (s.cupOverride ?? weekOfMonth(s.date) === cupWeek);
 function normalizeCourtNumbers(value) {
   if (typeof value !== 'string' || value.length > 80) fail('กรอกเลขคอร์ตคั่นด้วยจุลภาค เช่น 6, 7');
   const trimmed = value.trim();
@@ -410,7 +423,7 @@ export function publicBooking(
       date: s.date,
       started: startsAt(s) <= +now,
       courtNumbers: s.courtNumbers ?? cfg.courtNumbers ?? '',
-      isCup: !s.skipped && (s.cupOverride ?? weekOfMonth(s.date) === cupWeek),
+      isCup: sessionIsCup(s, cupWeek),
       ...(admin
         ? { cupOverride: s.cupOverride ?? null, courtNumbersOverride: s.courtNumbers ?? null }
         : {}),
@@ -542,6 +555,8 @@ export async function bookingRoute(req, env, admin, club, member = null) {
           'reroll',
           'courtNumbers',
           'job',
+          'sponsorSave',
+          'sponsorDelete',
         ].includes(input.action)
       )
         fail('ไม่พบคำสั่ง');
@@ -560,6 +575,20 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         input = null;
       }
     }
+    // Sponsors live outside the booking document (like job lines): check who may
+    // write first, check the Cup day inside the document read, write afterwards.
+    const sponsorAction = ['sponsorSave', 'sponsorDelete'].includes(input?.action)
+      ? await sponsorRequest(env, input, admin, member, club)
+      : null;
+    let cupDiff = null;
+    const readSponsors = () =>
+      env.DB
+        ? listSponsors(env.DB, { clubs: [club], from: bangkokDate(now) }).catch(error => {
+            logError('booking:sponsors', error, { club });
+            return [];
+          })
+        : [];
+    const earlySponsors = sponsorAction || input?.action === 'cupCalendar' ? null : readSponsors();
     // Badge rows and cup history are independent of the booking document: fetch
     // them at the same time. The latest cup comes from those same rows.
     const [badgeSource, outcome] = await Promise.all([
@@ -574,6 +603,22 @@ export async function bookingRoute(req, env, admin, club, member = null) {
         club,
         input
           ? (doc, players) => {
+              if (sponsorAction) {
+                const s = doc.sessions.find(s => s.id === sponsorAction.date);
+                const open = s && startsAt(s) > +now;
+                // Organizers may fix or remove an existing entry at any time.
+                if (!(admin && sponsorAction.existing)) {
+                  if (!open) fail('รอบนี้เริ่มแล้ว แก้สปอนเซอร์ไม่ได้', 409);
+                  if (!sessionIsCup(s, cupWeekFor(doc, club)))
+                    fail('วันนี้ไม่ใช่วันแข่ง Cup กรุณาโหลดใหม่', 409);
+                }
+                return {
+                  message:
+                    input.action === 'sponsorDelete'
+                      ? 'ยกเลิกการเป็นสปอนเซอร์แล้ว'
+                      : 'บันทึกสปอนเซอร์แล้ว',
+                };
+              }
               if (input.action === 'venueMap') {
                 const next = validateVenueMap(input.url),
                   current = venueMapFor(doc, club);
@@ -642,6 +687,18 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                   new Set(changes.map(c => c.date)).size !== changes.length
                 )
                   fail('ตรวจสัปดาห์และวันแข่ง Cup อีกครั้ง');
+                const moves = input.sponsorMoves ?? [];
+                if (
+                  !Array.isArray(moves) ||
+                  moves.length > 20 ||
+                  !moves.every(m => m && validDate(m.from) && (m.to === null || validDate(m.to))) ||
+                  new Set(moves.map(m => m.from)).size !== moves.length
+                )
+                  fail('เลือกวันย้ายสปอนเซอร์ใหม่');
+                const future = doc.sessions.filter(s => startsAt(s) > +now);
+                const before = new Map(
+                  future.map(s => [s.date, sessionIsCup(s, cupWeekFor(doc, club))]),
+                );
                 for (const { date, isCup } of changes) {
                   const s = session(date);
                   if (s.skipped) fail('รอบนี้งดจองวันหยุด กรุณาโหลดค่าล่าสุด', 409);
@@ -650,6 +707,12 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                 }
                 doc.cupWeek = week;
                 doc.cupVersion = (doc.cupVersion ?? 0) + 1;
+                const after = new Map(future.map(s => [s.date, sessionIsCup(s, week)]));
+                const lost = [...before].filter(([d, was]) => was && !after.get(d)).map(([d]) => d);
+                const gained = [...after].filter(([d, is]) => is && !before.get(d)).map(([d]) => d);
+                if (!moves.every(m => lost.includes(m.from) && (m.to === null || after.get(m.to))))
+                  fail('เลือกวันย้ายสปอนเซอร์ใหม่');
+                cupDiff = { lost, gained, moves };
                 return { message: 'บันทึกวันแข่งขันแล้ว' };
               }
               if (input.action === 'reroll') {
@@ -877,6 +940,14 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       ),
     ]);
     // Medals of the latest cup, keyed by roster id ('id:<player id>').
+    let sponsorNotice = null;
+    if (sponsorAction)
+      sponsorNotice = await writeSponsor(env, club, input, sponsorAction, outcome, now);
+    if (cupDiff && env.DB && (cupDiff.lost.length || cupDiff.gained.length))
+      await applyCupMoves(env.DB, club, cupDiff, +now).catch(error =>
+        logError('booking:sponsor-moves', error, { club }),
+      );
+    const sponsorRows = await (earlySponsors ?? readSponsors());
     const awards = cupMedals(
       (badgeSource && latestCupOf(badgeSource)) ?? outcome.cup,
       identityFrom(outcome.players, club, badgeSource?.legacy),
@@ -899,6 +970,18 @@ export async function bookingRoute(req, env, admin, club, member = null) {
       for (const p of view.roster)
         if (p.id !== ownId)
           p.badge = { ...p.badge, plays: globalThis.SenaJobRules.levelFloor(p.badge.plays) };
+    const sponsorOwner = memberMode(env) ? ownId : null;
+    for (const s of view.sessions) {
+      if (!s.isCup) continue;
+      const rows = sponsorRows.filter(r => r.cup_date === s.date);
+      s.sponsors = sponsorView(rows, {
+        players: outcome.players,
+        ownId: sponsorOwner,
+        admin,
+        started: s.started,
+      });
+      s.sponsorFull = rows.length >= SPONSOR_LIMIT;
+    }
     if (memberMode(env)) {
       view.requireLogin = true;
       view.member = {
@@ -916,9 +999,9 @@ export async function bookingRoute(req, env, admin, club, member = null) {
                   r.playerId === member.link.player_id)));
     }
     const { withdrawn, ...result } = outcome.result ?? {};
-    let notice;
+    let notice = sponsorNotice;
     try {
-      notice = await bookingNotice(env, club, input, outcome, withdrawn);
+      notice ??= await bookingNotice(env, club, input, outcome, withdrawn);
     } catch (error) {
       logError('booking:notice', error);
     }
@@ -979,6 +1062,75 @@ async function bookingNotice(env, club, input, outcome, withdrawn) {
       (await codeSuffix(env, club, 'withdraw', { sessionId, date, promotedIds }));
   } else return;
   return { text, liffId: env.LINE_LIFF_ID || '' };
+}
+// Who is writing a sponsor entry, checked before the booking document is read.
+// Returns { date, existing, playerId }.
+async function sponsorRequest(env, input, admin, member, club) {
+  if (!env.DB) fail('ยังไม่ได้ผูกฐานข้อมูล DB', 503);
+  const own = memberMode(env)
+    ? member?.link?.status === 'approved'
+      ? member.link.player_id
+      : null
+    : input.playerId || null;
+  let existing = null;
+  if (input.id != null) {
+    if (typeof input.id !== 'string' || !Number.isInteger(input.revision)) fail('ข้อมูลไม่ถูกต้อง');
+    existing = await getSponsor(env.DB, input.id);
+    if (!existing || existing.club !== club || existing.hidden)
+      fail('ไม่พบสปอนเซอร์รายการนี้ กรุณาโหลดใหม่', 409);
+    if (!admin && (!own || existing.player_id !== own)) fail('แก้ได้เฉพาะสปอนเซอร์ของตัวเอง', 403);
+    return { date: existing.cup_date, existing, playerId: existing.player_id };
+  }
+  if (input.action === 'sponsorDelete') fail('ข้อมูลไม่ถูกต้อง');
+  if (!validDate(input.date)) fail('ข้อมูลไม่ถูกต้อง');
+  if (!admin) {
+    if (!own) fail('กรุณาเข้าสู่ระบบ LINE และผูกชื่อก่อน', 403);
+    if (input.playerId !== own) fail('ลงสปอนเซอร์ได้เฉพาะในชื่อของตัวเอง', 403);
+  }
+  return { date: input.date, existing: null, playerId: input.playerId || null };
+}
+
+// Writes the sponsor entry after the Cup day check passed; returns the group
+// notice for a new entry when the player asked for one.
+async function writeSponsor(env, club, input, action, outcome, now) {
+  const nameOf = id => outcome.players.find(p => p.id === id)?.name;
+  if (input.action === 'sponsorDelete') {
+    await deleteSponsor(env.DB, input.id, input.revision);
+    return null;
+  }
+  // Only an entry without a player (an organizer's) carries its own display name.
+  const clean = cleanSponsorInput(
+    { ...input, playerId: action.playerId },
+    { admin: !action.playerId },
+  );
+  if (action.playerId && !nameOf(action.playerId)) fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
+  const displayName = action.playerId ? nameOf(action.playerId) : clean.displayName;
+  if (action.existing) {
+    await updateSponsor(env.DB, input.id, input.revision, { ...clean, displayName }, +now);
+    return null;
+  }
+  const row = await createSponsor(
+    env.DB,
+    {
+      id: crypto.randomUUID(),
+      club,
+      cupDate: action.date,
+      playerId: action.playerId,
+      ...clean,
+      displayName,
+    },
+    +now,
+  );
+  if (input.notify !== true) return null;
+  return {
+    text:
+      '🎁 ขอเป็นสปอนเซอร์ ' +
+      noticeClub(club) +
+      ' ' +
+      noticeDay(action.date) +
+      (await codeSuffix(env, club, 'sponsor', { id: row.id })),
+    liffId: env.LINE_LIFF_ID || '',
+  };
 }
 // " #code" so Badbot answers with the round's list; without a code the text still goes out.
 async function codeSuffix(env, club, kind, payload) {

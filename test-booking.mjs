@@ -924,7 +924,8 @@ test('organizers can move Cup dates without rewriting bookings, and overrides su
   const saved = await r.json();
   assert.equal(saved.cupVersion, 1);
   assert.equal(saved.settingsVersion, before.settingsVersion);
-  const strip = sessions => sessions.map(({ isCup, cupOverride, ...session }) => session);
+  const strip = sessions =>
+    sessions.map(({ isCup, cupOverride, sponsors, sponsorFull, ...session }) => session);
   assert.deepEqual(strip(saved.sessions), strip(before.sessions));
   assert.equal((await f.call(body, { cookie })).status, 409);
   const next = await (

@@ -297,3 +297,304 @@ test('a hidden row does not block the same player from moving back in', async t 
     ['new'],
   );
 });
+
+// ---- /api/booking integration ----
+const { bookingRoute, defaultSettings, bangkokDate } = await import('./booking.js');
+const roster = ['Nott', 'Beau', 'Ice', 'Pong'].map((name, i) => ({
+  id: 'p' + i,
+  name,
+  thai: '',
+  lv: 5,
+  gender: 'M',
+}));
+const day = n => bangkokDate(new Date(Date.now() + n * 86400000));
+function bookingFixture(t) {
+  const db = sqliteD1(t);
+  for (const table of ['club_state', 'club_state_88']) {
+    db.raw.exec(
+      `CREATE TABLE ${table}(id INTEGER PRIMARY KEY,revision INTEGER,payload TEXT,updated_at TEXT)`,
+    );
+    db.raw
+      .prepare(`INSERT INTO ${table} VALUES(1,1,?,?)`)
+      .run(JSON.stringify({ players: roster, selected: [], cup: null }), 'x');
+  }
+  const env = { DB: db, LINE_MEMBER_AUTH_ENABLED: 'true', LINE_LIFF_ID: 'liff-test' };
+  const member = id => ({ userId: 'U' + id, link: { status: 'approved', player_id: id } });
+  const call = async (body, { admin = false, as = null, club = 'sena' } = {}) => {
+    const response = await bookingRoute(
+      new Request('https://example.com/api/booking' + (club === '88' ? '?club=88' : ''), {
+        method: body ? 'POST' : 'GET',
+        headers: { Origin: 'https://example.com', 'X-Booking-Token': 'a'.repeat(64) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+      env,
+      admin,
+      club,
+      as ? member(as) : null,
+    );
+    return { status: response.status, data: await response.json() };
+  };
+  // Every day open for 2 weeks; Cup only where cupCalendar says (week 0 = none by default).
+  const open = async (club = 'sena', cups = [day(3)]) => {
+    const settings = {
+      ...defaultSettings(),
+      enabled: true,
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
+      weeks: 2,
+    };
+    let r = await call({ action: 'settings', settingsVersion: 0, settings }, { admin: true, club });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    r = await call(
+      {
+        action: 'cupCalendar',
+        week: 0,
+        cupVersion: 0,
+        changes: cups.map(date => ({ date, isCup: true })),
+      },
+      { admin: true, club },
+    );
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    return r.data;
+  };
+  const sponsor = (as, extra = {}) =>
+    call(
+      {
+        action: 'sponsorSave',
+        date: day(3),
+        playerId: as,
+        prize: 'ลูกแบด 1 หลอด',
+        award: 'champ',
+        ...extra,
+      },
+      { as },
+    );
+  const cupOf = (data, date = day(3)) => data.sessions.find(s => s.date === date);
+  return { db, env, call, open, sponsor, cupOf };
+}
+
+test('a member sponsors a Cup day and sees it on the booking page', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const r = await f.sponsor('p1', { message: 'สู้ๆ' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.result.message, 'บันทึกสปอนเซอร์แล้ว');
+  const mine = f.cupOf((await f.call(null, { as: 'p1' })).data);
+  assert.deepEqual(
+    mine.sponsors.map(s => [s.name, s.prize, s.awardLabel, s.mine, s.canEdit]),
+    [['Beau', 'ลูกแบด 1 หลอด', '🥇 แชมป์', true, true]],
+  );
+  assert.equal(mine.sponsorFull, false);
+  const other = f.cupOf((await f.call(null, { as: 'p2' })).data);
+  assert.equal(other.sponsors[0].mine, false);
+  assert.equal(other.sponsors[0].canEdit, false);
+  const regular = (await f.call(null)).data.sessions.find(s => !s.isCup);
+  assert.equal(regular.sponsors, undefined);
+});
+
+test('sponsoring is refused on a regular day, for someone else, or when not logged in', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  assert.equal((await f.sponsor('p1', { date: day(4) })).status, 409);
+  assert.equal(
+    (
+      await f.call(
+        { action: 'sponsorSave', date: day(3), playerId: 'p2', prize: 'x', award: 'all' },
+        { as: 'p1' },
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.call({
+        action: 'sponsorSave',
+        date: day(3),
+        playerId: 'p2',
+        prize: 'x',
+        award: 'all',
+      })
+    ).status,
+    403,
+  );
+  assert.equal((await f.sponsor('p1', { prize: '' })).status, 400);
+});
+
+test('only the owner or an organizer can edit or delete', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const { id, revision } = f.cupOf((await f.sponsor('p1')).data).sponsors[0];
+  const edit = { action: 'sponsorSave', id, revision, date: day(3), prize: 'ไม้แบด', award: 'all' };
+  assert.equal((await f.call({ ...edit, playerId: 'p2' }, { as: 'p2' })).status, 403);
+  const r = await f.call({ ...edit, playerId: 'p1' }, { as: 'p1' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.cupOf(r.data).sponsors[0].prize, 'ไม้แบด');
+  assert.equal((await f.call({ ...edit, playerId: 'p1' }, { as: 'p1' })).status, 409);
+  assert.equal(
+    (await f.call({ action: 'sponsorDelete', id, revision: 2 }, { as: 'p2' })).status,
+    403,
+  );
+  const gone = await f.call({ action: 'sponsorDelete', id, revision: 2 }, { admin: true });
+  assert.equal(gone.status, 200);
+  assert.equal(gone.data.result.message, 'ยกเลิกการเป็นสปอนเซอร์แล้ว');
+  assert.deepEqual(f.cupOf(gone.data).sponsors, []);
+});
+
+test('an organizer can add a sponsor who is not a player', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const r = await f.call(
+    {
+      action: 'sponsorSave',
+      date: day(3),
+      displayName: 'ร้านแบดมินตัน',
+      prize: 'ลูกแบด',
+      award: 'all',
+    },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.cupOf(r.data).sponsors[0].name, 'ร้านแบดมินตัน');
+});
+
+test('notify asks the page to post a notice with a sponsor code', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const r = await f.sponsor('p1', { notify: true });
+  const { noticeDay } = await import('./line-notices.js');
+  assert.match(
+    r.data.notice.text,
+    new RegExp('^🎁 ขอเป็นสปอนเซอร์ SENA ' + noticeDay(day(3)) + ' #[a-z0-9]{5}$'),
+  );
+  assert.equal(r.data.notice.liffId, 'liff-test');
+  const code = r.data.notice.text.slice(-5);
+  const row = f.db.raw.prepare('SELECT kind,payload FROM line_notices WHERE code=?').get(code);
+  assert.equal(row.kind, 'sponsor');
+  assert.equal(JSON.parse(row.payload).id, f.cupOf(r.data).sponsors[0].id);
+  assert.equal((await f.sponsor('p2')).data.notice, undefined);
+});
+
+test('clubs keep their own sponsors', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  await f.open('88');
+  await f.sponsor('p1');
+  const r88 = await f.call(null, { club: '88' });
+  assert.deepEqual(f.cupOf(r88.data).sponsors, []);
+});
+
+test('moving the Cup moves its sponsors when the organizer picks the new day', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  await f.sponsor('p1');
+  const r = await f.call(
+    {
+      action: 'cupCalendar',
+      week: 0,
+      cupVersion: 1,
+      changes: [
+        { date: day(3), isCup: null },
+        { date: day(5), isCup: true },
+      ],
+      sponsorMoves: [{ from: day(3), to: day(5) }],
+    },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.cupOf(r.data, day(5)).sponsors[0].name, 'Beau');
+});
+
+test('a Cup lost through the week setting can move its sponsors too', async t => {
+  const f = bookingFixture(t);
+  const cupDay = day(3),
+    week = Math.ceil(Number(cupDay.slice(8, 10)) / 7);
+  // Make day(3) a Cup by week, then sponsor it.
+  let r = await f.call(
+    {
+      action: 'settings',
+      settingsVersion: 0,
+      settings: { ...defaultSettings(), enabled: true, weekdays: [0, 1, 2, 3, 4, 5, 6], weeks: 2 },
+    },
+    { admin: true },
+  );
+  r = await f.call({ action: 'cupCalendar', week, cupVersion: 0, changes: [] }, { admin: true });
+  assert.ok(f.cupOf(r.data).isCup);
+  await f.sponsor('p1');
+  const target = day(12);
+  r = await f.call(
+    {
+      action: 'cupCalendar',
+      week: 0,
+      cupVersion: 1,
+      changes: [{ date: target, isCup: true }],
+      sponsorMoves: [{ from: cupDay, to: target }],
+    },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.cupOf(r.data, target).sponsors.length, 1);
+});
+
+test('without a move the sponsors are hidden, and come back with the Cup', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  await f.sponsor('p1');
+  let r = await f.call(
+    { action: 'cupCalendar', week: 0, cupVersion: 1, changes: [{ date: day(3), isCup: null }] },
+    { admin: true },
+  );
+  assert.equal(f.db.raw.prepare('SELECT hidden FROM cup_sponsors').get().hidden, 1);
+  r = await f.call(
+    { action: 'cupCalendar', week: 0, cupVersion: 2, changes: [{ date: day(3), isCup: true }] },
+    { admin: true },
+  );
+  assert.equal(f.cupOf(r.data).sponsors.length, 1);
+});
+
+test('a move to a day that is not a Cup is refused and the calendar is not saved', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  await f.sponsor('p1');
+  const r = await f.call(
+    {
+      action: 'cupCalendar',
+      week: 0,
+      cupVersion: 1,
+      changes: [{ date: day(3), isCup: null }],
+      sponsorMoves: [{ from: day(3), to: day(6) }],
+    },
+    { admin: true },
+  );
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /ย้ายสปอนเซอร์/);
+  assert.ok(f.cupOf((await f.call(null)).data).isCup);
+});
+
+test('the booking page still loads when sponsors cannot be read', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  await f.sponsor('p1');
+  const prepare = f.db.prepare.bind(f.db);
+  f.db.prepare = sql => {
+    if (/FROM cup_sponsors/.test(sql)) throw Error('D1 down');
+    return prepare(sql);
+  };
+  t.mock.method(console, 'error', () => {});
+  const r = await f.call(null);
+  assert.equal(r.status, 200);
+  assert.deepEqual(f.cupOf(r.data).sponsors, []);
+});
+
+test("an organizer edits a player's entry without sending the player", async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const { id, revision } = f.cupOf((await f.sponsor('p1')).data).sponsors[0];
+  const r = await f.call(
+    { action: 'sponsorSave', id, revision, prize: 'ไม้แบด', award: 'third' },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(
+    [f.cupOf(r.data).sponsors[0].name, f.cupOf(r.data).sponsors[0].awardLabel],
+    ['Beau', '🥉 ที่ 3'],
+  );
+});
