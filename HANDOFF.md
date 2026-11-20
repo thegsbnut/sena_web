@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (≤ ~40 บรรทัด, ไม่เกิน ~6,000 ตัวอักษร — hook ตอนเริ่ม session ตัดไฟล์ที่ยาวเกินทิ้ง AI ตัวถัดไปจะเห็นแค่ต้นไฟล์):** บรรทัดละเรื่อง งานที่เสร็จแล้วย่อเป็นบรรทัดเดียวใน "ประวัติ" รายละเอียดไปอยู่ใน spec / `BADBOT-REPLY.md` / `LINE-LIFF.md` / `CLAUDE.md`
 
 ## อัปเดตล่าสุด
+- 2026-11-20 · Claude · **ยังไม่ merge (รอเจ้าของ)** branch `claude/optimistic-goodall-3m86nj`: สปอนเซอร์วันแข่ง Cup (spec/plan `2026-11-20-cup-sponsors*`, ดีไซน์ https://claude.ai/artifact/FN52z4ubE35s3pBpiFZZof) — ยังไม่ได้ลองบน LINE/มือถือจริง (โหมดล็อกอิน LINE + แท็กจริงในกลุ่ม)
 - 2026-11-19 · Claude · ขึ้น main แล้ว: แก้แท็บบิลปัดแล้วไปเลื่อนหน้าข้างหลัง (ล็อก `html.bills-open` ใน `next-shell.js`/`next-nav.css`) · คำสั่งสร้างตารางทั้งหมดย้ายไป `schema.js` + `schema-cache.js` สั่งเป็น `db.batch` เดียวต่อ isolate (ตารางใหม่ต้องเพิ่มที่ `schema.js` เท่านั้น — `test-schema.mjs` ตรวจ)
 - 2026-11-19 · Claude · ไม่ merge (เจ้าของบอกพอแล้ว): โหลด iframe บิลล่วงหน้า + ยิง `/api/member` พร้อมรายการบิล — commit `667b1e2` บน branch `claude/intelligent-faraday-cv6766` หยิบมาใช้ได้ถ้าเจ้าของสั่ง
 - 2026-11-19 · Antigravity · #76–#80 ขึ้น main แล้ว: toast หน้าบิล, พรีวิวสลิป + modal ตรวจสลิปผู้จัด, ปุ่มดึงคนตีรอบวันนี้ในบิลค่าข้าว, ซ่อนแถบผู้จัดสำหรับคนทั่วไป + แถบโปรไฟล์สั้น, ปุ่ม `ถอนชื่อฉัน` บนการ์ดวัน + ไฮไลต์ชื่อตัวเอง · ยังไม่ได้ลองบน LINE/มือถือจริง
@@ -28,7 +29,7 @@
 - ตรวจ deploy: `curl` https://sena-web.thegsbnut.workers.dev (`/court`, `/billing`) แล้วหา `?v=`; force push ถูกปฏิเสธ (ถ้า branch ถูก squash-merge: `git reset --hard origin/main` แล้ว `git merge -s ours origin/<branch>`)
 
 ## สถานะเทส
-- 2026-11-19 (main `47f11e9`): `npm test` 314/314 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
+- 2026-11-20 (branch `claude/optimistic-goodall-3m86nj`): `npm test` 354/354 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน ไม่เกิน 5 รายการ)

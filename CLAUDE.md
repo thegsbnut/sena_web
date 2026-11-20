@@ -21,6 +21,7 @@
 | `line-reply.js`, `line-mentions.js` | ตอบคำสั่ง/ปุ่มในกลุ่ม, สร้างข้อความ mention |
 | `line-roster-card.js`, `line-bill-card.js`, `line-board-cards.js` | การ์ด Flex รายชื่อผู้ตี / สรุปบิลจ่ายครบ / ตารางจัดคู่ อันดับ ผล Cup (badge PNG ใน `public/badges/`) |
 | `line-nudge.js` | ตามบิลค้างตอนเช้าแบบไม่ push: ข้อความตัวอักษรแรกของวัน (หลัง 08:00 เวลาไทย) ในกลุ่มที่ผูกก๊วน → ตอบการ์ดบิลค้างด้วย reply token ของข้อความนั้น 1 ครั้งต่อกลุ่มต่อวัน (ตาราง `line_daily_nudges`) |
+| `sponsors.js`, `line-sponsor-card.js`, `line-sponsor-mark.js` | สปอนเซอร์วันแข่ง Cup: ตาราง `cup_sponsors`, ลง/แก้/ลบผ่าน `/api/booking` (`sponsorSave`/`sponsorDelete`), ย้ายตามปฏิทิน Cup, การ์ดขอบคุณ + แท็กตัวจริง, แถบท้ายการ์ด (ยกเว้นขุนเงิน) ตั้งแต่ลงถึง Cup+7 วัน — spec `docs/superpowers/specs/2026-11-20-cup-sponsors-design.md` |
 | `backups.js`, `leaderboard.js`, `booking-holidays.js` | backup state, ตารางคะแนน Cup, วันหยุด |
 | `public/engine.js` | อัลกอริทึมจัดคู่ (`globalThis.Sena.generate`) ใช้ทั้งในเบราว์เซอร์และ Worker |
 | `public/custom-split.js`, `public/billing-custom.js` | บิลอื่นๆ (ค่าข้าว ฯลฯ ไม่ผูกกับรอบตีแบด): ตัวคำนวณหาร 3 แบบ (`globalThis.SenaCustomSplit.split` ใช้ทั้งเบราว์เซอร์และ Worker) + ฟอร์มสร้าง/แก้; ฝั่ง Worker อยู่ใน `billing.js` (`action=custom` / `people`, สิทธิ์ `manager` = ผู้จัดหรือคนสร้างบิล) — spec `docs/superpowers/specs/2026-11-16-custom-bills-design.md` |
