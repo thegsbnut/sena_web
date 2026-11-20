@@ -85,6 +85,17 @@ export const SQL = {
     'CREATE TABLE IF NOT EXISTS line_daily_nudges (group_id TEXT NOT NULL, day TEXT NOT NULL, claimed_at INTEGER NOT NULL, PRIMARY KEY (group_id, day))',
   sessionSigning:
     'CREATE TABLE IF NOT EXISTS session_signing (id INTEGER PRIMARY KEY, secret TEXT NOT NULL)',
+  // Cup sponsors (sponsors.js): one row per sponsor of a club's Cup day.
+  cupSponsors: `CREATE TABLE IF NOT EXISTS cup_sponsors (
+  id TEXT PRIMARY KEY, club TEXT NOT NULL, cup_date TEXT NOT NULL, player_id TEXT,
+  display_name TEXT NOT NULL, prize TEXT NOT NULL, award TEXT NOT NULL, award_note TEXT,
+  message TEXT, hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL, revision INTEGER NOT NULL DEFAULT 1
+ )`,
+  cupSponsorsDateIndex:
+    'CREATE INDEX IF NOT EXISTS cup_sponsors_date ON cup_sponsors (club, cup_date)',
+  cupSponsorsPlayerIndex:
+    'CREATE UNIQUE INDEX IF NOT EXISTS cup_sponsors_player ON cup_sponsors (club, cup_date, player_id) WHERE player_id IS NOT NULL',
 };
 
 // ---- slip images (SLIPS_DB) ----
