@@ -129,30 +129,28 @@ export function sponsorBubble({ club, cupDate, rows, highlightId, joinUrl }) {
         wrap: true,
       }),
     );
-  return markSponsor(
-    {
-      type: 'bubble',
-      size: 'mega',
-      header: goldHeader(
-        star ? '🎁 ขอบคุณสปอนเซอร์' : '🎁 สปอนเซอร์ ' + clubOf(club).cupName,
-        cupTitle(club, cupDate),
-      ),
-      body: vbox(body, { paddingAll: 'lg', spacing: 'sm' }),
-      footer: vbox(
-        [
-          {
-            type: 'button',
-            style: 'primary',
-            color: clubColor(club),
-            height: 'sm',
-            action: { type: 'uri', label: '🎁 ร่วมเป็นสปอนเซอร์', uri: joinUrl },
-          },
-        ],
-        { paddingAll: 'lg', paddingTop: 'none' },
-      ),
-    },
-    club,
-  );
+  // Not marked: the strip would only repeat the list this card already shows.
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: goldHeader(
+      star ? '🎁 ขอบคุณสปอนเซอร์' : '🎁 สปอนเซอร์ ' + clubOf(club).cupName,
+      cupTitle(club, cupDate),
+    ),
+    body: vbox(body, { paddingAll: 'lg', spacing: 'sm' }),
+    footer: vbox(
+      [
+        {
+          type: 'button',
+          style: 'primary',
+          color: clubColor(club),
+          height: 'sm',
+          action: { type: 'uri', label: '🎁 ร่วมเป็นสปอนเซอร์', uri: joinUrl },
+        },
+      ],
+      { paddingAll: 'lg', paddingTop: 'none' },
+    ),
+  };
 }
 
 export const sponsorAlt = (club, cupDate, rows) =>

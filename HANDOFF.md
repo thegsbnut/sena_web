@@ -12,7 +12,7 @@
 
 ## ค้างอยู่ / ขั้นต่อไป
 - **ความเร็ว (วัด 2026-11-19):** Worker CPU p50 2.7ms, wall p50 127ms / p99 1.76s; `sena-db` อยู่ APAC แต่ **`sena-bill-slips` อยู่ WNAM** (แนบ/ดูสลิปข้ามแปซิฟิก) — ย้ายต้องสร้าง D1 ใหม่ระบุ APAC แล้วก๊อปข้อมูล ยังไม่ทำ · `/api/booking` ยิง query พร้อมกันอยู่แล้ว ไม่ต้อง tune ต่อ
-- สปอนเซอร์ ค้าง: ย้ายวันไม่ใช่ db.batch, แถบซ้ำในการ์ดสปอนเซอร์, รอบปิดรับจองยังลงได้ (server)
+- สปอนเซอร์ ค้าง: ย้ายวันไม่ใช่ db.batch, รอบปิดรับจองยังลงได้ (server)
 - **ผลรีวิวที่ยังไม่แก้ (รอเจ้าของสั่ง):** เพดานบิลทั่วไป 5 ใบเป็น check-then-insert (เลี่ยงได้ด้วยยกเลิก/เปิดใหม่); `readBadgeSource` อ่าน attendance/Cup ทั้งก้อนทุก GET จอง; `validateSettings` เก็บ field แปลกจาก client; บิลของฉัน/รายการผู้จัด `LIMIT 200` ตัดเงียบ; ชื่อแขกซ้ำเทียบด้วย `toLowerCase` ไม่ NFC; webhook ไม่กัน `webhookEventId` ซ้ำ
 - **hard code ที่ควรย้ายเข้า `clubs.js`/config:** `'sena'`/`'88'` ใน frontend และ `line-reply.js`, เขตเวลา `+7*3600000` ซ้ำ 6 ที่, `HOLIDAY_YEARS` มีแค่ 2026–2027 (ปี 2028 ไม่มีวันหยุดโดยไม่เตือน), URL production ใน `line-reply.js`, `CUP_DAY_SINCE` กับ `ATTENDANCE_START` อยู่คนละที่
 - บิลค่าข้าว เรื่องเล็กที่ยังไม่แก้: ชื่อบิลยาวในป้ายการ์ด, แถวคนออกเงินโผล่ใน "ของฉัน › จ่ายแล้ว"
@@ -30,7 +30,7 @@
 - ตรวจ deploy: `curl` https://sena-web.thegsbnut.workers.dev (`/court`, `/billing`) แล้วหา `?v=`; force push ถูกปฏิเสธ (ถ้า branch ถูก squash-merge: `git reset --hard origin/main` แล้ว `git merge -s ours origin/<branch>`)
 
 ## สถานะเทส
-- 2026-11-20 (branch `claude/optimistic-goodall-3m86nj`): `npm test` 358/358 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
+- 2026-11-20 (branch `claude/optimistic-goodall-3m86nj`): `npm test` 359/359 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน ไม่เกิน 5 รายการ)

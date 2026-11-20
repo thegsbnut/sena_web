@@ -815,3 +815,18 @@ test('windowStart goes back seven days across month and year ends', async () => 
   assert.equal(windowStart('2027-01-04'), '2026-12-28');
   assert.equal(windowStart('2027-03-04'), '2027-02-25');
 });
+
+test('the thank-you and sponsor list cards never get a strip repeating their own list', () => {
+  const rows = [srow('a', 'sena', '2026-12-12', 'Beau')];
+  const card = sponsorBubble({
+    club: 'sena',
+    cupDate: '2026-12-12',
+    rows,
+    highlightId: 'a',
+    joinUrl: 'https://x.test/b',
+  });
+  const before = JSON.stringify(card);
+  const [message] = withSponsorStrips([flexMessage([card], 's')], rows, '2026-12-01');
+  assert.equal(JSON.stringify(message.contents), before);
+  assert.doesNotMatch(before, /สนับสนุนโดย/);
+});
