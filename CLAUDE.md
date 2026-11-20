@@ -50,6 +50,13 @@ npm run format:check
 - เมื่อเพิ่มไฟล์เทสใหม่ ต้องเพิ่มชื่อไฟล์ใน script `test` ของ `package.json`
 - รัน `npm run format` ก่อน commit; HTML และ `*.md` ไม่ได้จัดรูปแบบ (ดู `.prettierignore`)
 
+## ต้องรู้ (ข้อควรระวังที่เคยพลาด)
+- แท็บบิล = iframe `#billsFrame` (`/billing.html`) ใน `court.html`; กดซ้ำส่ง `bills-refresh`; ห้ามลบ `#session` (ซ่อนด้วย `hidden`, `app.js` อ้าง id) — spec `2026-11-13-bills-tab-design.md`
+- **สลิปที่แนบ = จ่ายแล้วทันที** (เฉพาะเงินสดรอผู้จัดยืนยัน) ผู้จัดทำได้แค่ "ให้ส่งใหม่"; `/api/member/bills` ต้องเป็น path นี้ ไม่ใช่ `?action=`; บิลที่โชว์ QR ใช้ `openMineId()` ตัวเดียวทั้งรายการและ `fillMine`
+- AI ตรวจสลิป (`slip-check.js`, spec `2026-11-12-slip-ai-check-design.md`) เป็นแค่ตัวช่วยผู้จัด ห้ามเปลี่ยนสถานะอัตโนมัติ ห้ามให้ผู้เล่นเห็น; `payer.amount` เป็นสตางค์; `rejectNote` ผู้เล่นเห็น ห้ามมีชื่อคนอื่น ≤ 240 ตัวอักษร
+- Leaderboard ผูกผู้เล่นด้วย id (`teamIds`, ตาราง `cup_name_ids`) เปลี่ยนชื่อผู้เล่นแล้วประวัติตามเอง; ก๊วนผูกกลุ่ม LINE ได้ห้องเดียว แต่สองก๊วนผูกห้องเดียวกันได้
+- ข้อความน้องขุนเงิน / รูปการ์ด / วิธีดู log production: `BADBOT-REPLY.md` · LIFF / แจ้งเข้ากลุ่ม (`line-notice:client` `stage`): `LINE-LIFF.md`
+
 ## ทำงานร่วมกับ AI หลายตัว (Claude / GPT)
 - เครื่องมือ GPT อ่าน `AGENTS.md` ซึ่งชี้กลับมาที่ไฟล์นี้ — แก้กฎที่นี่ที่เดียว
 - `HANDOFF.md` = สถานะงานที่ส่งต่อ: ก่อนหยุดงาน (โควตาใกล้หมด) ให้อัปเดต แล้ว commit + push ทันที ตอนเริ่มงานให้อ่านก่อน
@@ -66,4 +73,4 @@ npm run format:check
 - หากถามให้วิเคราะห์หรือรีวิวอย่างเดียว ให้ตอบในแชตโดยไม่ต้องสร้าง branch หรือเปิด PR
 
 ## เอกสารเพิ่มเติม
-`README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md` (สรุปสั้น; ฉบับเต็มใน `docs/archive/` ไม่ต้องอ่านถ้าไม่ได้แก้เรื่องแท็ก)
+`docs/DEV-NOTES.md` (ดู production / ทดสอบหน้าในเครื่อง / ตรวจ deploy), `docs/BACKLOG.md` (งานค้างที่ยังไม่สั่งทำ), `README.md` (ตั้งค่า Cloudflare), `BOOKING.md`, `LINE-LIFF.md`, `BADBOT-REPLY.md`, `LINE-MENTION-AUDIT.md` (สรุปสั้น; ฉบับเต็มใน `docs/archive/` ไม่ต้องอ่านถ้าไม่ได้แก้เรื่องแท็ก)
