@@ -826,13 +826,7 @@ body.nxc.home .mine .copy-row {
   margin: 0.5rem 0;
 }
 .cb-guest-add {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
   margin: 0.6rem 0 0.3rem;
-}
-.cb-guest-add input {
-  flex: 1 1 8rem;
 }
 .cb-chip {
   display: inline-flex;

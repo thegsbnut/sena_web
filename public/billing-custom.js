@@ -110,12 +110,13 @@
      </div>
      <input id="cbSearch" type="search" placeholder="ค้นหาชื่อสมาชิก" aria-label="ค้นหาชื่อสมาชิก" autocomplete="off">
      <div id="cbMembers"></div>
-     <div class="cb-guest-add">
-      <input id="cbGuestName" maxlength="40" placeholder="ชื่อ guest" aria-label="ชื่อ guest">
-      <select id="cbGuestOf" aria-label="มากับ"></select>
-      <button type="button" data-cb="add-guest">+ เพิ่ม guest</button>
+     <div class="add-box cb-guest-add">
+      <h3>เพิ่มแขก</h3>
+      <p class="muted">แขก = คนที่ไม่ได้เป็นสมาชิก (ไม่ได้ผูก LINE) ยอดของแขกจะไปรวมกับคนที่พามา ติ๊กสมาชิกด้านบนก่อน</p>
+      <label>1. ชื่อแขก<input id="cbGuestName" maxlength="40" placeholder="พิมพ์ชื่อแขก"></label>
+      <label>2. แขกมากับใคร<select id="cbGuestOf"></select></label>
+      <button type="button" data-cb="add-guest">+ เพิ่มแขก</button>
      </div>
-     <p class="muted">guest คือคนที่ไม่ได้ผูก LINE ต้องเลือกว่ามากับใคร ยอดของ guest จะรวมไปกับสมาชิกคนนั้น</p>
      <div id="cbGuests"></div>
     </section>
     <section>
@@ -186,8 +187,8 @@
       const keep = guestOf.value;
       guestOf.innerHTML =
         state.chosen
-          .map(key => `<option value="${esc(key)}">มากับ ${esc(nameOf(key))}</option>`)
-          .join('') || '<option value="">เลือกสมาชิกก่อน</option>';
+          .map(key => `<option value="${esc(key)}">${esc(nameOf(key))}</option>`)
+          .join('') || '<option value="">ติ๊กสมาชิกด้านบนก่อน</option>';
       if (state.chosen.includes(keep)) guestOf.value = keep;
     }
     function renderMembers() {
@@ -353,7 +354,7 @@
         const name = $('#cbGuestName').value.trim().replace(/\s+/g, ' '),
           guestOf = $('#cbGuestOf').value;
         if (!name || !state.chosen.includes(guestOf)) {
-          message('ใส่ชื่อ guest และเลือกสมาชิกที่มาด้วย', true);
+          message('ใส่ชื่อแขก และเลือกว่าแขกมากับใคร', true);
           return;
         }
         if (everyone().some(p => p.name.toLowerCase() === name.toLowerCase())) {

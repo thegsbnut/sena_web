@@ -598,7 +598,7 @@ test('billing-custom.js escapes every name it puts into innerHTML', () => {
   for (const [, expr] of js.matchAll(/\$\{([^}]*)\}/g))
     if (/\b(name|title|value|transfer)\b/.test(expr) && !/esc\(|money\(|\.length/.test(expr))
       assert.fail('unescaped interpolation: ' + expr);
-  for (const label of ['หารเท่ากัน', 'ใส่ยอดเอง', 'แยกรายการ', '+ เพิ่ม guest', 'เปิดบิล'])
+  for (const label of ['หารเท่ากัน', 'ใส่ยอดเอง', 'แยกรายการ', '+ เพิ่มแขก', 'เปิดบิล'])
     assert(js.includes(label), label);
 });
 
