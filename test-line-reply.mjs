@@ -2088,3 +2088,63 @@ test('when LINE refuses the tag messages, the thank-you card is sent alone', asy
     ['flex'],
   );
 });
+
+test('cards read only sponsors of the last 7 days on, plus an old Cup result day', async t => {
+  const f = fixture(t);
+  const date = future(1),
+    oldCup = future(-30);
+  f.seed('sena', [session(date)]);
+  f.db.exec(
+    'CREATE TABLE cup_history (id TEXT PRIMARY KEY,revision INTEGER,sequence INTEGER,payload TEXT)',
+  );
+  f.db.prepare("INSERT INTO cup_history VALUES ('saved',1,1,?)").run(
+    JSON.stringify({
+      title: 'Sena Cup เก่า',
+      date: oldCup,
+      inBaseline: false,
+      teams: [
+        ['Nut', 'Bua'],
+        ['Bomb', 'X'],
+      ],
+      matches: [{ a: 0, b: 1, sa: 21, sb: 14 }],
+    }),
+  );
+  const add = (id, cupDate, name) =>
+    createSponsor(
+      f.env.DB,
+      {
+        id,
+        club: 'sena',
+        cupDate,
+        playerId: null,
+        displayName: name,
+        prize: 'ลูกแบด',
+        award: 'all',
+      },
+      Date.now(),
+    );
+  await add('old', oldCup, 'ร้านเก่า');
+  await add('older', future(-60), 'ร้านเก่ามาก');
+  await add('now', date, 'ร้านใหม่');
+  const read = [];
+  const prepare = f.env.DB.prepare;
+  f.env.DB.prepare = sql => {
+    const stmt = prepare(sql);
+    if (!/SELECT \* FROM cup_sponsors/.test(sql)) return stmt;
+    const all = stmt.all.bind(stmt);
+    stmt.all = () => {
+      const result = all();
+      read.push(...result.results.map(r => r.id));
+      return result;
+    };
+    return stmt;
+  };
+  await f.hook([f.event('badbot list sena')]);
+  assert.match(JSON.stringify(f.calls.at(-1).messages), /ร้านใหม่/);
+  // The roster card's booking data and the strip both read; neither reads old rows.
+  assert.deepEqual([...new Set(read)], ['now']);
+  read.length = 0;
+  await f.hook([f.event('badbot senacup')]);
+  assert.match(JSON.stringify(f.calls.at(-1).messages), /ขอบคุณสปอนเซอร์[^"]*"[\s\S]*ร้านเก่า/);
+  assert.ok(!read.includes('older'));
+});

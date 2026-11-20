@@ -809,3 +809,9 @@ test('an entry whose player left the roster can still be edited', async t => {
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(f.cupOf(r.data).sponsors[0].name, 'Beau');
 });
+
+test('windowStart goes back seven days across month and year ends', async () => {
+  const { windowStart } = await import('./sponsors.js');
+  assert.equal(windowStart('2027-01-04'), '2026-12-28');
+  assert.equal(windowStart('2027-03-04'), '2027-02-25');
+});

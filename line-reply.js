@@ -13,7 +13,7 @@ import { NOTICE_CODE, claimNotice, releaseNotice, noticeClub, noticeDay } from '
 import { logError } from './log.js';
 import { billingLineText, billingLineMessages, paidSummary, resubmitMessages } from './billing.js';
 import { bangkokDate, bookingRoute } from './booking.js';
-import { activeSponsors, getSponsor, listSponsors } from './sponsors.js';
+import { activeSponsors, getSponsor, listSponsors, windowStart } from './sponsors.js';
 import { SPONSOR_MARK, sponsorAlt, sponsorBubble, withSponsorStrips } from './line-sponsor-card.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 import { paidAlt, paidBubble } from './line-bill-card.js';
@@ -681,7 +681,22 @@ const isMarked = messages =>
 async function addSponsorStrips(env, messages, now) {
   if (!isMarked(messages)) return;
   try {
-    const rows = await listSponsors(env.DB, { clubs });
+    // Only rows that can be on show (cup day >= today - 7), plus the day of an
+    // older Cup result card, which thanks its own sponsors forever.
+    const from = windowStart(bangkokDate(now));
+    const pinned = [
+      ...new Set(
+        messages
+          .filter(m => m?.type === 'flex')
+          .flatMap(m => (m.contents.type === 'carousel' ? m.contents.contents : [m.contents]))
+          .map(b => b[SPONSOR_MARK]?.cupDate)
+          .filter(date => date && date < from),
+      ),
+    ];
+    const rows = [
+      ...(await listSponsors(env.DB, { clubs, from })),
+      ...(pinned.length ? await listSponsors(env.DB, { clubs, dates: pinned }) : []),
+    ];
     if (!rows.length) return;
     const names = new Map();
     for (const club of new Set(rows.map(r => r.club)))
@@ -803,7 +818,13 @@ async function sponsorList(env, scope, now) {
     alts = [];
   for (const club of selected) {
     const names = await playerNames(env, club);
-    const rows = named(activeSponsors(await listSponsors(env.DB, { clubs: [club] }), today), names);
+    const rows = named(
+      activeSponsors(
+        await listSponsors(env.DB, { clubs: [club], from: windowStart(today) }),
+        today,
+      ),
+      names,
+    );
     let cupDate = rows[0]?.cup_date;
     if (!cupDate) {
       const data = await bookingData(env, club);

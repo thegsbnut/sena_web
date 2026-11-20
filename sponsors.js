@@ -54,6 +54,13 @@ export function showUntil(cupDate) {
   return new Date(Date.UTC(y, m - 1, d + 7)).toISOString().slice(0, 10);
 }
 
+// The earliest cup day whose sponsors can still be on show today (today - 7):
+// reads of the strip never need older rows.
+export function windowStart(today) {
+  const [y, m, d] = today.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 7)).toISOString().slice(0, 10);
+}
+
 // Rows of one club: the sponsors of the earliest Cup still inside its window,
 // so the next Cup's sponsors wait until the previous window ends.
 export function activeSponsors(rows, today) {
