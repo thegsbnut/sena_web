@@ -81,6 +81,22 @@ textarea {
 textarea {
   resize: vertical;
 }
+/* iOS/Android date inputs have a wide intrinsic size and spill out of the card. */
+label {
+  min-width: 0;
+}
+input[type='date'] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+  min-width: 0;
+}
 input[type='checkbox'] {
   width: 1.1rem;
   min-height: auto;
