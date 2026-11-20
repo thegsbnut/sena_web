@@ -1329,6 +1329,6 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261119-withdraw/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw4/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261120-sponsor/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261120-sponsor/);
 });
