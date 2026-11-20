@@ -4,6 +4,7 @@
 **กติกาให้ไฟล์สั้น (≤ ~40 บรรทัด, ไม่เกิน ~6,000 ตัวอักษร — hook ตอนเริ่ม session ตัดไฟล์ที่ยาวเกินทิ้ง AI ตัวถัดไปจะเห็นแค่ต้นไฟล์):** บรรทัดละเรื่อง งานที่เสร็จแล้วย่อเป็นบรรทัดเดียวใน "ประวัติ" รายละเอียดไปอยู่ใน spec / `BADBOT-REPLY.md` / `LINE-LIFF.md` / `CLAUDE.md`
 
 ## อัปเดตล่าสุด
+- 2026-11-20 · Claude · ขึ้น main แล้ว (เจ้าของสั่ง): UX เพิ่มคนในบิล — ค่าคอร์ต: รายชื่อผู้ตี 2 คอลัมน์, tab พับ `เพิ่มสมาชิก / แขก` + `รายชื่อคนถอน`, dropdown สมาชิกตัดคนที่อยู่ในบิลแล้ว, แขกต้องเลือก `แขกมากับใคร` (ยอดรวมกับคนนั้น) · บิลทั่วไป: checkbox สมาชิกเหมือนเดิม + tab พับ `เพิ่มแขก` · แก้ช่องวันที่ล้นบนมือถือ (`billing.css`) — ยังไม่ได้ลองบน LINE/มือถือจริง
 - 2026-11-20 · Claude · ขึ้น main แล้ว (เจ้าของสั่ง): สปอนเซอร์วันแข่ง Cup (spec/plan `2026-11-20-cup-sponsors*`, ดีไซน์ https://claude.ai/artifact/FN52z4ubE35s3pBpiFZZof) — ยังไม่ได้ลองบน LINE/มือถือจริง (โหมดล็อกอิน LINE + แท็กจริงในกลุ่ม)
 - 2026-11-19 · Claude · ขึ้น main แล้ว: แก้แท็บบิลปัดแล้วไปเลื่อนหน้าข้างหลัง (ล็อก `html.bills-open` ใน `next-shell.js`/`next-nav.css`) · คำสั่งสร้างตารางทั้งหมดย้ายไป `schema.js` + `schema-cache.js` สั่งเป็น `db.batch` เดียวต่อ isolate (ตารางใหม่ต้องเพิ่มที่ `schema.js` เท่านั้น — `test-schema.mjs` ตรวจ)
 - 2026-11-19 · Claude · ไม่ merge (เจ้าของบอกพอแล้ว): โหลด iframe บิลล่วงหน้า + ยิง `/api/member` พร้อมรายการบิล — commit `667b1e2` บน branch `claude/intelligent-faraday-cv6766` หยิบมาใช้ได้ถ้าเจ้าของสั่ง
@@ -30,7 +31,7 @@
 - ตรวจ deploy: `curl` https://sena-web.thegsbnut.workers.dev (`/court`, `/billing`) แล้วหา `?v=`; force push ถูกปฏิเสธ (ถ้า branch ถูก squash-merge: `git reset --hard origin/main` แล้ว `git merge -s ours origin/<branch>`)
 
 ## สถานะเทส
-- 2026-11-20 (branch `claude/optimistic-goodall-3m86nj`): `npm test` 359/359 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
+- 2026-11-20 (main af63c0a): `npm test` 359/359 ผ่าน · `npm run build` / `npm run format:check` ผ่าน
 
 ---
 ## ประวัติการส่งต่อ (ล่าสุดอยู่บน ไม่เกิน 5 รายการ)
