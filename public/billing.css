@@ -156,6 +156,14 @@ small {
   padding: 0.3rem 0;
   min-height: 44px;
 }
+.attendee-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 0.75rem;
+}
+.attendee-columns > .muted {
+  grid-column: 1 / -1;
+}
 .card-title {
   display: flex;
   align-items: baseline;
