@@ -1990,7 +1990,7 @@ test('a sponsor code answers with the thank-you card and tags the confirmed play
   );
   // Player0 is the sponsor, Player3 is on the waitlist: neither is tagged.
   assert.deepEqual(mentioned(tags).sort(), [userOf('p1'), userOf('p2')]);
-  assert.match(tags[0].text, /รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย$/);
+  assert.match(tags[0].text, /\nวันแข่ง Cup มีของรางวัลจากสปอนเซอร์ใจดีด้วยน้า$/);
 });
 
 test('people who cannot be tagged are named in plain text', async t => {
@@ -1998,7 +1998,12 @@ test('people who cannot be tagged are named in plain text', async t => {
   await notice();
   const messages = f.calls[0].messages;
   assert.deepEqual(mentioned(messages), [userOf('p1')]);
-  assert.ok(messages.some(m => m.type === 'text' && /^Player2 รับทราบด้วยน้า/.test(m.text)));
+  assert.ok(
+    messages.some(
+      m =>
+        m.type === 'text' && /^Player2 วันแข่ง Cup มีของรางวัลจากสปอนเซอร์ใจดีด้วยน้า/.test(m.text),
+    ),
+  );
 });
 
 test('a big Cup tags 12 people, then a free button tags the rest without the card', async t => {

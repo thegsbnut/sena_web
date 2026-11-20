@@ -658,7 +658,7 @@ async function bookMessages(env, club, { playerId, sessionIds }, now) {
 }
 
 // ---- Cup sponsors ----
-const SPONSOR_ACK = 'รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย';
+const SPONSOR_ACK = 'วันแข่ง Cup มีของรางวัลจากสปอนเซอร์ใจดีด้วยน้า';
 const MAX_REPLY = 5;
 // Current roster names of a club (cheap: the club state row only).
 async function playerNames(env, club) {

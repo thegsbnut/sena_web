@@ -180,8 +180,8 @@ test('awardLabel', () => {
   - postback `badbot:sponsorTag:<id>:<offset>` → `{ kind: 'sponsorTag', id, offset }`
   - `sponsorMessages(env, group, club, sponsorId, { tagsFrom = 0, card = true }, now) -> messages|null`:
     แถว `getSponsor` ไม่มี/hidden → `null` (ไม่ตอบ, log `line-reply:sponsor-gone`);
-    การ์ด `sponsorBubble({ highlightId })` (เมื่อ `card`); ตัวจริงของ session `cup_date` จาก `bookingData` (`status==='confirmed'`, ไม่เอา `player_id` ของสปอนเซอร์) → member_links + `groupMentionTarget` → `planMentionMessages` → ข้อความ `mentionGroupMessage(chunk, '', 'รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย')`;
-    คนแท็กไม่ได้ → ข้อความธรรมดา `ชื่อ1, ชื่อ2 รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย`;
+    การ์ด `sponsorBubble({ highlightId })` (เมื่อ `card`); ตัวจริงของ session `cup_date` จาก `bookingData` (`status==='confirmed'`, ไม่เอา `player_id` ของสปอนเซอร์) → member_links + `groupMentionTarget` → `planMentionMessages` → ข้อความ `mentionGroupMessage(chunk, '', 'วันแข่ง Cup มีของรางวัลจากสปอนเซอร์ใจดีด้วยน้า')`;
+    คนแท็กไม่ได้ → ข้อความธรรมดา `ชื่อ1, ชื่อ2 วันแข่ง Cup มีของรางวัลจากสปอนเซอร์ใจดีด้วยน้า`;
     รวมไม่เกิน 5 ข้อความ; แท็กเหลือ → `quickReply` ปุ่ม `แท็กต่ออีก N คน` postback `badbot:sponsorTag:<id>:<offset ถัดไป>`
   - notice kind `sponsor` → `sponsorMessages(..., { card: true })`; `sponsorTag` → `{ card: false, tagsFrom: offset }`
   - `kind: 'sponsor'` → การ์ด `sponsorBubble` ของ `activeSponsors` ต่อก๊วน (ไม่มี → Cup ถัดไปในหน้าจองแบบ rows ว่าง; ไม่มี Cup ถัดไป → ข้อความ `ยังไม่มีวันแข่ง Cup ที่เปิดจอง`) — ไม่แท็ก
