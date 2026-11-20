@@ -59,6 +59,7 @@
     adminList,
     sessions = [],
     attendees = [],
+    memberList = [],
     editing = false;
   const validPromptPay = value => /^(?:0[0-9]{9}|[0-9]{13})$/.test(value);
   const clubQuery = club === '88' ? '?club=88' : '';
@@ -489,11 +490,24 @@
     for (const p of attendees)
       if (p.attended && !payers.has(p.payerKey)) payers.set(p.payerKey, p.payer);
     select.innerHTML =
-      '<option value="">ไม่ใช่แขก (จ่ายเอง)</option>' +
+      (payers.size ? '' : '<option value="">ติ๊กผู้ตีจริงก่อน</option>') +
       [...payers]
         .map(([key, name]) => `<option value="${escape(key)}">แขกของ ${escape(name)}</option>`)
         .join('');
     if (payers.has(keep)) select.value = keep;
+    const member = root.querySelector('#addMember');
+    if (member) {
+      const keepMember = member.value;
+      const options = memberList.filter(
+        m => !attendees.some(p => p.payerKey === m.payerKey && p.attended),
+      );
+      member.innerHTML =
+        '<option value="">เลือกสมาชิก</option>' +
+        options
+          .map(m => `<option value="${escape(m.payerKey)}">${escape(m.name)}</option>`)
+          .join('');
+      if (options.some(m => m.payerKey === keepMember)) member.value = keepMember;
+    }
   }
   function preview() {
     renderHostOptions();
@@ -518,6 +532,17 @@
     out.innerHTML = `<strong>ยอดเรียกเก็บ ${money(collection)} บาท · ผู้ถูกเรียกเก็บ ${draft.attendees.length} คน</strong>
    <p>ค่าใช้จ่าย ${money(total)} บาท${collection > total ? ' · ปัดขึ้นรวม ' + money(collection - total) + ' บาท' : ''}</p>
    ${payers.map(p => `<div class="row"><span>${escape(p.name)}${p.seats > 1 ? ' · ' + p.seats + ' คน' : ''}${ownerKey && p.payerKey === ownerKey ? ' · จ่ายแล้ว (คนสร้างบิล)' : ''}</span><strong>${money(p.amount)} บ.</strong></div>`).join('')}`;
+  }
+  function loadMembers() {
+    fetch('/api/billing?action=people&club=' + encodeURIComponent(editing ? bill.club : club), {
+      cache: 'no-store',
+    })
+      .then(r => (r.ok ? r.json() : { members: [] }))
+      .then(data => {
+        memberList = data.members || [];
+        renderHostOptions();
+      })
+      .catch(() => {});
   }
   function showDraft() {
     document.body.classList.remove('home');
@@ -556,9 +581,9 @@
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance"></div>
-     <div class="grid"><label>เพิ่มผู้ตีจริง<input id="addName" maxlength="100" placeholder="ชื่อผู้ตี"></label><label>แขกของ (รวมยอดกับคนนี้)<select id="addHost"></select></label></div>
-     <p class="muted">ไม่เลือกคน = จ่ายเอง · เลือกคนที่มาตีจริง ยอดของแขกจะรวมไปกับคนนั้น</p>
-     <button type="button" data-action="add-attendee">+ เพิ่มชื่อ</button>
+     <div class="grid"><label>เพิ่มสมาชิกที่มาตี<select id="addMember"></select></label><button type="button" data-action="add-member">+ เพิ่มสมาชิก</button></div>
+     <div class="grid"><label>ชื่อแขก<input id="addGuest" maxlength="100" placeholder="ชื่อแขก"></label><label>แขกของ (รวมยอดกับคนนี้)<select id="addHost"></select></label></div>
+     <button type="button" data-action="add-guest">+ เพิ่มแขก</button>
     </section>
     <section>
      <h2>2. ใส่ค่าใช้จ่ายและบัญชีรับเงิน</h2>
@@ -591,6 +616,7 @@
       }
       renderAttendees();
     } else fillAttendees(date);
+    loadMembers();
     message('');
   }
   function adminOverviewHtml() {
@@ -1491,34 +1517,53 @@
       editing = false;
       return bill ? showBill() : showHome();
     }
-    if (action === 'add-attendee') {
-      const nameInput = root.querySelector('#addName'),
+    if (action === 'add-member') {
+      const select = root.querySelector('#addMember');
+      const member = memberList.find(m => m.payerKey === select.value);
+      if (!member) {
+        select.focus();
+        return;
+      }
+      const same = attendees.find(p => p.payerKey === member.payerKey && !p.guest && !p.friend);
+      if (same) same.attended = true;
+      else
+        attendees.push({
+          name: member.name,
+          payer: member.name,
+          payerKey: member.payerKey,
+          attended: true,
+        });
+      return renderAttendees();
+    }
+    if (action === 'add-guest') {
+      const nameInput = root.querySelector('#addGuest'),
         hostInput = root.querySelector('#addHost');
-      const name = nameInput.value.trim();
+      const name = nameInput.value.trim().replace(/\s+/g, ' ');
       if (!name) {
         nameInput.focus();
         return;
       }
+      const host = attendees.find(p => p.attended && p.payerKey === hostInput.value);
+      if (!host) {
+        hostInput.focus();
+        message('เลือกว่าแขกมากับใคร ยอดจะรวมไปกับคนนั้น', true);
+        return;
+      }
+      message('');
       const normalize = value => value.normalize('NFC').toLowerCase();
-      const hostKey = hostInput.value;
-      const existing = hostKey
-        ? attendees.find(p => p.payerKey === hostKey)
-        : attendees.find(p => normalize(p.payer) === normalize(name));
-      const host = existing?.payer || name;
-      const payerKey = existing?.payerKey || 'name:' + normalize(host);
       const same = attendees.find(
-        p => normalize(p.name) === normalize(name) && p.payerKey === payerKey,
+        p => normalize(p.name) === normalize(name) && p.payerKey === host.payerKey,
       );
       if (same) same.attended = true;
       else
         attendees.push({
           name,
-          payer: existing?.payer || host,
-          payerKey,
+          payer: host.payer,
+          payerKey: host.payerKey,
           attended: true,
-          guest: Boolean(hostKey),
+          guest: true,
         });
-      nameInput.value = hostInput.value = '';
+      nameInput.value = '';
       return renderAttendees();
     }
     if (action === 'copy-promptpay') return copy(bill.transfer, target);
