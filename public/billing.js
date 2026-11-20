@@ -480,7 +480,23 @@
         })),
     };
   }
+  // Dropdown of people actually ticked as attended; a guest's cost merges into the chosen payer.
+  function renderHostOptions() {
+    const select = root.querySelector('#addHost');
+    if (!select) return;
+    const keep = select.value;
+    const payers = new Map();
+    for (const p of attendees)
+      if (p.attended && !payers.has(p.payerKey)) payers.set(p.payerKey, p.payer);
+    select.innerHTML =
+      '<option value="">ไม่ใช่แขก (จ่ายเอง)</option>' +
+      [...payers]
+        .map(([key, name]) => `<option value="${escape(key)}">แขกของ ${escape(name)}</option>`)
+        .join('');
+    if (payers.has(keep)) select.value = keep;
+  }
   function preview() {
+    renderHostOptions();
     const draft = costDraft();
     const out = root.querySelector('#preview');
     if (!draft || !draft.attendees.length) {
@@ -540,7 +556,8 @@
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance"></div>
-     <div class="grid"><label>เพิ่มผู้ตีจริง<input id="addName" maxlength="100" placeholder="ชื่อผู้ตี"></label><label>แขกของ (ถ้ามี)<input id="addHost" maxlength="100" placeholder="ชื่อสมาชิกผู้ชวน"></label></div>
+     <div class="grid"><label>เพิ่มผู้ตีจริง<input id="addName" maxlength="100" placeholder="ชื่อผู้ตี"></label><label>แขกของ (รวมยอดกับคนนี้)<select id="addHost"></select></label></div>
+     <p class="muted">ไม่เลือกคน = จ่ายเอง · เลือกคนที่มาตีจริง ยอดของแขกจะรวมไปกับคนนั้น</p>
      <button type="button" data-action="add-attendee">+ เพิ่มชื่อ</button>
     </section>
     <section>
@@ -1477,14 +1494,17 @@
     if (action === 'add-attendee') {
       const nameInput = root.querySelector('#addName'),
         hostInput = root.querySelector('#addHost');
-      const name = nameInput.value.trim(),
-        host = hostInput.value.trim() || name;
+      const name = nameInput.value.trim();
       if (!name) {
         nameInput.focus();
         return;
       }
       const normalize = value => value.normalize('NFC').toLowerCase();
-      const existing = attendees.find(p => normalize(p.payer) === normalize(host));
+      const hostKey = hostInput.value;
+      const existing = hostKey
+        ? attendees.find(p => p.payerKey === hostKey)
+        : attendees.find(p => normalize(p.payer) === normalize(name));
+      const host = existing?.payer || name;
       const payerKey = existing?.payerKey || 'name:' + normalize(host);
       const same = attendees.find(
         p => normalize(p.name) === normalize(name) && p.payerKey === payerKey,
@@ -1496,7 +1516,7 @@
           payer: existing?.payer || host,
           payerKey,
           attended: true,
-          guest: Boolean(hostInput.value.trim()),
+          guest: Boolean(hostKey),
         });
       nameInput.value = hostInput.value = '';
       return renderAttendees();
