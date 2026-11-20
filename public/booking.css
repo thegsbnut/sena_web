@@ -1281,3 +1281,98 @@ main:has(#booking:not([hidden])) > .venue-picker small {
   font-size: 11px;
   color: #72805f;
 }
+/* Cup sponsors (sponsors.js) */
+.booking-sponsors {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px dashed #e2c76b;
+  border-radius: 8px;
+  background: #fff8e3;
+  font-size: 12px;
+  color: #5c5240;
+}
+.booking-sponsors > b {
+  color: #7a5600;
+}
+.booking-sponsor {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.booking-sponsor span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.booking-sponsor strong {
+  color: #2a2416;
+}
+.booking-sponsor .textbtn {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+.booking-sponsor-action {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #b8860b, #e0b33a);
+  color: #fff;
+  font-weight: 700;
+}
+.booking-sponsor-action:focus-visible {
+  outline: 3px solid #573710;
+  outline-offset: 2px;
+}
+.booking-sponsor-dialog input[type='text'] {
+  width: 100%;
+}
+.booking-sponsor-awards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+}
+.booking-sponsor-awards legend {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.booking-sponsor-awards label {
+  display: inline-flex;
+}
+.booking-sponsor-awards input {
+  position: absolute;
+  opacity: 0;
+}
+.booking-sponsor-awards span {
+  padding: 3px 10px;
+  border: 1px solid #d5dccf;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.booking-sponsor-awards input:checked + span {
+  border-color: #d9b44a;
+  background: #fff1c2;
+  color: #6b4b00;
+  font-weight: 700;
+}
+.booking-sponsor-awards input:focus-visible + span {
+  outline: 2px solid #9b6414;
+}
+.booking-sponsor-move {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8e3;
+  font-size: 13px;
+}
+.booking-sponsor-move select {
+  margin-left: 4px;
+}
