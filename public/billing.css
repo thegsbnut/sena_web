@@ -891,3 +891,16 @@ body.collecting #billing > div > h1 {
 html.embedded {
   overscroll-behavior-y: contain;
 }
+
+.add-box {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.add-box h3,
+.add-box p {
+  margin: 0;
+}

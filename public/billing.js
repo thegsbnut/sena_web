@@ -490,9 +490,11 @@
     for (const p of attendees)
       if (p.attended && !payers.has(p.payerKey)) payers.set(p.payerKey, p.payer);
     select.innerHTML =
-      (payers.size ? '' : '<option value="">ติ๊กผู้ตีจริงก่อน</option>') +
+      (payers.size
+        ? '<option value="">— เลือกคนที่พามา —</option>'
+        : '<option value="">ติ๊กผู้ตีจริงก่อน</option>') +
       [...payers]
-        .map(([key, name]) => `<option value="${escape(key)}">แขกของ ${escape(name)}</option>`)
+        .map(([key, name]) => `<option value="${escape(key)}">${escape(name)}</option>`)
         .join('');
     if (payers.has(keep)) select.value = keep;
     const member = root.querySelector('#addMember');
@@ -502,7 +504,7 @@
         m => !attendees.some(p => p.payerKey === m.payerKey && p.attended),
       );
       member.innerHTML =
-        '<option value="">เลือกสมาชิก</option>' +
+        '<option value="">— เลือกสมาชิก —</option>' +
         options
           .map(m => `<option value="${escape(m.payerKey)}">${escape(m.name)}</option>`)
           .join('');
@@ -581,9 +583,19 @@
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance" class="attendee-columns"></div>
-     <div class="grid"><label>เพิ่มสมาชิกที่มาตี<select id="addMember"></select></label><button type="button" data-action="add-member">+ เพิ่มสมาชิก</button></div>
-     <div class="grid"><label>ชื่อแขก<input id="addGuest" maxlength="100" placeholder="ชื่อแขก"></label><label>แขกของ (รวมยอดกับคนนี้)<select id="addHost"></select></label></div>
-     <button type="button" data-action="add-guest">+ เพิ่มแขก</button>
+     <div class="add-box">
+      <h3>เพิ่มสมาชิกที่มาตี</h3>
+      <p class="muted">สำหรับสมาชิกก๊วนที่ไม่อยู่ในรายชื่อด้านบน</p>
+      <select id="addMember" aria-label="เลือกสมาชิก"></select>
+      <button type="button" data-action="add-member">+ เพิ่มสมาชิก</button>
+     </div>
+     <div class="add-box">
+      <h3>เพิ่มแขก</h3>
+      <p class="muted">แขก = คนที่ไม่ได้เป็นสมาชิก ยอดของแขกจะไปรวมกับคนที่พามา</p>
+      <label>1. ชื่อแขก<input id="addGuest" maxlength="100" placeholder="พิมพ์ชื่อแขก"></label>
+      <label>2. แขกมากับใคร<select id="addHost"></select></label>
+      <button type="button" data-action="add-guest">+ เพิ่มแขก</button>
+     </div>
      <div id="withdrawnList"></div>
     </section>
     <section>
