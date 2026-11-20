@@ -442,8 +442,10 @@
     root.querySelector('#attendance').innerHTML = attendees.some(p => !p.withdrawnAt)
       ? attendees.map((p, i) => (p.withdrawnAt ? '' : row(p, i))).join('')
       : '<p class="muted">ยังไม่มีรายชื่อผู้ตีจริงสำหรับวันนี้ เพิ่มชื่อด้านล่างได้</p>';
+    const withdrawn = attendees.filter(p => p.withdrawnAt).length;
+    root.querySelector('#withdrawnCount').textContent = withdrawn ? `(${withdrawn} คน)` : '';
     root.querySelector('#withdrawnList').innerHTML =
-      `<div class="withdrawn-attendees"><h3>รายชื่อคนถอน</h3><p class="muted">ไม่เลือกเก็บเงินไว้เป็นค่าเริ่มต้น ผู้จัดเลือกเพิ่มได้ตามที่ตกลงกัน · เวลาไทย</p>${attendees.some(p => p.withdrawnAt) ? attendees.map((p, i) => (p.withdrawnAt ? row(p, i) : '')).join('') : '<p class="muted">ไม่มีรายชื่อคนถอนสำหรับวันนี้</p>'}</div>`;
+      `<p class="muted">ไม่เลือกเก็บเงินไว้เป็นค่าเริ่มต้น ผู้จัดเลือกเพิ่มได้ตามที่ตกลงกัน · เวลาไทย</p>${withdrawn ? attendees.map((p, i) => (p.withdrawnAt ? row(p, i) : '')).join('') : '<p class="muted">ไม่มีรายชื่อคนถอนสำหรับวันนี้</p>'}`;
     preview();
   }
   function cents(value) {
@@ -500,9 +502,7 @@
     const member = root.querySelector('#addMember');
     if (member) {
       const keepMember = member.value;
-      const options = memberList.filter(
-        m => !attendees.some(p => p.payerKey === m.payerKey && p.attended),
-      );
+      const options = memberList.filter(m => !attendees.some(p => p.payerKey === m.payerKey));
       member.innerHTML =
         '<option value="">— เลือกสมาชิก —</option>' +
         options
@@ -583,9 +583,12 @@
      <label>วันที่ตี<input type="date" name="date" value="${date}" required ${editing ? 'readonly' : ''}></label>
      ${editing ? '' : '<p id="additionalNotice" class="error" hidden>วันนี้มีบิลแล้ว เลือกเฉพาะคนหรือรายการที่ตกหล่น <a>ดูบิลเดิม</a></p>'}
      <div id="attendance" class="attendee-columns"></div>
+     <details class="tab-panel">
+      <summary>+ เพิ่มสมาชิก / แขก</summary>
+      <div class="tab-body">
      <div class="add-box">
       <h3>เพิ่มสมาชิกที่มาตี</h3>
-      <p class="muted">สำหรับสมาชิกก๊วนที่ไม่อยู่ในรายชื่อด้านบน</p>
+      <p class="muted">แสดงเฉพาะสมาชิกที่ยังไม่อยู่ในบิลนี้</p>
       <select id="addMember" aria-label="เลือกสมาชิก"></select>
       <button type="button" data-action="add-member">+ เพิ่มสมาชิก</button>
      </div>
@@ -596,7 +599,12 @@
       <label>2. แขกมากับใคร<select id="addHost"></select></label>
       <button type="button" data-action="add-guest">+ เพิ่มแขก</button>
      </div>
-     <div id="withdrawnList"></div>
+      </div>
+     </details>
+     <details class="tab-panel">
+      <summary>รายชื่อคนถอน <span id="withdrawnCount"></span></summary>
+      <div class="tab-body" id="withdrawnList"></div>
+     </details>
     </section>
     <section>
      <h2>2. ใส่ค่าใช้จ่ายและบัญชีรับเงิน</h2>

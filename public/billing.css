@@ -898,3 +898,28 @@ html.embedded {
 .add-box p {
   margin: 0;
 }
+
+.tab-panel {
+  margin-top: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.tab-panel > summary {
+  padding: 0.7rem 0.9rem;
+  min-height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tab-panel[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.tab-body {
+  padding: 0.2rem 0.9rem 0.9rem;
+}
+.cb-chosen {
+  margin: 0.4rem 0;
+}
