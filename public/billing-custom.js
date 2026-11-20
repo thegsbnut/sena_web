@@ -108,20 +108,15 @@
       <h2>2. ใครร่วมจ่าย (<span id="cbCount">เลือกแล้ว 0 คน</span>)</h2>
       ${recentKeys.length ? `<button type="button" id="cbPullRecent" class="cb-pull" data-cb="pull-recent">⚡ ดึงคนตี${esc(recentLabel)} (${recentKeys.length})</button>` : ''}
      </div>
-     <div id="cbChosen" class="cb-chosen"></div>
+     <input id="cbSearch" type="search" placeholder="ค้นหาชื่อสมาชิก" aria-label="ค้นหาชื่อสมาชิก" autocomplete="off">
+     <div id="cbMembers"></div>
      <div id="cbGuests"></div>
-     <details class="tab-panel" id="cbAddTab">
-      <summary>+ เพิ่มสมาชิก / แขก</summary>
+     <details class="tab-panel">
+      <summary>+ เพิ่มแขก</summary>
       <div class="tab-body">
-       <div class="add-box">
-        <h3>เพิ่มสมาชิกร่วมจ่าย</h3>
-        <p class="muted">แตะชื่อเพื่อเพิ่มเข้าบิล (คนที่อยู่ในบิลแล้วจะไม่แสดง)</p>
-        <input id="cbSearch" type="search" placeholder="ค้นหาชื่อสมาชิก" aria-label="ค้นหาชื่อสมาชิก" autocomplete="off">
-        <div id="cbMembers"></div>
-       </div>
        <div class="add-box cb-guest-add">
         <h3>เพิ่มแขก</h3>
-        <p class="muted">แขก = คนที่ไม่ได้เป็นสมาชิก (ไม่ได้ผูก LINE) ยอดของแขกจะไปรวมกับคนที่พามา ต้องเพิ่มสมาชิกก่อน</p>
+        <p class="muted">แขก = คนที่ไม่ได้เป็นสมาชิก (ไม่ได้ผูก LINE) ยอดของแขกจะไปรวมกับคนที่พามา ต้องติ๊กสมาชิกก่อน</p>
         <label>1. ชื่อแขก<input id="cbGuestName" maxlength="40" placeholder="พิมพ์ชื่อแขก"></label>
         <label>2. แขกมากับใคร<select id="cbGuestOf"></select></label>
         <button type="button" data-cb="add-guest">+ เพิ่มแขก</button>
@@ -202,24 +197,13 @@
       if (state.chosen.includes(keep)) guestOf.value = keep;
     }
     function renderMembers() {
-      const rest = people.members.filter(m => !state.chosen.includes(m.payerKey));
-      $('#cbMembers').innerHTML = rest.length
-        ? `<div class="cb-members">${rest
-            .map(
-              m =>
-                `<label class="attendee" data-name="${esc(m.name.toLowerCase())}"><input type="checkbox" data-cb="member" value="${esc(m.payerKey)}"> ${esc(m.name)}</label>`,
-            )
-            .join('')}</div>`
-        : '<p class="muted">สมาชิกทุกคนอยู่ในบิลแล้ว</p>';
-      filterMembers();
-    }
-    function renderChosen() {
-      $('#cbChosen').innerHTML = state.chosen
+      $('#cbMembers').innerHTML = `<div class="cb-members">${people.members
         .map(
-          key =>
-            `<span class="cb-chip">${esc(nameOf(key))} <button type="button" data-cb="remove-member" data-key="${esc(key)}" aria-label="เอา ${esc(nameOf(key))} ออก">×</button></span>`,
+          m =>
+            `<label class="attendee" data-name="${esc(m.name.toLowerCase())}"><input type="checkbox" data-cb="member" value="${esc(m.payerKey)}" ${state.chosen.includes(m.payerKey) ? 'checked' : ''}> ${esc(m.name)}</label>`,
         )
-        .join('');
+        .join('')}</div>`;
+      filterMembers();
     }
     function filterMembers() {
       const q = $('#cbSearch').value.trim().toLowerCase();
@@ -317,7 +301,6 @@
       $('#cbSubmit').disabled = Boolean(problem);
     }
     const structure = () => {
-      renderChosen();
       $('#cbCount').textContent = `เลือกแล้ว ${state.chosen.length + state.guests.length} คน`;
       renderReceiver();
       renderGuests();
@@ -341,21 +324,18 @@
       else return;
       preview();
     });
-    function dropMember(key) {
-      state.chosen = state.chosen.filter(k => k !== key);
-      // A guest cannot stay once the member they came with is out of the bill.
-      state.guests = state.guests.filter(g => g.guestOf !== key);
-      const keep = new Set(everyone().map(p => p.id));
-      for (const item of state.items)
-        for (const id of [...item.who]) if (!keep.has(id)) item.who.delete(id);
-      renderMembers();
-      structure();
-    }
     root.addEventListener('change', event => {
       const t = event.target;
-      if (t.dataset?.cb === 'member' && t.checked) {
-        state.chosen.push(t.value);
-        renderMembers();
+      if (t.dataset?.cb === 'member') {
+        if (t.checked) state.chosen.push(t.value);
+        else {
+          state.chosen = state.chosen.filter(key => key !== t.value);
+          // A guest cannot stay once the member they came with is out of the bill.
+          state.guests = state.guests.filter(g => g.guestOf !== t.value);
+        }
+        const keep = new Set(everyone().map(p => p.id));
+        for (const item of state.items)
+          for (const id of [...item.who]) if (!keep.has(id)) item.who.delete(id);
         structure();
       }
     });
@@ -364,9 +344,7 @@
       if (!t) return;
       const kind = t.dataset.cb;
       if (kind === 'cancel') return cancel();
-      if (kind === 'remove-member') {
-        dropMember(t.dataset.key);
-      } else if (kind === 'pull-recent') {
+      if (kind === 'pull-recent') {
         for (const key of recentKeys) if (!state.chosen.includes(key)) state.chosen.push(key);
         renderMembers();
         structure();
