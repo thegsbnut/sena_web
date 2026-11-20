@@ -3,6 +3,7 @@
 // rows, so nothing here reads the database.
 import { clubOf } from './clubs.js';
 import { clubHeaderStyle } from './line-roster-card.js';
+import { markSponsor } from './line-sponsor-mark.js';
 
 const GOLD = '#B8860B',
   GREY = '#8A8F98',
@@ -19,7 +20,7 @@ const text = (value, props = {}) => ({ type: 'text', text: clean(value) || ' ', 
 const vbox = (contents, props = {}) => ({ type: 'box', layout: 'vertical', contents, ...props });
 const hbox = (contents, props = {}) => ({ type: 'box', layout: 'horizontal', contents, ...props });
 const separator = () => ({ type: 'separator', margin: 'md', color: TRACK });
-const goldHeader = (title, subtitle) =>
+export const goldHeader = (title, subtitle) =>
   vbox(
     [
       text(title, { weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true }),
@@ -84,13 +85,16 @@ export function gamesBubble({ club, title, subtitle, games, url, buttonLabel }) 
     );
   if (games.some(g => g.rest))
     body.push(text('แถบเหลือง = เว้นพักก่อนเกมนี้', { size: 'xxs', color: AMBER, margin: 'md' }));
-  return {
-    type: 'bubble',
-    size: 'mega',
-    header: clubHeader(club, title, subtitle),
-    body: vbox(body, { paddingAll: 'lg' }),
-    ...(url ? { footer: linkButton(buttonLabel || 'ดูตารางทั้งหมดบนเว็บ', url) } : {}),
-  };
+  return markSponsor(
+    {
+      type: 'bubble',
+      size: 'mega',
+      header: clubHeader(club, title, subtitle),
+      body: vbox(body, { paddingAll: 'lg' }),
+      ...(url ? { footer: linkButton(buttonLabel || 'ดูตารางทั้งหมดบนเว็บ', url) } : {}),
+    },
+    club,
+  );
 }
 
 const MEDAL = ['🥇', '🥈', '🥉'];
@@ -141,20 +145,24 @@ export function leaderboardBubble({ club, rows, url }) {
     ]),
     ...(top.length ? [] : [text('ยังไม่มีข้อมูลอันดับ', { size: 'sm', color: GREY })]),
   ];
-  return {
-    type: 'bubble',
-    size: 'mega',
-    header: goldHeader(
-      '🏆 ' + clubOf(club).label + ' Leaderboard',
-      'สะสมจาก ' + clubOf(club).cupName + ' ทุกครั้ง',
-    ),
-    body: vbox(body, { paddingAll: 'lg' }),
-    ...(url ? { footer: linkButton('ดูอันดับทั้งหมด', url) } : {}),
-  };
+  return markSponsor(
+    {
+      type: 'bubble',
+      size: 'mega',
+      header: goldHeader(
+        '🏆 ' + clubOf(club).label + ' Leaderboard',
+        'สะสมจาก ' + clubOf(club).cupName + ' ทุกครั้ง',
+      ),
+      body: vbox(body, { paddingAll: 'lg' }),
+      ...(url ? { footer: linkButton('ดูอันดับทั้งหมด', url) } : {}),
+    },
+    club,
+  );
 }
 
 // rows: [{ rank, name, w, played, pf, pa }] best first; rank ties share a number.
-export function cupResultBubble({ club, title, date, rows, url }) {
+// `cupDate` (YYYY-MM-DD) pins the sponsor thank-you strip to that Cup day.
+export function cupResultBubble({ club, title, date, cupDate, rows, url }) {
   const winners = rows.filter(r => r.rank === 1);
   const rest = rows.filter(r => r.rank !== 1);
   const body = [
@@ -188,11 +196,12 @@ export function cupResultBubble({ club, title, date, rows, url }) {
       ),
     ]),
   ];
-  return {
+  const bubble = {
     type: 'bubble',
     size: 'mega',
     header: goldHeader('🏆 ' + clean(title), date),
     body: vbox(body, { paddingAll: 'lg' }),
     ...(url ? { footer: linkButton('ดูอันดับ ' + clubOf(club).cupName, url) } : {}),
   };
+  return cupDate ? markSponsor(bubble, club, cupDate) : bubble;
 }

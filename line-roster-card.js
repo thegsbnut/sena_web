@@ -4,6 +4,7 @@
 import './public/job-rules.js';
 import { clubOf } from './clubs.js';
 import { noticeDay } from './line-notices.js';
+import { markSponsor } from './line-sponsor-mark.js';
 
 const COLORS = { sena: '#168B42', 88: '#1F4E9A' };
 // Sena green, 88 blue: every card tells the clubs apart by this colour.
@@ -205,29 +206,35 @@ export function rosterBubble(data, club, session, opts) {
     ...(extra.length ? [separator(), ...extra] : []),
   ];
   const day = noticeDay(session.date);
-  return {
-    type: 'bubble',
-    size: 'mega',
-    header: header(
-      club,
-      '📍 ' + clubOf(club).heading + ' · ' + day + (session.isCup ? ' · CUP' : ''),
-      `${session.start}–${session.end} น.` +
-        (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : ''),
-    ),
-    body: vbox(body, { spacing: 'sm', paddingAll: 'lg' }),
-    footer: footer(club, bookUrl, updated),
-  };
+  return markSponsor(
+    {
+      type: 'bubble',
+      size: 'mega',
+      header: header(
+        club,
+        '📍 ' + clubOf(club).heading + ' · ' + day + (session.isCup ? ' · CUP' : ''),
+        `${session.start}–${session.end} น.` +
+          (session.courtNumbers ? ' · คอร์ต ' + session.courtNumbers : ''),
+      ),
+      body: vbox(body, { spacing: 'sm', paddingAll: 'lg' }),
+      footer: footer(club, bookUrl, updated),
+    },
+    club,
+  );
 }
 
 // A card for a club with nothing to list (no open round, read failure).
 export function emptyBubble(club, message, { bookUrl, updated }) {
-  return {
-    type: 'bubble',
-    size: 'mega',
-    header: header(club, '📍 ' + clubOf(club).heading),
-    body: vbox([text(message, { size: 'sm', color: GREY, wrap: true })], { paddingAll: 'lg' }),
-    footer: footer(club, bookUrl, updated),
-  };
+  return markSponsor(
+    {
+      type: 'bubble',
+      size: 'mega',
+      header: header(club, '📍 ' + clubOf(club).heading),
+      body: vbox([text(message, { size: 'sm', color: GREY, wrap: true })], { paddingAll: 'lg' }),
+      footer: footer(club, bookUrl, updated),
+    },
+    club,
+  );
 }
 
 // The "other days" block of a multi-day booking.

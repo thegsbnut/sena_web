@@ -22,7 +22,17 @@
     playerId = '',
     token = null,
     pendingCancellation = null,
+    sponsorEditing = null,
     serverClockOffset = 0;
+  const sponsorAwards = [
+    ['champ', '🥇 แชมป์'],
+    ['runnerUp', '🥈 รองแชมป์'],
+    ['third', '🥉 ที่ 3'],
+    ['last', '💩 ท้ายตาราง'],
+    ['all', 'ทุกคน'],
+    ['other', 'อื่นๆ'],
+  ];
+  const inLine = /\bLine\//i.test(navigator.userAgent);
   try {
     token = localStorage.getItem(clubStorage('booking-token'));
     if (!/^[a-f0-9]{64}$/.test(token || '')) {
@@ -141,7 +151,9 @@
     } else alert(title + '\n' + message);
   }
   async function request(body) {
-    const notify = ['book', 'cancel'].includes(body?.action);
+    const notify =
+      ['book', 'cancel'].includes(body?.action) ||
+      (body?.action === 'sponsorSave' && body.notify === true);
     if (notify) window.SenaLineNotice?.preload();
     const response = await venueFetch('/api/booking', {
       method: body ? 'POST' : 'GET',
@@ -183,23 +195,26 @@
     const isMap = body.action === 'venueMap',
       isCup = body.action === 'cupCalendar',
       isJob = body.action === 'job',
+      isSponsor = ['sponsorSave', 'sponsorDelete'].includes(body.action),
       mapInput = q('#bookingMapUrl');
     const detailDialog = q('#bookingDetailsDialog');
     const inDetails = detailDialog.open,
       isReroll = body.action === 'reroll';
     const report = (message, error = false) => {
-      if (!isMap && !isCup) status(message, error);
+      if (!isMap && !isCup && !(isSponsor && error)) status(message, error);
       const output = isMap
         ? q('#bookingMapStatus')
         : isCup
           ? q('#bookingCupStatus')
           : isJob
             ? jobPicker.querySelector('#jobPickerStatus')
-            : inDetails && detailDialog.open
-              ? q('#bookingDetailsStatus')
-              : isReroll
-                ? q('#bookingRerollStatus')
-                : null;
+            : isSponsor && error
+              ? q('#bookingSponsorStatus')
+              : inDetails && detailDialog.open
+                ? q('#bookingDetailsStatus')
+                : isReroll
+                  ? q('#bookingRerollStatus')
+                  : null;
       if (output) {
         output.textContent = message;
         output.classList.toggle('is-error', error);
@@ -215,6 +230,10 @@
       if (body.action === 'settings') dirty = false;
       if (isCup) cupDirty = false;
       if (isJob) jobPicker.close();
+      if (isSponsor) {
+        q('#bookingSponsorDialog').close();
+        sponsorEditing = null;
+      }
       publishJobs();
       if (isMap && mapInput.value.trim() === body.url) mapInput.value = mapInput.defaultValue;
       if (body.action === 'book') {
@@ -226,7 +245,12 @@
         pendingCancellation = null;
       }
       render();
-      report(data.result?.message || 'บันทึกแล้ว');
+      report(
+        (data.result?.message || 'บันทึกแล้ว') +
+          (isSponsor && body.notify && !inLine
+            ? ' · พิมพ์ badbot sponsor ในกลุ่ม LINE เพื่อโชว์การ์ด'
+            : ''),
+      );
       if (isReroll) {
         const draw = q('.booking-draw');
         if (draw) draw.open = true;
@@ -341,12 +365,13 @@
   root.innerHTML = `<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><a id="bookingMemberLogin" class="pill" href="${html(venueUrl('/liff.html'))}" hidden>เข้าสู่ระบบ LINE / ผูกชื่อเพื่อจอง</a><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><div id="bookingProfile" class="booking-profile" hidden></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingCancelDialog" class="booking-feedback" aria-labelledby="bookingCancelTitle" aria-describedby="bookingCancelName bookingCancelDeadline bookingCancelWarning"><h2 id="bookingCancelTitle">ยืนยันถอนตัว</h2><p id="bookingCancelName"></p><p id="bookingCancelDeadline" class="hint"></p><p id="bookingCancelWarning" class="booking-cancel-warning" hidden>⚠ เลยเวลาถอนปลอดภัยแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย โดยผู้จัดจะพิจารณาอีกครั้ง</p><p id="bookingCancelStatus" role="status"></p><div class="actions"><button type="button" class="primary" id="bookingCancelConfirm">ยืนยันถอนตัว</button><button type="button" class="secondary" id="bookingCancelBack">กลับ</button></div></dialog>
+ <dialog id="bookingSponsorDialog" class="booking-feedback booking-submit booking-sponsor-dialog" aria-labelledby="bookingSponsorTitle"><form id="bookingSponsorForm"><h2 id="bookingSponsorTitle">🎁 สปอนเซอร์</h2><label for="sponsorPrize">ของรางวัล</label><input id="sponsorPrize" type="text" maxlength="60" required placeholder="เช่น ลูกแบด 1 หลอด"><fieldset class="booking-sponsor-awards"><legend>มอบให้</legend>${sponsorAwards.map(([value, label]) => `<label><input type="radio" name="sponsorAward" value="${value}"><span>${label}</span></label>`).join('')}</fieldset><input id="sponsorAwardNote" type="text" maxlength="30" placeholder="เช่น คนตบแรงสุด" aria-label="มอบให้ใคร" hidden><label for="sponsorMessage">ข้อความถึงเพื่อนๆ <small>(ไม่ใส่ก็ได้)</small></label><input id="sponsorMessage" type="text" maxlength="60" placeholder="เช่น สู้ๆ นะทุกคน"><div id="sponsorNameField" hidden><label for="sponsorDisplayName">ชื่อผู้สนับสนุน</label><input id="sponsorDisplayName" type="text" maxlength="30"><p class="hint" id="sponsorNameHint"></p></div><label class="booking-check" id="sponsorNotifyRow"><input type="checkbox" id="sponsorNotify" checked> แจ้งเข้ากลุ่ม LINE ของก๊วน</label><p id="bookingSponsorStatus" role="status"></p><div class="actions"><button type="submit" class="primary" id="sponsorSubmit">ยืนยันเป็นสปอนเซอร์</button><button type="button" class="secondary" id="sponsorBack">กลับ</button></div><p id="sponsorDeleteRow" hidden><button type="button" class="textbtn" id="sponsorDelete">ยกเลิกการเป็นสปอนเซอร์</button> <span id="sponsorDeleteConfirm" hidden>แน่ใจไหม? <button type="button" class="secondary" id="sponsorDeleteYes">ยืนยันยกเลิก</button></span></p></form></dialog>
  <dialog id="bookingReview" class="booking-feedback booking-submit" aria-labelledby="bookingReviewTitle"><h2 id="bookingReviewTitle">ยืนยันการจอง</h2><div id="bookingPlayerLocked" class="booking-player-locked" hidden></div><label id="bookingPlayerLabel" for="bookingPlayer">ชื่อสมาชิกผู้จองหลัก</label><select id="bookingPlayer" aria-describedby="bookingPlayerHint"><option value="">เลือกชื่อของคุณ…</option></select><p class="hint" id="bookingPlayerHint" aria-live="polite"></p><div id="bookingFriendOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasFriend"> จองให้เพื่อนในระบบ 1 คน</label><div id="bookingFriendFields" hidden><label>เลือกเพื่อน<select id="bookingFriend"><option value="">เลือกชื่อเพื่อน…</option></select></label><p class="hint">คนชวนจ่ายแทนเพื่อน รวมในบิลของคนชวน เพื่อนต้องยังไม่มีชื่อในวันที่เลือก</p></div></div><div id="bookingGuestOption" hidden><label class="booking-check"><input type="checkbox" id="bookingHasGuest"> เพิ่มแขก (Guest)</label><div id="bookingGuestFields" class="booking-fields" hidden><label>ชื่อแขก<input id="bookingGuestName" type="text" maxlength="80" placeholder="ชื่อแขก"></label><label>เพศสำหรับจัดคู่<select id="bookingGuestGender"><option value="">เลือกเพศ</option><option value="M">ชาย</option><option value="F">หญิง</option></select></label></div></div><div id="bookingHolidayConfirm" hidden><label class="booking-check"><input id="bookingAcceptHoliday" type="checkbox"> รับทราบว่าวันที่เลือกมีวันหยุด และยังต้องการจอง</label></div><div class="booking-selection"><b>วันที่เลือก</b><ul id="bookingReviewDates"></ul></div><button type="button" class="primary booking-primary" id="bookingConfirm">ยืนยันจองคิว ↗</button><form method="dialog"><button class="secondary booking-back">กลับไปเลือกวัน</button></form></dialog>
  <details id="bookingAdmin" class="panel booking-admin" hidden><summary>⚙ ตั้งค่าการจองและสนาม <span>สำหรับผู้จัด</span></summary>
  <details class="booking-cup-settings"><summary>🏆 วันแข่งขัน ${html(cupName)}</summary>
  <form id="bookingCupSettings"><label for="bookingCupWeek">สัปดาห์แข่งขันประจำเดือน</label>
  <select id="bookingCupWeek"><option value="0">กำหนดวันเอง</option>${['1–7', '8–14', '15–21', '22–28', '29–สิ้นเดือน'].map((range, i) => `<option value="${i + 1}">สัปดาห์ที่ ${i + 1} · วันที่ ${range}</option>`).join('')}</select>
- <fieldset><legend>เลือกวันแข่งเป็นรายรอบ</legend><p class="hint">ติ๊กเพื่อกำหนดให้เป็นวันแข่ง หรือเอาติ๊กออกเพื่อให้เป็นรอบปกติ รอบที่ไม่ได้ปรับจะใช้สัปดาห์ประจำเดือน</p><div id="bookingCupDates"></div></fieldset>
+ <fieldset><legend>เลือกวันแข่งเป็นรายรอบ</legend><p class="hint">ติ๊กเพื่อกำหนดให้เป็นวันแข่ง หรือเอาติ๊กออกเพื่อให้เป็นรอบปกติ รอบที่ไม่ได้ปรับจะใช้สัปดาห์ประจำเดือน</p><div id="bookingCupDates"></div></fieldset><div id="bookingSponsorMoves"></div>
  <button class="secondary" type="submit">บันทึกวันแข่งขัน</button> <button class="textbtn" id="bookingCupReload" type="button" hidden>โหลดค่าล่าสุด</button><p id="bookingCupStatus" role="status"></p></form></details>
  <details class="booking-map-settings"><summary>แผนที่สนาม ${html(venueLabel)}</summary><form id="bookingMapSettings"><label for="bookingMapUrl">ลิงก์ Google Maps</label><input id="bookingMapUrl" name="mapUrl" type="url" inputmode="url" maxlength="2048" required placeholder="https://maps.app.goo.gl/…"><button class="secondary" type="submit">บันทึกแผนที่สนาม</button> <button class="textbtn" id="bookingMapReload" type="button" hidden>โหลดลิงก์ล่าสุด</button><p id="bookingMapStatus" role="status"></p></form></details>
  <details class="booking-map-settings"><summary>🔔 เชื่อม Badbot กับกลุ่ม LINE</summary>
@@ -433,6 +458,115 @@
     const roleTag = data.canEdit ? '<span class="booking-profile-role">ผู้จัด</span>' : '';
     box.hidden = false;
     box.innerHTML = `<div class="booking-profile-main"><button type="button" class="jb-own" data-job-pick="${html(me.id)}" aria-label="เลือกสาย job ของฉัน">${SenaJobs.badgeHtml(badge, 40, { mine: true })}</button><div class="booking-profile-info"><div class="booking-profile-name"><strong>${html(me.name)}</strong>${roleTag}</div><div class="booking-profile-meta">${html(jobTh)}${lineTh ? ' · ' + html(lineTh) : ''} · ${html(playsText)}</div></div></div><button type="button" class="booking-profile-pick" data-job-pick="${html(me.id)}">${ready ? 'เลือกสาย !' : 'เปลี่ยนสาย'}</button>`;
+  }
+  // Who sponsors as "me": the linked LINE member, or the picked name without LINE login.
+  const sponsorSelf = () => data.member?.playerId || (data.requireLogin ? '' : playerId);
+  function sponsorBox(s) {
+    const rows = s.sponsors || [];
+    const mine = rows.find(r => r.mine);
+    const open = !s.started && !s.closed && !s.skipped && (data.canEdit || sponsorSelf());
+    const list = rows.length
+      ? `<div class="booking-sponsors"><b>🎁 สปอนเซอร์ ${rows.length} คน</b>${rows
+          .map(
+            r =>
+              `<div class="booking-sponsor"><span><strong>${html(r.name)}</strong> ${html(r.prize)} · ${html(r.awardLabel)}</span>${r.canEdit && !r.mine ? `<button type="button" class="textbtn" data-sponsor-edit="${html(r.id)}" data-sponsor-session="${html(s.id)}">แก้</button>` : ''}</div>`,
+          )
+          .join('')}</div>`
+      : '';
+    const action = !open
+      ? ''
+      : mine?.canEdit
+        ? `<button type="button" class="booking-sponsor-action" data-sponsor-edit="${html(mine.id)}" data-sponsor-session="${html(s.id)}">แก้สปอนเซอร์ของฉัน</button>`
+        : mine
+          ? ''
+          : s.sponsorFull
+            ? '<p class="hint">สปอนเซอร์ครบ 10 คนแล้ว</p>'
+            : `<button type="button" class="booking-sponsor-action" data-sponsor-new="${html(s.id)}">🎁 ร่วมเป็นสปอนเซอร์</button>`;
+    return list + action;
+  }
+  function openSponsor(sessionId, sponsorId) {
+    const s = data.sessions.find(x => x.id === sessionId);
+    if (!s) return;
+    const row = sponsorId ? (s.sponsors || []).find(r => r.id === sponsorId) : null;
+    sponsorEditing = { sessionId, date: s.date, id: row?.id, revision: row?.revision };
+    q('#bookingSponsorTitle').textContent =
+      (row ? 'แก้สปอนเซอร์' : '🎁 สปอนเซอร์') + ' ' + cupName + ' · ' + displayDate(s.date);
+    q('#sponsorPrize').value = row?.prize || '';
+    for (const radio of root.querySelectorAll('[name="sponsorAward"]'))
+      radio.checked = radio.value === (row?.award || 'champ');
+    q('#sponsorAwardNote').value = row?.awardNote || '';
+    q('#sponsorMessage').value = row?.message || '';
+    // Organizers can enter a sponsor who is not a player (a shop, a friend).
+    q('#sponsorNameField').hidden = !(data.canEdit && !row);
+    q('#sponsorDisplayName').value = '';
+    q('#sponsorDisplayName').required = data.canEdit && !row && !sponsorSelf();
+    q('#sponsorNameHint').textContent = sponsorSelf()
+      ? 'เว้นว่าง = ลงในชื่อของคุณ'
+      : 'ชื่อร้านหรือคนที่ให้ของรางวัล';
+    q('#sponsorNotifyRow').hidden = Boolean(row);
+    q('#sponsorNotify').checked = true;
+    q('#sponsorDeleteRow').hidden = !row;
+    q('#sponsorDeleteConfirm').hidden = true;
+    q('#sponsorSubmit').textContent = row ? 'บันทึกการแก้ไข' : 'ยืนยันเป็นสปอนเซอร์';
+    q('#bookingSponsorStatus').textContent = '';
+    syncSponsorNote();
+    q('#bookingSponsorDialog').showModal();
+  }
+  function syncSponsorNote() {
+    const other = root.querySelector('[name="sponsorAward"]:checked')?.value === 'other';
+    q('#sponsorAwardNote').hidden = !other;
+    q('#sponsorAwardNote').required = other;
+  }
+  function sponsorBody() {
+    const name = q('#sponsorDisplayName').value.trim();
+    const body = {
+      action: 'sponsorSave',
+      date: sponsorEditing.date,
+      prize: q('#sponsorPrize').value,
+      award: root.querySelector('[name="sponsorAward"]:checked')?.value,
+      awardNote: q('#sponsorAwardNote').value,
+      message: q('#sponsorMessage').value,
+    };
+    if (sponsorEditing.id)
+      return { ...body, id: sponsorEditing.id, revision: sponsorEditing.revision };
+    if (data.canEdit && name)
+      return { ...body, displayName: name, notify: q('#sponsorNotify').checked };
+    return { ...body, playerId: sponsorSelf(), notify: q('#sponsorNotify').checked };
+  }
+  // Organizer: where each un-ticked Cup day's sponsors go. The default is the one
+  // day newly ticked in the same month, else "do not move (hide)".
+  function renderSponsorMoves() {
+    const box = q('#bookingSponsorMoves');
+    if (!box || !data) return;
+    const checked = new Map(
+      [...root.querySelectorAll('[data-cup-date]')].map(b => [b.dataset.cupDate, b.checked]),
+    );
+    // Keep only what the organizer picked; untouched rows follow the default.
+    const previous = new Map(
+      [...box.querySelectorAll('[data-move-from][data-touched]')].map(sel => [
+        sel.dataset.moveFrom,
+        sel.value,
+      ]),
+    );
+    const open = data.sessions.filter(s => !s.skipped && !s.started);
+    const lost = open.filter(s => s.isCup && s.sponsors?.length && !checked.get(s.date));
+    const targets = open.filter(s => checked.get(s.date));
+    box.innerHTML = lost
+      .map(s => {
+        const added = targets.filter(t => !t.isCup && t.date.slice(0, 7) === s.date.slice(0, 7));
+        const fallback = added.length === 1 ? added[0].date : '';
+        const value = previous.has(s.date) ? previous.get(s.date) : fallback;
+        const options = [
+          `<option value="">ไม่ย้าย (ซ่อนไว้)</option>`,
+          ...targets.map(
+            t =>
+              `<option value="${html(t.date)}" ${t.date === value ? 'selected' : ''}>${displayDate(t.date)}</option>`,
+          ),
+        ].join('');
+        const touched = previous.has(s.date) ? ' data-touched="1"' : '';
+        return `<label class="booking-sponsor-move">${displayDate(s.date)} มีสปอนเซอร์ ${s.sponsors.length} คน → ย้ายไป <select data-move-from="${html(s.date)}"${touched}>${options}</select></label>`;
+      })
+      .join('');
   }
   function render() {
     const linked = data.member?.playerId;
@@ -526,6 +660,7 @@
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.${html(courtSuffix(s))}</small></span>${personal}
     </label>
     <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
+    ${s.isCup ? sponsorBox(s) : ''}
     ${s.holiday ? `<p class="booking-holiday">☀ ${html(s.holiday)}</p>` : ''}
     ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
    </article>`;
@@ -676,6 +811,8 @@
         )
         .join('') ||
       '<p class="hint">ยังไม่มีรอบให้เลือก ตั้งวันตีประจำก่อนเพื่อเลือกวันแข่งรายรอบ</p>';
+    q('#bookingSponsorMoves').innerHTML = '';
+    renderSponsorMoves();
   }
   function renderSettings() {
     const cfg = data.settings;
@@ -826,7 +963,10 @@
             ? ''
             : String(e.target.checked);
       }
+      if (e.target.dataset.moveFrom) e.target.dataset.touched = '1';
+      else renderSponsorMoves();
     }
+    if (e.target.name === 'sponsorAward') syncSponsorNote();
   });
   root.addEventListener('input', e => {
     if (e.target.closest('#bookingSettings')) dirty = true;
@@ -846,7 +986,16 @@
         week: Number(q('#bookingCupWeek').value),
         cupVersion: Number(e.target.dataset.version),
         changes,
+        sponsorMoves: [...root.querySelectorAll('[data-move-from]')].map(select => ({
+          from: select.dataset.moveFrom,
+          to: select.value || null,
+        })),
       });
+      return;
+    }
+    if (e.target.id === 'bookingSponsorForm') {
+      e.preventDefault();
+      if (sponsorEditing) mutate(sponsorBody());
       return;
     }
     if (e.target.id === 'bookingMapSettings') {
@@ -899,6 +1048,13 @@
     const button = e.target.closest('button');
     if (!button || busy) return;
     if (button.hasAttribute('data-job-pick')) openJobPicker(button.dataset.jobPick);
+    if (button.dataset.sponsorNew) openSponsor(button.dataset.sponsorNew);
+    if (button.dataset.sponsorEdit)
+      openSponsor(button.dataset.sponsorSession, button.dataset.sponsorEdit);
+    if (button.id === 'sponsorBack') q('#bookingSponsorDialog').close();
+    if (button.id === 'sponsorDelete') q('#sponsorDeleteConfirm').hidden = false;
+    if (button.id === 'sponsorDeleteYes' && sponsorEditing?.id)
+      mutate({ action: 'sponsorDelete', id: sponsorEditing.id, revision: sponsorEditing.revision });
     if (button.id === 'bookingCupReload') {
       cupDirty = false;
       q('#bookingCupStatus').textContent = '';

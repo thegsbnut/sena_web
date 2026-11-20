@@ -924,7 +924,8 @@ test('organizers can move Cup dates without rewriting bookings, and overrides su
   const saved = await r.json();
   assert.equal(saved.cupVersion, 1);
   assert.equal(saved.settingsVersion, before.settingsVersion);
-  const strip = sessions => sessions.map(({ isCup, cupOverride, ...session }) => session);
+  const strip = sessions =>
+    sessions.map(({ isCup, cupOverride, sponsors, sponsorFull, ...session }) => session);
   assert.deepEqual(strip(saved.sessions), strip(before.sessions));
   assert.equal((await f.call(body, { cookie })).status, 409);
   const next = await (
@@ -1328,6 +1329,6 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261119-withdraw/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261119-withdraw4/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261120-sponsor/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261120-sponsor/);
 });
