@@ -775,3 +775,37 @@ test('full roster carousels with long sponsor lines stay under LINE size limits'
   assert.ok(bytes(message.contents) < 50000, String(bytes(message.contents)));
   for (const bubble of message.contents.contents) assert.ok(bytes(bubble) < 30000);
 });
+
+test('an organizer edits a sponsor who is not a player', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const made = await f.call(
+    { action: 'sponsorSave', date: day(3), displayName: 'ร้าน', prize: 'ลูกแบด', award: 'all' },
+    { admin: true },
+  );
+  const { id, revision } = f.cupOf(made.data).sponsors[0];
+  const r = await f.call(
+    { action: 'sponsorSave', id, revision, prize: 'ไม้แบด', award: 'champ' },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.deepEqual(
+    [f.cupOf(r.data).sponsors[0].name, f.cupOf(r.data).sponsors[0].prize],
+    ['ร้าน', 'ไม้แบด'],
+  );
+});
+
+test('an entry whose player left the roster can still be edited', async t => {
+  const f = bookingFixture(t);
+  await f.open();
+  const { id, revision } = f.cupOf((await f.sponsor('p1')).data).sponsors[0];
+  f.db.raw
+    .prepare('UPDATE club_state SET payload=? WHERE id=1')
+    .run(JSON.stringify({ players: roster.filter(p => p.id !== 'p1'), selected: [], cup: null }));
+  const r = await f.call(
+    { action: 'sponsorSave', id, revision, prize: 'ไม้แบด', award: 'champ' },
+    { admin: true },
+  );
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(f.cupOf(r.data).sponsors[0].name, 'Beau');
+});

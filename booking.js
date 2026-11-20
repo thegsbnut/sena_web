@@ -1098,17 +1098,21 @@ async function writeSponsor(env, club, input, action, outcome, now) {
     await deleteSponsor(env.DB, input.id, input.revision);
     return null;
   }
-  // Only an entry without a player (an organizer's) carries its own display name.
+  if (action.existing) {
+    // An edit keeps the stored name unless the player's current name is known;
+    // a sponsor who is not a player (or left the roster) keeps their snapshot.
+    const clean = cleanSponsorInput({ ...input, playerId: 'kept' }, { admin: false });
+    const displayName = nameOf(action.playerId) ?? action.existing.display_name;
+    await updateSponsor(env.DB, input.id, input.revision, { ...clean, displayName }, +now);
+    return null;
+  }
+  // Only a new entry without a player (an organizer's) carries its own display name.
   const clean = cleanSponsorInput(
     { ...input, playerId: action.playerId },
     { admin: !action.playerId },
   );
   if (action.playerId && !nameOf(action.playerId)) fail('ไม่พบผู้เล่นในก๊วน กรุณาติดต่อผู้จัด');
   const displayName = action.playerId ? nameOf(action.playerId) : clean.displayName;
-  if (action.existing) {
-    await updateSponsor(env.DB, input.id, input.revision, { ...clean, displayName }, +now);
-    return null;
-  }
   const row = await createSponsor(
     env.DB,
     {

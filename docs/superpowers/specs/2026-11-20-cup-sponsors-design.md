@@ -90,7 +90,7 @@ index (club, cup_date); unique index (club, cup_date, player_id) WHERE player_id
 - escape ทุกข้อความด้วย `html()`
 
 ## API
-`/api/sponsors?club=` (โมดูลใหม่ `sponsors.js`, route ใน `worker.js`, POST ผ่านเช็ก Origin)
+(ตอนทำจริงเปลี่ยนจาก route `/api/sponsors` แยก เป็น action ใน `/api/booking` แบบเดียวกับ `job` — ใช้เอกสารจอง ตัวตนสมาชิก และ notice เดิม; ตรรกะอยู่ใน `sponsors.js` · ชื่อ action จริง: `sponsorSave` (สร้าง/แก้) และ `sponsorDelete`)
 - `POST {action:'create', date, prize, award, awardNote?, message?, displayName? (ผู้จัด), notify}` → `{ sponsor, notice? }`
 - `POST {action:'update', id, revision, …fields}` / `{action:'delete', id, revision}`
 - `notify=true` และอยู่ใน LIFF → สร้าง notice ชนิด `sponsor` (`createNotice`, payload `{ id }`) คืน `code` ให้หน้าเว็บส่งข้อความเข้ากลุ่มด้วยกลไก `public/line-notice.js` เดิม
