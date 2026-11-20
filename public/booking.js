@@ -662,7 +662,7 @@
     <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
     ${s.isCup ? sponsorBox(s) : ''}
     ${s.holiday ? `<p class="booking-holiday">☀ ${html(s.holiday)}</p>` : ''}
-    ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปีนี้ยังไม่มีวันพระใหญ่/วันหยุดพิเศษในระบบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
+    ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
    </article>`;
           })
           .join('')

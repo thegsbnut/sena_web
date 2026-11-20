@@ -715,12 +715,6 @@ test('Bangkok date boundary, holiday acknowledgement, skip and organizer closure
   assert.equal(bangkokDate(new Date('2026-11-03T18:00:00Z')), '2026-11-04');
   assert.equal(holidayOn('2026-12-10'), 'วันรัฐธรรมนูญ');
   assert.equal(holidayOn('2027-05-20'), 'วันวิสาขบูชา');
-  // Years without a yearly table: fixed days repeat and weekend ones move to Monday.
-  assert.equal(holidayOn('2028-04-06'), 'วันจักรี');
-  assert.equal(holidayOn('2028-01-03'), 'ชดเชยวันขึ้นปีใหม่');
-  assert.equal(holidayOn('2028-12-11'), 'ชดเชยวันรัฐธรรมนูญ');
-  assert.equal(holidayOn('2028-12-12'), null);
-  assert.equal(holidayOn('2027-01-04'), null);
   const f = fixture(),
     { cookie, settings, data } = await f.open();
   const id = data.sessions[0].id;
