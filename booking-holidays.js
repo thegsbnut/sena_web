@@ -39,7 +39,34 @@ const special = {
   '2027-10-25': 'ชดเชยวันปิยมหาราช',
   '2027-12-06': 'ชดเชยวันพ่อแห่งชาติ',
 };
+// Years outside HOLIDAY_YEARS have no list of Buddhist days or special closures yet, but the
+// fixed-date holidays repeat every year, and one that lands on Sat/Sun is moved to the next
+// working day (the pattern 2026-2027 follow). 12-31 is not moved. Lunar days still need the
+// yearly table or an organizer's own entry.
+const dayMs = 86400000;
+const weekend = ms => [0, 6].includes(new Date(ms).getUTCDay());
+const dateOf = ms => new Date(ms).toISOString().slice(0, 10);
+function substituteOn(date) {
+  const year = date.slice(0, 4);
+  const taken = new Set();
+  for (const key of Object.keys(fixed)) {
+    const original = Date.parse(year + '-' + key + 'T00:00:00Z');
+    taken.add(original);
+  }
+  for (const key of Object.keys(fixed)) {
+    if (key === '12-31') continue;
+    let ms = Date.parse(year + '-' + key + 'T00:00:00Z');
+    if (!weekend(ms)) continue;
+    do ms += dayMs;
+    while (weekend(ms) || taken.has(ms));
+    taken.add(ms);
+    if (dateOf(ms) === date) return 'ชดเชย' + fixed[key];
+  }
+  return null;
+}
 export function holidayOn(date, custom = []) {
   const extra = custom.find(h => h.date === date);
-  return extra?.name || special[date] || fixed[date.slice(5)] || null;
+  if (extra?.name || special[date]) return extra?.name || special[date];
+  if (fixed[date.slice(5)]) return fixed[date.slice(5)];
+  return HOLIDAY_YEARS.includes(Number(date.slice(0, 4))) ? null : substituteOn(date);
 }
