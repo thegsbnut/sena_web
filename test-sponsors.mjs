@@ -463,7 +463,7 @@ test('notify asks the page to post a notice with a sponsor code', async t => {
   const { noticeDay } = await import('./line-notices.js');
   assert.match(
     r.data.notice.text,
-    new RegExp('^🎁 ขอเป็นสปอนเซอร์ SENA ' + noticeDay(day(3)) + ' #[a-z0-9]{5}$'),
+    new RegExp('^🎁 ขอเป็นสปอนเซอร์ SENA CUP ' + noticeDay(day(3)) + ' #[a-z0-9]{5}$'),
   );
   assert.equal(r.data.notice.liffId, 'liff-test');
   const code = r.data.notice.text.slice(-5);
@@ -597,4 +597,181 @@ test("an organizer edits a player's entry without sending the player", async t =
     [f.cupOf(r.data).sponsors[0].name, f.cupOf(r.data).sponsors[0].awardLabel],
     ['Beau', '🥉 ที่ 3'],
   );
+});
+
+// ---- Flex cards ----
+const { emptyBubble, rosterBubble, flexMessage } = await import('./line-roster-card.js');
+const { gamesBubble, cupResultBubble, leaderboardBubble } = await import('./line-board-cards.js');
+const { paidBubble } = await import('./line-bill-card.js');
+const { sponsorBubble, sponsorStrip, withSponsorStrips } = await import('./line-sponsor-card.js');
+const { flexProblems } = await import('./scripts/flex-problems.mjs');
+const { flexText } = await import('./line-roster-card.js');
+const cardOpts = { origin: 'https://x.test', bookUrl: 'https://x.test/b', updated: '20:00' };
+const srow = (id, club, cup_date, name, extra = {}) => ({
+  id,
+  club,
+  cup_date,
+  name,
+  prize: 'ลูกแบด RSL 1 หลอด',
+  award: 'champ',
+  award_note: null,
+  message: null,
+  hidden: 0,
+  ...extra,
+});
+const footerText = bubble =>
+  flexText({ type: 'box', layout: 'vertical', contents: bubble.footer?.contents ?? [] });
+
+test('strips go under marked club cards only, never under bill cards', () => {
+  const roster = emptyBubble('sena', 'ยังไม่มีรอบเปิดรับ', cardOpts);
+  const bill = paidBubble(
+    {
+      club: 'sena',
+      date: '2026-11-21',
+      title: 'บิล',
+      total: 1,
+      paidPeople: 1,
+      totalPeople: 1,
+      paid: [{ name: 'A', payerKey: 'legacy', amount: 100, method: 'transfer' }],
+      owing: [],
+      paidSum: 100,
+      transfer: { count: 1, sum: 100 },
+      cash: { count: 0, sum: 0 },
+    },
+    [],
+    'https://x.test',
+  );
+  const before = JSON.stringify(bill);
+  const messages = withSponsorStrips(
+    [flexMessage([roster], 'r'), flexMessage([bill], 'b')],
+    [srow('a', 'sena', '2026-12-12', 'Beau')],
+    '2026-12-01',
+  );
+  assert.match(
+    footerText(messages[0].contents),
+    /SENA CUP ส\. 12 ธ\.ค\. · สนับสนุนโดย\nBeau · ลูกแบด RSL 1 หลอด 🥇 แชมป์/,
+  );
+  assert.equal(JSON.stringify(messages[1].contents), before);
+  assert.doesNotMatch(JSON.stringify(messages[0]), /Symbol|sponsor"/);
+});
+
+test('each club card of a carousel gets its own sponsors; a club with none gets nothing', () => {
+  const cards = ['sena', '88'].map(club => emptyBubble(club, 'x', cardOpts));
+  const plain = JSON.stringify(cards[1]);
+  const [message] = withSponsorStrips(
+    [flexMessage(cards, 'all')],
+    [srow('a', 'sena', '2026-12-12', 'Beau'), srow('b', '88', '2026-12-30', 'Tor', { hidden: 1 })],
+    '2026-12-01',
+  );
+  assert.match(footerText(message.contents.contents[0]), /Beau/);
+  assert.equal(JSON.stringify(message.contents.contents[1]), plain);
+});
+
+test('the window decides: no strip after cup day + 7, the next Cup waits', () => {
+  const rows = [srow('a', 'sena', '2026-12-12', 'Beau'), srow('t', 'sena', '2027-01-09', 'Tor')];
+  const strip = today =>
+    footerText(
+      withSponsorStrips([flexMessage([emptyBubble('sena', 'x', cardOpts)], 'r')], rows, today)[0]
+        .contents,
+    );
+  assert.match(strip('2026-12-19'), /Beau/);
+  assert.doesNotMatch(strip('2026-12-19'), /Tor/);
+  assert.match(strip('2026-12-20'), /Tor/);
+  assert.doesNotMatch(strip('2027-01-17'), /สนับสนุน/);
+});
+
+test('a Cup result card thanks that Cup day sponsors forever', () => {
+  const card = cupResultBubble({
+    club: 'sena',
+    title: 'Sena Cup',
+    date: 'ส. 12 ธ.ค.',
+    cupDate: '2026-12-12',
+    rows: [{ rank: 1, name: 'A / B', w: 3, played: 3, pf: 63, pa: 40 }],
+    url: 'https://x.test',
+  });
+  const [message] = withSponsorStrips(
+    [flexMessage([card], 'c')],
+    [srow('a', 'sena', '2026-12-12', 'Beau'), srow('t', 'sena', '2027-01-09', 'Tor')],
+    '2027-03-01',
+  );
+  assert.match(footerText(message.contents), /ขอบคุณสปอนเซอร์ SENA CUP ส\. 12 ธ\.ค\.\nBeau/);
+  assert.doesNotMatch(footerText(message.contents), /Tor/);
+});
+
+test('games and leaderboard cards are marked too, and a card without a footer gets one', () => {
+  const games = gamesBubble({ club: '88', title: 'ตาราง', games: [] });
+  const board = leaderboardBubble({ club: '88', rows: [] });
+  const [message] = withSponsorStrips(
+    [flexMessage([games, board], 'g')],
+    [srow('a', '88', '2026-12-26', 'Tor', { award: 'other', award_note: 'MVP' })],
+    '2026-12-01',
+  );
+  for (const bubble of message.contents.contents)
+    assert.match(footerText(bubble), /88 CUP ส\. 26 ธ\.ค\.[^\n]*\nTor · ลูกแบด RSL 1 หลอด MVP/);
+});
+
+test('the strip lists three sponsors and counts the rest', () => {
+  const rows = ['A', 'B', 'C', 'D', 'E'].map((n, i) => srow('x' + i, 'sena', '2026-12-12', n));
+  const text = flexText(sponsorStrip('sena', rows, { cupDate: '2026-12-12' }));
+  assert.match(text, /\nA · [^\n]*\nB · [^\n]*\nC · [^\n]*\n\+ อีก 2 คน$/);
+});
+
+test('sponsor cards pass the LINE structure checks', () => {
+  const rows = [
+    srow('a', 'sena', '2026-12-12', 'Beau', { message: 'สู้ๆ นะทุกคน' }),
+    srow('b', 'sena', '2026-12-12', 'Ice', { award: 'all' }),
+  ];
+  const cards = [
+    sponsorBubble({
+      club: 'sena',
+      cupDate: '2026-12-12',
+      rows,
+      highlightId: 'a',
+      joinUrl: 'https://x.test/b',
+    }),
+    sponsorBubble({ club: '88', cupDate: '2026-12-26', rows: [], joinUrl: 'https://x.test/b' }),
+    sponsorBubble({ club: 'sena', cupDate: '2026-12-12', rows, joinUrl: 'https://x.test/b' }),
+  ];
+  const [message] = withSponsorStrips([flexMessage(cards, 's')], rows, '2026-12-01');
+  assert.deepEqual(flexProblems(message.contents), []);
+  const thanks = flexText(cards[0]);
+  assert.match(thanks, /ขอบคุณสปอนเซอร์/);
+  assert.match(thanks, /Beau\nลูกแบด RSL 1 หลอด\nมอบให้ 🥇 แชมป์\n"สู้ๆ นะทุกคน"/);
+  assert.match(thanks, /สปอนเซอร์วันนี้ทั้งหมด 2 คน/);
+  assert.match(flexText(cards[1]), /ยังไม่มีสปอนเซอร์ 88 Cup ส\. 26 ธ\.ค\./);
+});
+
+test('full roster carousels with long sponsor lines stay under LINE size limits', () => {
+  const data = {
+    roster: Array.from({ length: 40 }, (_, i) => ({
+      id: 'p' + i,
+      name: 'ผู้เล่นชื่อยาวมากคนที่ ' + i,
+      award: '',
+      badge: { line: 'red', plays: 95, titles: 3 },
+    })),
+  };
+  const session = {
+    date: '2026-12-12',
+    start: '18:00',
+    end: '21:00',
+    capacity: 30,
+    confirmedCount: 30,
+    waitlistCount: 10,
+    isCup: true,
+    registrations: data.roster.map((p, i) => ({
+      playerId: p.id,
+      status: i < 30 ? 'confirmed' : 'waitlist',
+      position: i < 30 ? i + 1 : i - 29,
+    })),
+  };
+  const cards = ['sena', '88'].map(club => rosterBubble(data, club, session, cardOpts));
+  const long = n => srow('l' + n, 'x', '2026-12-12', 'ช'.repeat(30), { prize: 'ร'.repeat(60) });
+  const rows = [0, 1, 2, 3].flatMap(n => [
+    { ...long(n), club: 'sena' },
+    { ...long(n + 9), club: '88' },
+  ]);
+  const [message] = withSponsorStrips([flexMessage(cards, 'all')], rows, '2026-12-01');
+  const bytes = value => new TextEncoder().encode(JSON.stringify(value)).length;
+  assert.ok(bytes(message.contents) < 50000, String(bytes(message.contents)));
+  for (const bubble of message.contents.contents) assert.ok(bytes(bubble) < 30000);
 });

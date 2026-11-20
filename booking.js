@@ -1125,7 +1125,7 @@ async function writeSponsor(env, club, input, action, outcome, now) {
   return {
     text:
       '🎁 ขอเป็นสปอนเซอร์ ' +
-      noticeClub(club) +
+      clubOf(club).cupName.toUpperCase() +
       ' ' +
       noticeDay(action.date) +
       (await codeSuffix(env, club, 'sponsor', { id: row.id })),
