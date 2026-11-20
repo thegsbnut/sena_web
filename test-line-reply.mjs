@@ -1935,3 +1935,156 @@ test('morning nudge: a failed release does not hide the original error', async t
   await f.hook([morning(f)]);
   assert(logged.some(l => l.includes('line-nudge:send') && l.includes('LINE reply unavailable')));
 });
+
+// ---- Cup sponsors ----
+const { createSponsor } = await import('./sponsors.js');
+const linkAll = (f, ids, club = 'sena') => {
+  for (const id of ids)
+    f.db
+      .prepare("INSERT INTO member_links VALUES(?,?,?,?,?,'approved',?)")
+      .run('U' + id.padStart(32, '0').replace(/p/g, 'a'), club, id, id, 'existing', 'x');
+};
+const userOf = id => 'U' + id.padStart(32, '0').replace(/p/g, 'a');
+async function sponsorFixture(t, { players = 4, capacity = 3, linked } = {}) {
+  const f = fixture(t),
+    date = future(1);
+  const names = Array.from({ length: players }, (_, i) => 'Player' + i);
+  f.seed('sena', [session(date, { names: players, capacity })], true, names);
+  await prepareMembers(f.env.DB);
+  linkAll(f, linked ?? names.map((_, i) => 'p' + i));
+  const row = await createSponsor(
+    f.env.DB,
+    {
+      id: '0b0b0b0b-0000-4000-8000-000000000001',
+      club: 'sena',
+      cupDate: date,
+      playerId: 'p0',
+      displayName: 'Player0',
+      prize: 'ลูกแบด 1 หลอด',
+      award: 'champ',
+      message: 'สู้ๆ',
+    },
+    Date.now(),
+  );
+  const notice = async () => {
+    const code = await createNotice(f.env.DB, {
+      club: 'sena',
+      kind: 'sponsor',
+      payload: { id: row.id },
+    });
+    return f.hook([f.event(`🎁 ขอเป็นสปอนเซอร์ SENA CUP ${noticeDay(date)} #${code}`)]);
+  };
+  const mentioned = messages =>
+    messages.flatMap(m => Object.values(m.substitution || {}).map(v => v.mentionee.userId));
+  return { f, date, row, notice, mentioned };
+}
+
+test('a sponsor code answers with the thank-you card and tags the confirmed players', async t => {
+  const { f, notice, mentioned } = await sponsorFixture(t);
+  assert.equal((await notice()).status, 200);
+  const [card, ...tags] = f.calls[0].messages;
+  assert.equal(card.type, 'flex');
+  assert.match(
+    flexText(card.contents),
+    /ขอบคุณสปอนเซอร์[\s\S]*Player0\nลูกแบด 1 หลอด\nมอบให้ 🥇 แชมป์/,
+  );
+  // Player0 is the sponsor, Player3 is on the waitlist: neither is tagged.
+  assert.deepEqual(mentioned(tags).sort(), [userOf('p1'), userOf('p2')]);
+  assert.match(tags[0].text, /รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย$/);
+});
+
+test('people who cannot be tagged are named in plain text', async t => {
+  const { f, notice, mentioned } = await sponsorFixture(t, { linked: ['p1'] });
+  await notice();
+  const messages = f.calls[0].messages;
+  assert.deepEqual(mentioned(messages), [userOf('p1')]);
+  assert.ok(messages.some(m => m.type === 'text' && /^Player2 รับทราบด้วยน้า/.test(m.text)));
+});
+
+test('a big Cup tags 12 people, then a free button tags the rest without the card', async t => {
+  const { f, row, notice, mentioned } = await sponsorFixture(t, { players: 16, capacity: 16 });
+  await notice();
+  const first = f.calls[0].messages;
+  assert.equal(first.length, 5);
+  assert.equal(mentioned(first).length, 12);
+  const button = first.at(-1).quickReply.items[0].action;
+  assert.equal(button.label, 'แท็กต่ออีก 3 คน');
+  assert.equal(button.data, 'badbot:sponsortag:' + row.id + ':12');
+  await f.hook([
+    {
+      type: 'postback',
+      webhookEventId: crypto.randomUUID(),
+      replyToken: crypto.randomUUID(),
+      source: { type: 'group', groupId: group, userId: 'x' },
+      postback: { data: button.data },
+    },
+  ]);
+  const rest = f.calls[1].messages;
+  assert.ok(rest.every(m => m.type !== 'flex'));
+  assert.equal(mentioned(rest).length, 3);
+  assert.equal(new Set([...mentioned(first), ...mentioned(rest)]).size, 15);
+});
+
+test('a sponsor removed before the bot answers gets no reply', async t => {
+  const { f, row, notice } = await sponsorFixture(t);
+  f.db.prepare('DELETE FROM cup_sponsors WHERE id=?').run(row.id);
+  assert.equal((await notice()).status, 200);
+  assert.equal(f.calls.length, 0);
+});
+
+test('badbot sponsor shows the card and tags nobody', async t => {
+  const { f } = await sponsorFixture(t);
+  await f.hook([f.event('badbot sponsor sena')]);
+  assert.deepEqual(
+    f.calls[0].messages.map(m => m.type),
+    ['flex'],
+  );
+  assert.match(flexText(f.calls[0].messages[0].contents), /สปอนเซอร์วันนี้ทั้งหมด 1 คน/);
+});
+
+test('club cards carry the sponsor strip; the menu does not', async t => {
+  const { f } = await sponsorFixture(t);
+  await f.hook([f.event('badbot list sena')]);
+  assert.match(JSON.stringify(f.calls[0].messages[0].contents.footer), /สนับสนุนโดย/);
+  await f.hook([f.event('badbot')]);
+  assert.doesNotMatch(JSON.stringify(f.calls[1].messages), /สนับสนุนโดย/);
+});
+
+test('a broken sponsor table never stops a card', async t => {
+  const { f } = await sponsorFixture(t);
+  const prepare = f.env.DB.prepare;
+  f.env.DB.prepare = sql => {
+    if (/FROM cup_sponsors/.test(sql)) throw Error('D1 down');
+    return prepare(sql);
+  };
+  t.mock.method(console, 'error', () => {});
+  await f.hook([f.event('badbot list sena')]);
+  assert.equal(f.calls[0].messages[0].type, 'flex');
+  assert.doesNotMatch(JSON.stringify(f.calls[0].messages), /สนับสนุนโดย/);
+});
+
+test('when LINE refuses the tag messages, the thank-you card is sent alone', async t => {
+  const { f, notice } = await sponsorFixture(t);
+  let attempt = 0;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    if (String(url).startsWith('https://api.line.me/v2/bot/group/'))
+      return Response.json({ userId: String(url).split('/').at(-1) });
+    f.calls.push(JSON.parse(options.body));
+    return attempt++
+      ? Response.json({})
+      : Response.json(
+          {
+            message: 'invalid',
+            details: [{ property: 'messages[1].substitution', message: 'bad' }],
+          },
+          { status: 400 },
+        );
+  });
+  t.mock.method(console, 'error', () => {});
+  await notice();
+  assert.equal(f.calls.length, 2);
+  assert.deepEqual(
+    f.calls[1].messages.map(m => m.type),
+    ['flex'],
+  );
+});

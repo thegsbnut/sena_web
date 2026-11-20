@@ -12,7 +12,9 @@ import { memberMode, liffUrl, prepareMembers } from './member.js';
 import { NOTICE_CODE, claimNotice, releaseNotice, noticeClub, noticeDay } from './line-notices.js';
 import { logError } from './log.js';
 import { billingLineText, billingLineMessages, paidSummary, resubmitMessages } from './billing.js';
-import { bookingRoute } from './booking.js';
+import { bangkokDate, bookingRoute } from './booking.js';
+import { activeSponsors, getSponsor, listSponsors } from './sponsors.js';
+import { SPONSOR_MARK, sponsorAlt, sponsorBubble, withSponsorStrips } from './line-sponsor-card.js';
 import { latestCup, leaderboardRoute } from './leaderboard.js';
 import { paidAlt, paidBubble } from './line-bill-card.js';
 import { cupResultBubble, gamesBubble, leaderboardBubble } from './line-board-cards.js';
@@ -65,6 +67,9 @@ const shortcuts = new Map([
   ['bill', { kind: 'bill', scope: 'all', description: 'คนที่ยังไม่จ่ายทั้งสองสนาม' }],
   ['bill 88', { kind: 'bill', scope: '88', description: 'คนที่ยังไม่จ่ายสนาม 88' }],
   ['bill sena', { kind: 'bill', scope: 'sena', description: 'คนที่ยังไม่จ่ายสนาม Sena' }],
+  ['sponsor', { kind: 'sponsor', scope: 'all', description: 'สปอนเซอร์ Cup ทั้งสองสนาม' }],
+  ['sponsor sena', { kind: 'sponsor', scope: 'sena', description: 'สปอนเซอร์ Sena Cup' }],
+  ['sponsor 88', { kind: 'sponsor', scope: '88', description: 'สปอนเซอร์ 88 Cup' }],
   ['help', { kind: 'help', description: 'รายการคำสั่ง' }],
 ]);
 
@@ -76,6 +81,8 @@ export function groupCommand(event) {
     if (data === 'badbot:roster') return { kind: 'roster', scope: 'all' }; // Existing cards still work.
     const tag = /^badbot:billtag:(all|sena|88):(\d{1,3})$/.exec(data || '');
     if (tag) return { kind: 'billTag', scope: tag[1], offset: Number(tag[2]) };
+    const sponsorTag = /^badbot:sponsortag:([0-9a-f-]{36}):(\d{1,3})$/.exec(data || '');
+    if (sponsorTag) return { kind: 'sponsorTag', id: sponsorTag[1], offset: Number(sponsorTag[2]) };
     const run = /^badbot:run:([a-z0-9 ]{1,20})$/.exec(data || '');
     if (run && shortcuts.has(run[1])) return shortcuts.get(run[1]);
     const round = /^badbot:round:(sena|88):([A-Za-z0-9:_-]{1,64})$/.exec(data || '');
@@ -426,6 +433,7 @@ async function boardMessage(action, env, urls) {
       club: action.club,
       title: cup.title,
       date: thaiDay.format(new Date(cup.date + 'T12:00:00+07:00')),
+      cupDate: cup.date,
       rows,
       url: urls[action.club],
     });
@@ -649,6 +657,167 @@ async function bookMessages(env, club, { playerId, sessionIds }, now) {
   return [message];
 }
 
+// ---- Cup sponsors ----
+const SPONSOR_ACK = 'รับทราบด้วยน้า ขอบคุณสปอนเซอร์กันด้วย';
+const MAX_REPLY = 5;
+// Current roster names of a club (cheap: the club state row only).
+async function playerNames(env, club) {
+  const table = clubOf(club).stateTable;
+  await env.DB.prepare(stateTableSql(table)).run();
+  const row = await env.DB.prepare(`SELECT payload FROM ${table} WHERE id=1`).first();
+  return new Map((row ? JSON.parse(row.payload).players : []).map(p => [p.id, clean(p.name)]));
+}
+const named = (rows, names) =>
+  rows.map(r => ({ ...r, name: names.get(r.player_id) ?? clean(r.display_name) }));
+const isMarked = messages =>
+  messages.some(
+    m =>
+      m?.type === 'flex' &&
+      (m.contents.type === 'carousel' ? m.contents.contents : [m.contents]).some(
+        b => b[SPONSOR_MARK],
+      ),
+  );
+// The sponsor strip under every marked card; a failure leaves the cards as they are.
+async function addSponsorStrips(env, messages, now) {
+  if (!isMarked(messages)) return;
+  try {
+    const rows = await listSponsors(env.DB, { clubs });
+    if (!rows.length) return;
+    const names = new Map();
+    for (const club of new Set(rows.map(r => r.club)))
+      for (const [id, name] of await playerNames(env, club)) names.set(club + ':' + id, name);
+    const withNames = rows.map(r => ({
+      ...r,
+      name: names.get(r.club + ':' + r.player_id) ?? clean(r.display_name),
+    }));
+    withSponsorStrips(messages, withNames, bangkokDate(now));
+  } catch (error) {
+    logError('line-reply:sponsor-strip', error);
+  }
+}
+
+// Reply to a new sponsor (notice code) or to its "tag the rest" button: the
+// thank-you card (first time only), then tags for the Cup day's confirmed
+// players (not the sponsor, not the waitlist), at most 5 messages; a free
+// quick-reply button tags whoever did not fit. null = the entry is gone.
+async function sponsorMessages(env, group, sponsorId, { tagsFrom = 0, card = true }) {
+  const row = await getSponsor(env.DB, sponsorId);
+  if (!row || row.hidden) {
+    logError('line-reply:sponsor-gone', 'sponsor entry no longer exists');
+    return null;
+  }
+  const club = row.club,
+    names = await playerNames(env, club);
+  const sameDay = named(
+    await listSponsors(env.DB, { clubs: [club], dates: [row.cup_date] }),
+    names,
+  );
+  const messages = card
+    ? [
+        flexMessage(
+          [
+            sponsorBubble({
+              club,
+              cupDate: row.cup_date,
+              rows: sameDay,
+              highlightId: row.id,
+              joinUrl: bookingUrl(env, club),
+            }),
+          ],
+          sponsorAlt(club, row.cup_date, sameDay),
+        ),
+      ]
+    : [];
+  const data = await bookingData(env, club);
+  const round = data?.sessions.find(s => s.date === row.cup_date);
+  const ids = (round?.registrations ?? [])
+    .filter(r => r.status === 'confirmed' && !r.guest && r.playerId !== row.player_id)
+    .map(r => r.playerId);
+  const guests = (round?.registrations ?? [])
+    .filter(r => r.status === 'confirmed' && r.guest)
+    .map(r => clean(r.guest.name));
+  let links = [];
+  if (ids.length) {
+    await prepareMembers(env.DB);
+    links = (
+      await env.DB.prepare(
+        "SELECT player_id,user_id FROM member_links WHERE status='approved' AND club=? AND player_id IN (" +
+          ids.map(() => '?').join(',') +
+          ')',
+      )
+        .bind(club, ...ids)
+        .all()
+    ).results;
+  }
+  const targets = await Promise.all(
+    links.map(async link => ({
+      playerId: link.player_id,
+      ...(await groupMentionTarget(env, group, link.user_id)),
+    })),
+  );
+  const ready = targets.filter(target => target.reason === 'mention_ready');
+  // A fixed order, so the button's offset points at the same people next time.
+  const people = ready
+    .map(target => ({ userId: target.userId, risk: mentionNameRisk(target.displayName) }))
+    .sort((a, b) => a.risk - b.risk || a.userId.localeCompare(b.userId))
+    .slice(tagsFrom);
+  const plain = card
+    ? [
+        ...ids
+          .filter(id => !ready.some(target => target.playerId === id))
+          .map(id => names.get(id) || 'ผู้เล่น'),
+        ...guests,
+      ]
+    : [];
+  const room = MAX_REPLY - messages.length - (plain.length ? 1 : 0);
+  let tagged = 0;
+  for (const chunk of planMentionMessages(people).slice(0, Math.max(0, room))) {
+    messages.push(mentionGroupMessage(chunk, '', SPONSOR_ACK));
+    tagged += chunk.length;
+  }
+  if (plain.length) messages.push({ type: 'text', text: plain.join(', ') + ' ' + SPONSOR_ACK });
+  const left = people.length - tagged;
+  if (left > 0 && messages.length)
+    messages.at(-1).quickReply = {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'postback',
+            label: `แท็กต่ออีก ${left} คน`,
+            data: `badbot:sponsortag:${row.id}:${tagsFrom + tagged}`,
+            displayText: 'แท็กต่ออีก ' + left + ' คน',
+          },
+        },
+      ],
+    };
+  return messages;
+}
+
+// `badbot sponsor`: each club's sponsors now in their window, else its next Cup
+// day (inviting people), else a line saying there is no Cup open. No tags.
+async function sponsorList(env, scope, now) {
+  const selected = scope === 'all' ? clubs : [scope];
+  const today = bangkokDate(now);
+  const cards = [],
+    alts = [];
+  for (const club of selected) {
+    const names = await playerNames(env, club);
+    const rows = named(activeSponsors(await listSponsors(env.DB, { clubs: [club] }), today), names);
+    let cupDate = rows[0]?.cup_date;
+    if (!cupDate) {
+      const data = await bookingData(env, club);
+      cupDate = data?.sessions.find(s => s.isCup && !s.started && !s.closed)?.date;
+    }
+    if (!cupDate) continue;
+    cards.push(sponsorBubble({ club, cupDate, rows, joinUrl: bookingUrl(env, club) }));
+    alts.push(sponsorAlt(club, cupDate, rows));
+  }
+  return cards.length
+    ? [flexMessage(cards, alts.join(' · '))]
+    : textMessages('ยังไม่มีวันแข่ง Cup ที่เปิดจอง');
+}
+
 async function eventKey(event) {
   const value = event.source.groupId + '\n' + (event.webhookEventId || event.replyToken);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
@@ -728,6 +897,10 @@ export async function replyToGroupCommand(event, env) {
         const chase = await resubmitMessages(env, group, notice.payload);
         if (!chase) return;
         messages.push(...chase);
+      } else if (notice.kind === 'sponsor') {
+        const reply = await sponsorMessages(env, group, notice.payload.id, { card: true });
+        if (!reply) return;
+        messages.push(...reply);
       } else if (notice.kind === 'paid') {
         const info = await paidSummary(env, notice.payload.billId);
         if (!info) return;
@@ -787,12 +960,22 @@ export async function replyToGroupCommand(event, env) {
           { rosterOf: rosterOf(env) },
         )),
       );
+    } else if (action.kind === 'sponsorTag') {
+      const reply = await sponsorMessages(env, group, action.id, {
+        card: false,
+        tagsFrom: action.offset,
+      });
+      if (!reply?.length) return;
+      messages.push(...reply);
+    } else if (action.kind === 'sponsor') {
+      messages.push(...(await sponsorList(env, action.scope, now)));
     } else if (action.kind === 'menu') {
       messages.push(menu(urls, collectUrls));
     } else {
       const card = await boardMessage(action, env, urls);
       messages.push(...(card ? [card] : textMessages(await shortcutText(action, env, urls))));
     }
+    await addSponsorStrips(env, messages, now);
     let response, evidence;
     const send = async body => {
       try {
@@ -836,6 +1019,16 @@ export async function replyToGroupCommand(event, env) {
         details: evidence.error?.details,
       });
       await send(messages.map(flexFallback));
+    } else if (
+      response?.status === 400 &&
+      notice?.kind === 'sponsor' &&
+      messages.some(m => m.type !== 'flex')
+    ) {
+      // A refused tag message must not cost the thank-you card.
+      logError('line-reply:sponsor-tags-rejected', evidence.error?.message, {
+        details: evidence.error?.details,
+      });
+      await send(messages.filter(m => m.type === 'flex'));
     }
     if (action.kind === 'bill')
       try {
