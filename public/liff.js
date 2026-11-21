@@ -100,19 +100,40 @@
       }
     }
     if (!session.loggedIn) {
-      message('เข้าสู่ระบบเพื่อจอง ถอน หรือชำระบิลของคุณ');
-      button('เข้าสู่ระบบด้วย LINE', () => {
+      const startLogin = () => {
         const redirect = new URL('/liff.html', location.origin);
         redirect.searchParams.set('club', club);
         redirect.searchParams.set('page', pay ? 'pay' : collect ? 'collect' : 'book');
         if (bill) redirect.searchParams.set('bill', bill);
         liff.login({ redirectUri: redirect.href });
-      });
+      };
+      // The visitor already pressed a login button to get here, so go straight to LINE instead of
+      // asking again. One automatic try per two minutes: after a failed or cancelled login, or right after
+      // "ออกจากระบบ", the button stays so the page never loops.
+      let auto = false;
+      try {
+        auto = Date.now() - Number(sessionStorage.getItem('sena-liff-login-tried') || 0) > 120000;
+        if (auto) sessionStorage.setItem('sena-liff-login-tried', String(Date.now()));
+      } catch {}
+      if (auto) {
+        message('กำลังพาไปเข้าสู่ระบบด้วย LINE…');
+        startLogin();
+        return;
+      }
+      message('เข้าสู่ระบบเพื่อจอง ถอน หรือชำระบิลของคุณ');
+      button('เข้าสู่ระบบด้วย LINE', startLogin);
       return;
     }
+    try {
+      sessionStorage.removeItem('sena-liff-login-tried');
+    } catch {}
     button('ออกจากระบบ', async () => {
       try {
         await api('/logout', {});
+        // Leave the flag set: after logging out the page shows the button instead of signing in again.
+        try {
+          sessionStorage.setItem('sena-liff-login-tried', String(Date.now()));
+        } catch {}
         await ensureLiff(session.liffId);
         if (liff.isLoggedIn()) liff.logout();
         location.reload();

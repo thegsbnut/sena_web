@@ -894,3 +894,74 @@ test('court bill: คนสร้างบิลขึ้นสถานะ paid
   assert.ok(soloRow.closed_at > 0);
   assert.equal(soloRow.payers[0].method, 'owner');
 });
+
+// Run the real liff.js for a visitor who is not logged in: it must go straight to LINE once,
+// and fall back to the button (never loop) right after a login try or a logout.
+async function liffLoggedOut(storage) {
+  const logins = [];
+  const buttons = [];
+  const location = {
+    search: '?club=sena&page=book',
+    hash: '',
+    origin: 'https://sena.example',
+    href: 'https://sena.example/liff.html?club=sena&page=book',
+    replace() {},
+  };
+  const element = () => ({ textContent: '', hidden: false, append() {}, replaceChildren() {} });
+  const sandbox = {
+    location,
+    URL,
+    URLSearchParams,
+    console,
+    Date,
+    Number,
+    sessionStorage: {
+      getItem: key => storage[key] ?? null,
+      setItem: (key, value) => (storage[key] = String(value)),
+      removeItem: key => delete storage[key],
+    },
+    document: {
+      getElementById: element,
+      createElement: () => {
+        const el = element();
+        buttons.push(el);
+        return el;
+      },
+      head: {
+        append(script) {
+          script.onload?.();
+        },
+      },
+    },
+    liff: {
+      init: async () => {},
+      isLoggedIn: () => false,
+      login: options => logins.push(options.redirectUri),
+    },
+    fetch: async () =>
+      Response.json({
+        enabled: true,
+        configured: true,
+        loggedIn: false,
+        liffId: 'x',
+        csrf: 'x',
+      }),
+  };
+  sandbox.window = sandbox;
+  await vm.runInNewContext(read('./public/liff.js'), sandbox);
+  return { logins, buttons: buttons.map(b => b.textContent) };
+}
+
+test('LIFF logged-out visitor is sent straight to LINE once, then gets the button (no loop)', async () => {
+  const storage = {};
+  const first = await liffLoggedOut(storage);
+  assert.deepEqual(first.logins, ['https://sena.example/liff.html?club=sena&page=book']);
+  assert.deepEqual(first.buttons, []);
+  // Coming back without a session (cancelled / failed): button, no second automatic redirect
+  const second = await liffLoggedOut(storage);
+  assert.deepEqual(second.logins, []);
+  assert.deepEqual(second.buttons, ['เข้าสู่ระบบด้วย LINE']);
+  // The flag expires, so a later tap from the court goes straight to LINE again
+  storage['sena-liff-login-tried'] = String(Date.now() - 3 * 60 * 1000);
+  assert.equal((await liffLoggedOut(storage)).logins.length, 1);
+});
