@@ -898,8 +898,14 @@ body.collecting #billing > h1,
 body.collecting #billing > div > h1 {
   display: none;
 }
+/* iOS bounces the frame past its end and shows white under it: no bounce, and the
+   frame's own background matches the page (dark on the bills list, light on a bill). */
 html.embedded {
-  overscroll-behavior-y: contain;
+  overscroll-behavior: none;
+  background: var(--paper);
+}
+html.embedded:has(body.home) {
+  background: #0b1c15;
 }
 
 .add-box {

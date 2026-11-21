@@ -1340,6 +1340,9 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
     js,
     /class="booking-meta"><p class="hint" id="bookingPattern"><\/p><a id="bookingVenueMap"/,
   );
+  // no "ทุกวัน… เวลา…" pattern line, and the map link has no underline
+  assert.doesNotMatch(js, /`ทุกวัน\$\{/);
+  assert.match(css, /\.booking-map-link \{[^}]*text-decoration: none;/);
   // leaderboard: refresh icon inside the stats summary, manual entry last in the page
   const court = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
   assert.match(court, /<summary>สถิติสะสม<button[^>]*id="leaderboardRefresh"/);
@@ -1355,8 +1358,8 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261121-head/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261121-head/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261121-map/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261121-map/);
 });
 
 test('players see a one-line organizer link and a next-Cup card; organizer tools fold away', () => {

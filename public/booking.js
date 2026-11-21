@@ -636,8 +636,9 @@
       mapInput.defaultValue = mapUrl;
       mapInput.value = mapUrl;
     }
+    // Weekly pattern line removed (owner request); only the "not open yet" note remains.
     q('#bookingPattern').textContent = cfg.enabled
-      ? `ทุกวัน${cfg.weekdays.map(d => days[d]).join(' / ')} • ${cfg.start}–${cfg.end} น. • เปิดล่วงหน้า ${cfg.weeks} สัปดาห์`
+      ? ''
       : 'ผู้จัดยังไม่เปิดรับจอง • เข้าสู่ระบบผู้จัดเพื่อตั้งวัน เวลา และขาประจำ';
     const sessions = data.sessions;
     selected = new Set(

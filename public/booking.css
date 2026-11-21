@@ -148,6 +148,9 @@
 .booking-meta .hint {
   margin: 0;
 }
+.booking-meta .hint:empty {
+  display: none;
+}
 .booking-meta .booking-map-link {
   min-height: 36px;
   margin: 0;
@@ -868,7 +871,7 @@ main:has(#booking:not([hidden])) > .venue-picker small {
   color: #385747;
   font-size: 13px;
   font-weight: 650;
-  text-underline-offset: 3px;
+  text-decoration: none;
 }
 .booking-map-link:focus-visible {
   outline: 2px solid #385747;

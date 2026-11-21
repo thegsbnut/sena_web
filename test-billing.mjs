@@ -542,6 +542,9 @@ test('slip upload uses preview dialog instead of confirm(), receipt modal has ac
   assert.match(html, /id="receiptInfo"/);
   assert.match(html, /id="receiptActions"/);
   assert.match(css, /body\.nxc\.home dialog \.actions button/);
+  // embedded bills frame: no iOS bounce (white strip) and a background matching the page
+  assert.match(css, /html\.embedded \{[^}]*overscroll-behavior: none;/);
+  assert.match(css, /html\.embedded:has\(body\.home\) \{\s*background: #0b1c15;/);
   assert.match(js, /function previewSlip\(file, metaText, onRetake\)/);
   assert.match(js, /function openReceiptModal\(blob, ctx = \{\}\)/);
   assert.match(js, /b\.method === 'owner' \? '<small>คนออกเงิน<\/small>'/);
