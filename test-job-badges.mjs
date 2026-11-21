@@ -504,3 +504,11 @@ test('auth-status bar shows only for password admins; booking page renders compa
   assert.match(readFileSync(new URL('./public/cloud.js', import.meta.url), 'utf8'), /has-me/);
   assert.match(authCss, /\.sena-authbar\[hidden\]/);
 });
+
+test('bills tab frame starts below the court header so the brand and profile chip stay visible', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('./public/next-nav.css', import.meta.url), 'utf8');
+  const shell = readFileSync(new URL('./public/next-shell.js', import.meta.url), 'utf8');
+  assert.match(css, /inset: var\(--head-h, 0px\) 0 var\(--nav-h, 66px\) 0;/);
+  assert.match(shell, /'--head-h'/);
+});

@@ -22,6 +22,13 @@
       '--nav-h',
       document.querySelector('.next-tabbar').offsetHeight + 'px',
     );
+    // Keep the court header (brand + profile chip) visible above the frame, like the other tabs.
+    window.scrollTo({ top: 0 });
+    const header = document.querySelector('body > header, main > header, header');
+    document.documentElement.style.setProperty(
+      '--head-h',
+      Math.max(0, Math.round(header?.getBoundingClientRect().bottom ?? 0)) + 'px',
+    );
     const club = typeof activeClub !== 'undefined' ? activeClub : '';
     if (!frame.getAttribute('src')) {
       // ?bills=collect (from Badbot "เก็บเงิน") opens the collect page once, then is dropped

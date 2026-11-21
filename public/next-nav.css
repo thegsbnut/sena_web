@@ -85,7 +85,7 @@ body.nxc #booking:has(.booking-action:not([hidden])) {
 /* Bills tab: the bills page runs in a frame that fills the screen above the bottom menu. */
 body.nxc #bills:not([hidden]) {
   position: fixed;
-  inset: 0 0 var(--nav-h, 66px) 0;
+  inset: var(--head-h, 0px) 0 var(--nav-h, 66px) 0;
   z-index: 101;
   margin: 0;
   padding: 0;
