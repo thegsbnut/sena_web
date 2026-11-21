@@ -13,6 +13,7 @@
 - 2026-11-18/19 ปุ่ม `💸 เก็บเงิน`, `member_promptpay`, toast/พรีวิวสลิปหน้าบิล, ปุ่ม `ถอนชื่อฉัน` (#70–#80)
 
 ## ค้างอยู่
+- branch `ccr-5106e5b8-qroakt` (2026-11-21, รอเจ้าของสั่ง merge): `/liff.html` ตอนยังไม่ล็อกอินพาไป LINE login เองหนึ่งครั้ง (ไม่ต้องกดปุ่มซ้ำ) — `public/liff.js`; ต้องลองบน LINE/Safari จริง (ดู LINE-LIFF.md)
 - commit `667b1e2` บน branch `claude/intelligent-faraday-cv6766` (โหลด iframe บิลล่วงหน้า + `/api/member` พร้อมรายการบิล) — เจ้าของบอกพอแล้ว ไม่ merge หยิบมาใช้ได้ถ้าสั่ง
 - รายการที่เหลืออื่นๆ ดู `docs/BACKLOG.md`
 
