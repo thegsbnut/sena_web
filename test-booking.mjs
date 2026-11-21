@@ -1372,7 +1372,7 @@ test('players see a one-line organizer link and a next-Cup card; organizer tools
 
   // Organizer panel: compact for players without a private game; header shortcut only for organizers
   assert.match(cloud, /bar\.classList\.toggle\('is-compact', !cloudEditable && !cloudDirty\)/);
-  assert.match(cloud, /headerTools\.hidden = !cloudEditable/);
+  assert.match(cloud, /headerTools\.hidden =\s*!cloudEditable/);
   assert.match(css, /body\.nxc #club-tools\.is-compact\s*\{/);
 
   // Cup tab: tools inside #cupTools (open for organizers once per role change), card from booking data

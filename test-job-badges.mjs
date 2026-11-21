@@ -447,7 +447,7 @@ test('auth-status bar shows only for password admins; booking page renders compa
       document: {
         hidden: true,
         createElement: () => (created = makeEl()),
-        body: { prepend() {} },
+        body: { prepend() {}, classList: { toggle() {} } },
         querySelector: () => null,
         querySelectorAll: () => [],
         addEventListener() {},
@@ -502,6 +502,9 @@ test('auth-status bar shows only for password admins; booking page renders compa
     /<button type="button" id="meChip" class="me-chip"[^>]*hidden><\/button><\/header>/,
   );
   assert.match(readFileSync(new URL('./public/cloud.js', import.meta.url), 'utf8'), /has-me/);
+  // LINE logins (Badbot menu) never see the header pill; password admins still do
+  assert.match(readFileSync(new URL('./public/cloud.js', import.meta.url), 'utf8'), /via-line/);
+  assert.match(authSrc, /classList\.toggle\('via-line', d\.via === 'line'\)/);
   assert.match(authCss, /\.sena-authbar\[hidden\]/);
 });
 

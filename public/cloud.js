@@ -28,7 +28,10 @@ function cloudLock() {
   const headerTools = document.querySelector('header a[href="#club-tools"]');
   // A linked member reaches the club tools from the profile sheet (booking.js #meChip).
   if (headerTools)
-    headerTools.hidden = !cloudEditable || document.body.classList.contains('has-me');
+    headerTools.hidden =
+      !cloudEditable ||
+      document.body.classList.contains('has-me') ||
+      document.body.classList.contains('via-line');
   if (cupToolsRole !== cloudEditable) {
     cupToolsRole = cloudEditable;
     $('#cupTools').open = cloudEditable;

@@ -37,6 +37,9 @@
       role = d.canEdit;
       const passwordAdmin = role && d.via !== 'line';
       bar.dataset.role = role ? 'admin' : 'guest';
+      // LINE logins (e.g. from the Badbot menu) reach club tools from the profile sheet,
+      // so the header "จัดการก๊วน" pill is only for password admins (cloud.js reads this).
+      document.body.classList.toggle('via-line', d.via === 'line');
       // Show the sticky auth bar only for password admins (who need the logout button);
       // regular members and LINE admins see a single compact profile strip on the booking page.
       bar.hidden = !passwordAdmin;
