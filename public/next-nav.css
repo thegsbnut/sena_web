@@ -102,3 +102,113 @@ body.nxc #bills iframe {
   height: 100%;
   border: 0;
 }
+
+/* Players: the organizer panel shrinks to one "for organizers" line (cloud.js toggles .is-compact). */
+#club-tools .club-tools-label {
+  display: none;
+}
+body.nxc #club-tools.is-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px dashed #ffffff45;
+  border-radius: 12px;
+  box-shadow: none;
+  color: #cfe0d6;
+  font-size: 13px;
+}
+body.nxc #club-tools.is-compact .club-tools-label {
+  display: inline;
+}
+body.nxc #club-tools.is-compact > b,
+body.nxc #club-tools.is-compact > p,
+body.nxc #club-tools.is-compact > small,
+body.nxc #club-tools.is-compact .actions > :not(a[href='/admin']) {
+  display: none;
+}
+body.nxc #club-tools.is-compact .actions {
+  margin: 0;
+}
+body.nxc #club-tools.is-compact .actions a[href='/admin'] {
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--lime);
+  font-weight: 800;
+  text-decoration: none;
+}
+body.nxc #club-tools.is-compact .actions a[href='/admin']::after {
+  content: ' →';
+}
+body.nxc #club-tools.is-compact + #backups[hidden] {
+  display: none;
+}
+
+/* Cup tab: next Cup card for players + organizer tools folded away (app.js / cloud.js). */
+.cup-next {
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: #153b32;
+  color: #f4f7e8;
+}
+.cup-next[hidden] {
+  display: none;
+}
+.cup-next small {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #dcff35;
+}
+.cup-next b {
+  display: block;
+  margin: 4px 0;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.cup-next p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #d4e2d8;
+}
+.cup-next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cup-next-actions button {
+  flex: 1 1 140px;
+  min-height: 44px;
+  margin: 0;
+}
+.cup-next-actions .secondary {
+  background: transparent;
+  color: #f4f7e8;
+  border-color: #ffffff60;
+}
+.cup-tools {
+  margin: 12px 0;
+  border: 1px dashed #20403550;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.cup-tools > summary {
+  min-height: 32px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cup-tools.is-organizer {
+  border: 0;
+  padding: 0;
+}
+.cup-tools.is-organizer > summary {
+  display: none;
+}

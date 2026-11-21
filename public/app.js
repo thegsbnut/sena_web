@@ -289,7 +289,28 @@ function cupRestMessage() {
         ' ครั้ง จำนวนทีมและลำดับเกมยังทำให้พักครบทุกคนไม่ได้ กรุณาเว้นเวลาพักก่อนเกมที่มีเครื่องหมาย ⚠'
     : '✓ ทุกคู่ได้พักอย่างน้อย 1 เกมก่อนแข่งอีกครั้ง';
 }
+// Players (not organizers) with no Cup running see when the next Cup is instead of the tools.
+// Called from cloudLock on every DOM change, so it writes only when the content changes.
+function renderCupNext() {
+  const box = $('#cupNext');
+  const show = !canManage && !state.cup;
+  box.hidden = !show;
+  if (!show) return;
+  const next = window.SenaNextCup;
+  const key = next ? next.date + next.time : 'none';
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.innerHTML = `<small>${esc(venueText('SENA CUP'))} ครั้งถัดไป</small><b>${next ? esc(next.label) : 'ยังไม่กำหนดวัน'}</b><p>${next ? esc(next.time) + ' • ' : ''}ยังไม่มีตารางแข่ง ผู้จัดจะสร้างตารางในวันแข่ง แล้วผลจะขึ้นที่นี่</p><div class="cup-next-actions"><button type="button" class="primary" data-cup-board="rank">🏆 ดูอันดับสะสม</button><button type="button" class="secondary" data-cup-board="history">📜 ประวัติ Cup</button></div>`;
+}
+$('#cupNext').addEventListener('click', e => {
+  const board = e.target.closest('[data-cup-board]')?.dataset.cupBoard;
+  if (!board) return;
+  document.querySelector('[data-tab="leaderboard"]').click();
+  window.dispatchEvent(new CustomEvent('sena:board-tab', { detail: board }));
+});
+document.addEventListener('sena-next-cup', () => renderCupNext());
 function renderCup() {
+  renderCupNext();
   let c = state.cup;
   if (!c) {
     $('#cupResults').innerHTML = '';

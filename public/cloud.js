@@ -12,10 +12,27 @@ bar.className = 'panel';
 bar.innerHTML =
   '<b>☁ ข้อมูลกลางของก๊วน</b><p id="cloudStatus" role="status">กำลังเชื่อมต่อ…</p><div class="actions"><a class="secondary" href="/admin" target="_top">เข้าสู่ระบบผู้จัด</a><button class="secondary" id="cloudRefresh">โหลดข้อมูลกลางใหม่</button><button class="primary" id="cloudSave" hidden>บันทึกขึ้นออนไลน์</button><button class="secondary" id="cloudImport" hidden>นำเข้าข้อมูลเดิมในเครื่อง</button></div><small>เพื่อนจัดคู่ เล่น Sena Cup และเก็บคะแนนในเครื่องได้ทันที • แก้รายชื่อ หรือบันทึกข้อมูลกลาง ต้องล็อกอินผู้จัด</small>';
 bar.id = 'club-tools';
+// Players see only a one-line "for organizers" link; the full panel is for organizers,
+// or for a friend who has a private game saved on this device (they may need "reload").
+const barLabel = document.createElement('span');
+barLabel.className = 'club-tools-label';
+barLabel.textContent = '🛠 สำหรับผู้จัด';
+bar.prepend(barLabel);
+let cupToolsRole = null;
 document.querySelector('footer').before(bar);
 const cloudStatus = s => ($('#cloudStatus').textContent = s);
 function cloudLock() {
   canManage = cloudEditable;
+  // Attribute changes only: the MutationObserver below calls this on every DOM change.
+  bar.classList.toggle('is-compact', !cloudEditable && !cloudDirty);
+  const headerTools = document.querySelector('header a[href="#club-tools"]');
+  if (headerTools) headerTools.hidden = !cloudEditable;
+  if (cupToolsRole !== cloudEditable) {
+    cupToolsRole = cloudEditable;
+    $('#cupTools').open = cloudEditable;
+    $('#cupTools').classList.toggle('is-organizer', cloudEditable);
+  }
+  renderCupNext();
   const rosterTab = document.querySelector('[data-tab="roster"]');
   rosterTab.hidden = !cloudEditable;
   if (!cloudEditable) {

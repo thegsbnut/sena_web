@@ -212,6 +212,7 @@
       data = await request();
       render();
       publishJobs();
+      publishNextCup();
       if (!silent) status(`อัปเดตล่าสุด ${syncTime.format(new Date())} น.`);
     } catch (e) {
       status(e.message, true);
@@ -266,6 +267,7 @@
         sponsorEditing = null;
       }
       publishJobs();
+      publishNextCup();
       if (isMap && mapInput.value.trim() === body.url) mapInput.value = mapInput.defaultValue;
       if (body.action === 'book') {
         selected.clear();
@@ -450,6 +452,18 @@
     if (signature === jobsSignature) return;
     jobsSignature = signature;
     document.dispatchEvent(new CustomEvent('sena-jobs'));
+  }
+  // Next Cup day for the Cup tab's "Cup ครั้งถัดไป" card (app.js renderCupNext).
+  function publishNextCup() {
+    const s = data?.sessions?.find(x => x.isCup && !x.started && !x.skipped);
+    window.SenaNextCup = s
+      ? {
+          date: s.date,
+          label: displayDate(s.date),
+          time: `${s.start}–${s.end} น.${courtSuffix(s)}`,
+        }
+      : null;
+    document.dispatchEvent(new CustomEvent('sena-next-cup'));
   }
   window.SenaBookingJobs = {
     badge: id => data?.roster?.find(p => p.id === id)?.badge || null,
