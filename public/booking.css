@@ -63,17 +63,74 @@
   color: #143e2d;
   transform: rotate(8deg);
 }
-.booking-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Card for players who cannot book yet (not logged in / name not linked / waiting approval). */
+.booking-login {
+  display: grid;
   gap: 12px;
-  color: var(--paper);
+  padding: 14px;
+  border-radius: 16px;
+  background: #133128;
+  border: 1px solid #2f6252;
+  color: #f6f7ee;
 }
-.booking-club {
+.booking-login[hidden] {
+  display: none;
+}
+.booking-login b {
+  display: block;
+  font-size: 16px;
+}
+.booking-login small {
+  display: block;
+  margin-top: 2px;
   font-size: 13px;
+  line-height: 1.45;
+  color: #d4e2d8;
+}
+.booking-login-cta {
+  display: block;
+  min-height: 44px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #06c755;
+  color: #fff;
   font-weight: 800;
-  letter-spacing: 1px;
+  text-align: center;
+  text-decoration: none;
+}
+.booking-login-cta:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 2px;
+}
+.booking-sync {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+.booking-sync .booking-status {
+  flex: 1;
+  margin: 0;
+  text-align: right;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.booking-sync .booking-status.is-error {
+  text-align: left;
+  font-size: 13px;
+  opacity: 1;
+}
+.booking-refresh {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid #ffffff40;
+  background: transparent;
+  color: var(--paper);
+  font-size: 16px;
+  cursor: pointer;
 }
 .booking-profile {
   display: flex;
@@ -589,17 +646,11 @@ nav .tab {
   .booking-tag {
     font-size: 9px;
   }
-  .booking-club {
-    font-size: 11px;
-  }
   .booking-dates .sectionhead h2 {
     margin: 0;
   }
   .booking-chip {
     font-size: 10px;
-  }
-  .booking-toolbar button {
-    font-size: 11px;
   }
   .booking-date-bottom .textbtn {
     min-height: 40px;

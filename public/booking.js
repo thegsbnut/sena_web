@@ -138,6 +138,37 @@
       : '';
     return `<div class="booking-match-team">${ids.map(id => `<span>${html(gameName(id))} ${levelBadge(id)}</span>`).join('')}${average}</div>`;
   }
+  const syncTime = new Intl.DateTimeFormat('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  // Card above the dates for players who cannot book yet: not logged in, name not linked, or waiting.
+  function renderLogin() {
+    const card = q('#bookingLogin');
+    const member = data.member || {};
+    if (!data.requireLogin || data.canEdit || member.playerId) {
+      card.hidden = true;
+      return;
+    }
+    const [title, text, cta] = !member.loggedIn
+      ? [
+          'ยังไม่ได้เข้าสู่ระบบ',
+          'เข้าสู่ระบบ LINE ครั้งเดียว เพื่อจองคิว ถอนชื่อ และจ่ายบิล',
+          'เข้าสู่ระบบด้วย LINE',
+        ]
+      : member.status === 'pending'
+        ? ['รอผู้จัดยืนยันชื่อ', 'ผู้จัดยืนยันแล้วจะจองคิวได้ทันที', 'ดูสถานะ']
+        : [
+            'ยังไม่ได้ผูกชื่อผู้เล่น',
+            'เลือกชื่อของคุณครั้งเดียว เพื่อจองคิว ถอนชื่อ และจ่ายบิล',
+            'ผูกชื่อผู้เล่น',
+          ];
+    q('#bookingLoginTitle').textContent = title;
+    q('#bookingLoginText').textContent = text;
+    q('#bookingMemberLogin').textContent = cta;
+    card.hidden = false;
+  }
   function status(text, error = false) {
     q('#bookingStatus').textContent = text;
     q('#bookingStatus').className = 'booking-status' + (error ? ' is-error' : '');
@@ -181,7 +212,7 @@
       data = await request();
       render();
       publishJobs();
-      if (!silent) status('ข้อมูลล่าสุดจากออนไลน์ • เวลาไทย (UTC+7)');
+      if (!silent) status(`อัปเดตล่าสุด ${syncTime.format(new Date())} น.`);
     } catch (e) {
       status(e.message, true);
     } finally {
@@ -362,7 +393,7 @@
         .join('') || '<p class="hint">ยังไม่มีประวัติการถอนตัว</p>'
     }<p class="hint">เวลาไทย · ประวัติเริ่มเก็บหลังเปิดใช้ระบบนี้</p></section>`;
   }
-  root.innerHTML = `<div class="booking-toolbar"><span class="booking-club">${html(venueLabel)} COURT / จองคิว</span><a id="bookingMemberLogin" class="pill" href="${html(venueUrl('/liff.html'))}" hidden>เข้าสู่ระบบ LINE / ผูกชื่อเพื่อจอง</a><button type="button" class="secondary" id="bookingRefresh">↻ อัปเดตคิว</button></div><div id="bookingProfile" class="booking-profile" hidden></div><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p>
+  root.innerHTML = `<div id="bookingLogin" class="booking-login" hidden><div><b id="bookingLoginTitle"></b><small id="bookingLoginText"></small></div><a id="bookingMemberLogin" class="booking-login-cta" href="${html(venueUrl('/liff.html'))}"></a></div><div id="bookingProfile" class="booking-profile" hidden></div><div class="booking-sync"><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p><button type="button" class="booking-refresh" id="bookingRefresh" aria-label="อัปเดตคิว" title="อัปเดตคิว">↻</button></div>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>แผนที่สนาม ↗</a></div><p class="hint" id="bookingPattern"></p><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingCancelDialog" class="booking-feedback" aria-labelledby="bookingCancelTitle" aria-describedby="bookingCancelName bookingCancelDeadline bookingCancelWarning"><h2 id="bookingCancelTitle">ยืนยันถอนตัว</h2><p id="bookingCancelName"></p><p id="bookingCancelDeadline" class="hint"></p><p id="bookingCancelWarning" class="booking-cancel-warning" hidden>⚠ เลยเวลาถอนปลอดภัยแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย โดยผู้จัดจะพิจารณาอีกครั้ง</p><p id="bookingCancelStatus" role="status"></p><div class="actions"><button type="button" class="primary" id="bookingCancelConfirm">ยืนยันถอนตัว</button><button type="button" class="secondary" id="bookingCancelBack">กลับ</button></div></dialog>
  <dialog id="bookingSponsorDialog" class="booking-feedback booking-submit booking-sponsor-dialog" aria-labelledby="bookingSponsorTitle"><form id="bookingSponsorForm"><h2 id="bookingSponsorTitle">🎁 สปอนเซอร์</h2><label for="sponsorPrize">ของรางวัล</label><input id="sponsorPrize" type="text" maxlength="60" required placeholder="เช่น ลูกแบด 1 หลอด"><fieldset class="booking-sponsor-awards"><legend>มอบให้</legend>${sponsorAwards.map(([value, label]) => `<label><input type="radio" name="sponsorAward" value="${value}"><span>${label}</span></label>`).join('')}</fieldset><input id="sponsorAwardNote" type="text" maxlength="30" placeholder="เช่น คนตบแรงสุด" aria-label="มอบให้ใคร" hidden><label for="sponsorMessage">ข้อความถึงเพื่อนๆ <small>(ไม่ใส่ก็ได้)</small></label><input id="sponsorMessage" type="text" maxlength="60" placeholder="เช่น สู้ๆ นะทุกคน"><div id="sponsorNameField" hidden><label for="sponsorDisplayName">ชื่อผู้สนับสนุน</label><input id="sponsorDisplayName" type="text" maxlength="30"><p class="hint" id="sponsorNameHint"></p></div><label class="booking-check" id="sponsorNotifyRow"><input type="checkbox" id="sponsorNotify" checked> แจ้งเข้ากลุ่ม LINE ของก๊วน</label><p id="bookingSponsorStatus" role="status"></p><div class="actions"><button type="submit" class="primary" id="sponsorSubmit">ยืนยันเป็นสปอนเซอร์</button><button type="button" class="secondary" id="sponsorBack">กลับ</button></div><p id="sponsorDeleteRow" hidden><button type="button" class="textbtn" id="sponsorDelete">ยกเลิกการเป็นสปอนเซอร์</button> <span id="sponsorDeleteConfirm" hidden>แน่ใจไหม? <button type="button" class="secondary" id="sponsorDeleteYes">ยืนยันยกเลิก</button></span></p></form></dialog>
@@ -571,12 +602,11 @@
   function render() {
     const linked = data.member?.playerId;
     if (data.requireLogin && !data.canEdit) {
-      q('#bookingMemberLogin').hidden = Boolean(linked);
       if (linked) playerId = linked;
-    } else {
-      q('#bookingMemberLogin').hidden = true;
-      if (!playerId && linked) playerId = linked;
-    }
+    } else if (!playerId && linked) playerId = linked;
+    renderLogin();
+    q('#bookingDetailsTitle').textContent =
+      data.requireLogin && !data.canEdit && !linked ? 'รายชื่อผู้ตี' : 'รายละเอียด / ถอนตัว';
     const selfId = linked || playerId;
     renderProfile();
     const cfg = data.settings,
@@ -623,12 +653,9 @@
       ? visibleSessions
           .map(s => {
             const available = Math.max(0, s.capacity - s.confirmedCount);
-            const closed =
-              s.started ||
-              s.closed ||
-              s.skipped ||
-              !cfg.enabled ||
-              (data.requireLogin && !data.canEdit && !data.member?.playerId);
+            const closed = s.started || s.closed || s.skipped || !cfg.enabled;
+            // Not logged in / not linked yet: show the real seats, but no checkbox to pick the day.
+            const needsLogin = data.requireLogin && !data.canEdit && !data.member?.playerId;
             const mine = s.registrations.find(r => r.playerId === selfId);
             const tone = closed
               ? 'closed'
@@ -645,7 +672,7 @@
                   : 'ปิดรับจอง'
               : available
                 ? `เหลือ ${available} ที่ · ${s.confirmedCount}/${s.capacity} คน`
-                : 'ตัวจริงเต็ม';
+                : `ตัวจริงเต็ม · ${s.confirmedCount}/${s.capacity} คน`;
             const waitlist =
               tone === 'full' ? (s.canJoinWaitlist === false ? 'คิวสำรองเต็ม' : 'ยังรับสำรอง') : '';
             const personal = mine
@@ -653,13 +680,13 @@
                 ? '<span class="booking-me booking-me-in">✓ ลงชื่อแล้ว</span>'
                 : `<span class="booking-me booking-me-wait">⏳ สำรอง #${html(mine.position)}</span>`
               : '';
-            return `<article class="booking-date availability-${tone} ${focusId === s.id ? 'is-focus' : ''} ${closed ? 'is-closed' : ''} ${mine ? 'has-me' : ''}">
+            return `<article class="booking-date availability-${tone} ${focusId === s.id ? 'is-focus' : ''} ${closed ? 'is-closed' : ''} ${needsLogin ? 'needs-login' : ''} ${mine ? 'has-me' : ''}">
     ${s.isCup ? cupBadge : ''}
     <label class="booking-date-label">
-     <input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id) ? 'checked' : ''} ${closed ? 'disabled' : ''} aria-label="เลือก ${displayDate(s.date)}${s.isCup ? ' · ' + html(cupName) : ''}">
+     ${needsLogin ? '' : `<input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id) ? 'checked' : ''} ${closed ? 'disabled' : ''} aria-label="เลือก ${displayDate(s.date)}${s.isCup ? ' · ' + html(cupName) : ''}">`}
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.${html(courtSuffix(s))}</small></span>${personal}
     </label>
-    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${needsLogin ? 'ดูรายชื่อผู้ตี' : mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
     ${s.isCup ? sponsorBox(s) : ''}
     ${s.holiday ? `<p class="booking-holiday">☀ ${html(s.holiday)}</p>` : ''}
     ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
