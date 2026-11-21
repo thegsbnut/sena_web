@@ -399,7 +399,7 @@ summary:focus-visible {
   color: var(--paper);
 }
 
-/* Leaderboard: refresh icon in the top-right corner of the stats panel; manual entry at the very end. */
+/* Leaderboard: refresh button in the top-right corner of the stats panel; manual entry at the very end. */
 #lbTotals {
   position: relative;
 }
@@ -421,20 +421,6 @@ summary:focus-visible {
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
-}
-.board-refresh.is-loading {
-  animation: board-spin 0.8s linear infinite;
-}
-@keyframes board-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .board-refresh.is-loading {
-    animation: none;
-    opacity: 0.55;
-  }
 }
 .board-end {
   margin-top: 18px;

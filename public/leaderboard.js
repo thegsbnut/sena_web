@@ -220,11 +220,7 @@
   document.querySelector('#leaderboardRefresh').onclick = event => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    const button = document.querySelector('#leaderboardRefresh');
-    button.classList?.add('is-loading');
-    load()
-      .catch(e => status(e.message))
-      .finally(() => button.classList?.remove('is-loading'));
+    load().catch(e => status(e.message));
   };
   document.querySelector('#manualHistory').onclick = () => openEditor();
   document.querySelector('#historyList').onclick = e => {
