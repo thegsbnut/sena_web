@@ -1337,5 +1337,31 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
   assert.match(courtHtml, /\/booking\.css\?v=20261121-login/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261121-login/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261121-cup/);
+});
+
+test('players see a one-line organizer link and a next-Cup card; organizer tools fold away', () => {
+  const read = f => readFileSync(new URL(f, import.meta.url), 'utf8');
+  const cloud = read('./public/cloud.js');
+  const app = read('./public/app.js');
+  const booking = read('./public/booking.js');
+  const court = read('./public/court.html');
+  const css = read('./public/next-nav.css');
+
+  // Organizer panel: compact for players without a private game; header shortcut only for organizers
+  assert.match(cloud, /bar\.classList\.toggle\('is-compact', !cloudEditable && !cloudDirty\)/);
+  assert.match(cloud, /headerTools\.hidden = !cloudEditable/);
+  assert.match(css, /body\.nxc #club-tools\.is-compact\s*\{/);
+
+  // Cup tab: tools inside #cupTools (open for organizers once per role change), card from booking data
+  assert.match(
+    court,
+    /<details id="cupTools" class="cup-tools" open>[\s\S]*id="createCup"[\s\S]*<\/details><div id="cupResults">/,
+  );
+  assert.match(court, /<div id="cupNext" class="cup-next" hidden><\/div>/);
+  assert.match(cloud, /if \(cupToolsRole !== cloudEditable\)/);
+  assert.match(app, /const show = !canManage && !state\.cup;/);
+  assert.match(app, /if \(box\.dataset\.key === key\) return;/);
+  assert.match(booking, /window\.SenaNextCup = s/);
+  assert.match(booking, /new CustomEvent\('sena-next-cup'\)/);
 });
