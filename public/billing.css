@@ -939,3 +939,37 @@ html.embedded {
 .cb-chosen {
   margin: 0.4rem 0;
 }
+
+/* Not logged in: one clear LINE-green button (LINE brand green #06c755) */
+.mine-login {
+  text-align: center;
+  padding: 0.4rem 0 0.2rem;
+}
+.mine-login b {
+  display: block;
+  font-size: 1.05rem;
+}
+.mine-login p {
+  margin: 0.3rem 0 0.9rem;
+}
+.button.line-login {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 0.8rem 1rem;
+  background: #06c755;
+  color: #fff;
+  border: 0;
+  border-radius: 12px;
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+}
+.button.line-login:hover {
+  background: #05b34c;
+}
+.button.line-login:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}

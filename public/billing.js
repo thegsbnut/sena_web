@@ -866,7 +866,7 @@
     const wrap = inner => zone('mine', 'ของฉัน', 'บิลที่คุณต้องจ่าย', inner);
     if (mine.state === 'login')
       return wrap(
-        `<p class="muted">กรุณาเข้าสู่ระบบ LINE เพื่อดูบิลของคุณ</p><a class="button" target="_top" href="${loginLink}">เข้าสู่ระบบ LINE</a>`,
+        `<div class="mine-login"><b>เข้าสู่ระบบเพื่อดูยอดที่ต้องจ่าย</b><p class="muted">ดูบิลค้าง สแกน QR พร้อมเพย์ และแนบสลิปได้ในที่เดียว</p><a class="button line-login" target="_top" href="${loginLink}">เข้าสู่ระบบด้วย LINE</a></div>`,
       );
     if (mine.state === 'error')
       return wrap(
@@ -949,9 +949,14 @@
   }
   function showHome() {
     document.body.classList.add('home');
+    // Creating a collect bill needs a LINE login with a linked player name, or an organizer session
+    // (the people API answers 401 otherwise); anyone else does not get the button.
+    const canCollect = memberSession?.link?.status === 'approved' || Boolean(adminList);
     root.innerHTML =
       mineHtml() +
-      `<div class="actions collect-entry"><a class="button create-bill" href="/billing.html?collect=1&club=${club}">💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)</a></div>` +
+      (canCollect
+        ? `<div class="actions collect-entry"><a class="button create-bill" href="/billing.html?collect=1&club=${club}">💸 เก็บเงิน (ค่าคอร์ต / ค่าข้าว ฯลฯ)</a></div>`
+        : '') +
       createdHtml() +
       (adminList ? adminOverviewHtml() : '');
     const roster = document.querySelector('.next-tabbar [data-go=roster]');
