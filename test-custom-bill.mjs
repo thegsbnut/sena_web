@@ -679,14 +679,17 @@ test('collect page: two tabs, the court tab only for organizers, organizers star
   );
   assert.match(js, /เก็บเงินทั่วไป/);
   assert.match(js, /tab = organizer \? tab \|\| 'court' : 'general'/);
-  // Single unified entry point visible to everyone on the bills home page, styled green (.create-bill).
+  // Single unified entry point on the bills home page, styled green (.create-bill). Shown to every
+  // logged-in player and organizer; a visitor who is not logged in only sees the LINE login card
+  // (the people API answers 401 for them, so the button would be a dead end).
   assert.equal((js.match(/collect=1&club=\$\{club\}/g) || []).length, 1);
   assert.match(
     js,
     /class="button create-bill" href="\/billing\.html\?collect=1&club=\$\{club\}">💸 เก็บเงิน/,
   );
+  assert.match(js, /const canCollect = mine\.state !== 'login' \|\| Boolean\(adminList\);/);
+  assert.match(js, /class="button line-login"/);
   assert.doesNotMatch(js, /สร้างบิลใหม่/);
-  assert.doesNotMatch(js, /canCollect/);
   assert.doesNotMatch(js, /manage=1&new=1&club=/);
 });
 
