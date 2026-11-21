@@ -1327,7 +1327,6 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   // Not logged in: real seat counts (login no longer counts as "closed"), no day checkbox, login card
   assert.match(js, /const closed = s\.started \|\| s\.closed \|\| s\.skipped \|\| !cfg\.enabled;/);
   assert.match(js, /\$\{needsLogin \? '' : `<input type="checkbox" data-book-date=/);
-  assert.match(js, /needsLogin \? 'ดูรายชื่อผู้ตี'/);
   assert.match(js, /function renderLogin\(\)/);
   assert.match(js, /id="bookingLogin" class="booking-login" hidden/);
   assert.match(css, /\.booking-login\[hidden\]\s*\{/);

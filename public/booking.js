@@ -605,8 +605,6 @@
       if (linked) playerId = linked;
     } else if (!playerId && linked) playerId = linked;
     renderLogin();
-    q('#bookingDetailsTitle').textContent =
-      data.requireLogin && !data.canEdit && !linked ? 'รายชื่อผู้ตี' : 'รายละเอียด / ถอนตัว';
     const selfId = linked || playerId;
     renderProfile();
     const cfg = data.settings,
@@ -686,7 +684,7 @@
      ${needsLogin ? '' : `<input type="checkbox" data-book-date="${html(s.id)}" ${selected.has(s.id) ? 'checked' : ''} ${closed ? 'disabled' : ''} aria-label="เลือก ${displayDate(s.date)}${s.isCup ? ' · ' + html(cupName) : ''}">`}
      <span><strong>${displayDate(s.date)}</strong><small>${html(s.start)}–${html(s.end)} น.${html(courtSuffix(s))}</small></span>${personal}
     </label>
-    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${needsLogin ? 'ดูรายชื่อผู้ตี' : mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
+    <div class="booking-date-bottom"><div class="booking-availability"><span class="booking-availability-label">${availability}</span>${waitlist ? `<strong class="booking-waitlist-label">${waitlist}</strong>` : ''}</div><div class="booking-date-actions"><button type="button" class="booking-roster-action" ${mobileDetails.matches && supportsDetailsPopup ? 'aria-haspopup="dialog"' : ''} data-book-focus="${html(s.id)}">${mine?.canCancel ? 'รายละเอียด' : 'รายละเอียด / ถอนตัว'}</button>${mine?.canCancel ? `<button type="button" class="booking-withdraw-action" data-book-cancel="${html(mine.id)}" data-book-session="${html(s.id)}" aria-label="ถอนชื่อฉัน วันที่ ${displayDate(s.date)}">ถอนชื่อฉัน</button>` : ''}</div></div>
     ${s.isCup ? sponsorBox(s) : ''}
     ${s.holiday ? `<p class="booking-holiday">☀ ${html(s.holiday)}</p>` : ''}
     ${!data.holidayYears.includes(Number(s.date.slice(0, 4))) ? '<p class="booking-holiday">⚠ ปฏิทินปีนี้ยังไม่ครบ ให้ผู้จัดตรวจวันหยุดเพิ่มเติม</p>' : ''}
