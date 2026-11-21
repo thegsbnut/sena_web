@@ -949,9 +949,9 @@
   }
   function showHome() {
     document.body.classList.add('home');
-    // Creating a collect bill needs a linked LINE login or an organizer session (the API answers 401
-    // otherwise), so a visitor who is not logged in only sees the login card.
-    const canCollect = mine.state !== 'login' || Boolean(adminList);
+    // Creating a collect bill needs a LINE login with a linked player name, or an organizer session
+    // (the people API answers 401 otherwise); anyone else does not get the button.
+    const canCollect = memberSession?.link?.status === 'approved' || Boolean(adminList);
     root.innerHTML =
       mineHtml() +
       (canCollect
