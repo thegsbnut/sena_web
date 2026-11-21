@@ -545,6 +545,10 @@ test('slip upload uses preview dialog instead of confirm(), receipt modal has ac
   // embedded bills frame: no iOS bounce (white strip) and a background matching the page
   assert.match(css, /html\.embedded \{[^}]*overscroll-behavior: none;/);
   assert.match(css, /html\.embedded:has\(body\.home\) \{\s*background: #0b1c15;/);
+  // pages with the bottom menu draw into the iPhone home-bar area (otherwise LINE shows white there)
+  const court = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
+  for (const page of [html, court])
+    assert.match(page, /name="viewport" content="[^"]*viewport-fit=cover/);
   assert.match(js, /function previewSlip\(file, metaText, onRetake\)/);
   assert.match(js, /function openReceiptModal\(blob, ctx = \{\}\)/);
   assert.match(js, /b\.method === 'owner' \? '<small>คนออกเงิน<\/small>'/);
