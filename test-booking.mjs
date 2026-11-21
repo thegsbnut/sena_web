@@ -1330,13 +1330,16 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(js, /function renderLogin\(\)/);
   assert.match(js, /id="bookingLogin" class="booking-login" hidden/);
   assert.match(css, /\.booking-login\[hidden\]\s*\{/);
-  // Refresh lives in the dates header beside the map link; status line under the weekly pattern
+  // Dates header: title, update time and refresh on one row
   assert.match(
     js,
-    /class="booking-head-tools"><a id="bookingVenueMap"[\s\S]*?<\/a><button type="button" class="booking-refresh" id="bookingRefresh"/,
+    /<h2>เลือกวันตีแบด<\/h2><p id="bookingStatus"[^>]*><\/p><button type="button" class="booking-refresh" id="bookingRefresh"/,
   );
-  // status line (right-aligned) sits one line above the weekly pattern
-  assert.match(js, /id="bookingStatus"[^>]*><\/p><p class="hint" id="bookingPattern"><\/p>/);
+  // weekly pattern with the map link underneath the title row
+  assert.match(
+    js,
+    /class="booking-meta"><p class="hint" id="bookingPattern"><\/p><a id="bookingVenueMap"/,
+  );
   // leaderboard: refresh icon inside the stats summary, manual entry last in the page
   const court = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
   assert.match(court, /<summary>สถิติสะสม<button[^>]*id="leaderboardRefresh"/);
@@ -1352,8 +1355,8 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261121-status/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261121-refresh/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261121-head/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261121-head/);
 });
 
 test('players see a one-line organizer link and a next-Cup card; organizer tools fold away', () => {

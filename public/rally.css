@@ -425,3 +425,14 @@ summary:focus-visible {
 .board-end {
   margin-top: 18px;
 }
+
+/* Leaderboard title panel: just the heading now, so keep it short. */
+#leaderboard .leaderboard-head {
+  padding-block: 14px;
+}
+#leaderboard .leaderboard-head h1 {
+  margin: 0;
+}
+#leaderboardStatus:empty {
+  display: none;
+}
