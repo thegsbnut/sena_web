@@ -398,3 +398,30 @@ summary:focus-visible {
 #clubBrand {
   color: var(--paper);
 }
+
+/* Leaderboard: refresh button in the top-right corner of the stats panel; manual entry at the very end. */
+#lbTotals {
+  position: relative;
+}
+#lbTotals > summary {
+  padding-right: 52px;
+  min-height: 40px;
+}
+.board-refresh {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid #b9c6ad;
+  background: #f1f4e6;
+  color: #2b4a3c;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.board-end {
+  margin-top: 18px;
+}

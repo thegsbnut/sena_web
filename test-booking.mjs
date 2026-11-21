@@ -1335,7 +1335,12 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
     js,
     /class="booking-head-tools"><a id="bookingVenueMap"[\s\S]*?<\/a><button type="button" class="booking-refresh" id="bookingRefresh"/,
   );
-  assert.match(js, /id="bookingPattern"><\/p><p id="bookingStatus"/);
+  // status line (right-aligned) sits one line above the weekly pattern
+  assert.match(js, /id="bookingStatus"[^>]*><\/p><p class="hint" id="bookingPattern"><\/p>/);
+  // leaderboard: refresh icon inside the stats summary, manual entry last in the page
+  const court = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
+  assert.match(court, /<summary>สถิติสะสม<button[^>]*id="leaderboardRefresh"/);
+  assert.match(court, /id="manualHistory" hidden>[^<]*<\/button><\/div><\/section>/);
   // Manga hero only on wide screens
   assert.match(
     readFileSync(new URL('./public/next-nav.css', import.meta.url), 'utf8'),
@@ -1347,7 +1352,7 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261121-refresh/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261121-status/);
   assert.match(courtHtml, /\/booking\.js\?v=20261121-refresh/);
 });
 

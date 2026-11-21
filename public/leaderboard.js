@@ -216,8 +216,12 @@
   document
     .querySelector('[data-tab="leaderboard"]')
     .addEventListener('click', () => load().catch(e => status(e.message)));
-  document.querySelector('#leaderboardRefresh').onclick = () =>
+  // The refresh icon lives inside the <summary>: keep the click from folding the stats panel.
+  document.querySelector('#leaderboardRefresh').onclick = event => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     load().catch(e => status(e.message));
+  };
   document.querySelector('#manualHistory').onclick = () => openEditor();
   document.querySelector('#historyList').onclick = e => {
     const id = e.target.dataset.editHistory;

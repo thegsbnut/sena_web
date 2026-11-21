@@ -132,9 +132,14 @@
 }
 .booking-dates .booking-status {
   min-height: 0;
-  margin: -6px 0 6px;
+  margin: -4px 0 0;
   font-size: 12px;
   color: #5d7066;
+  text-align: right;
+}
+.booking-dates .booking-status.is-error {
+  margin: 0 0 8px;
+  text-align: left;
 }
 .booking-dates .booking-status:empty {
   display: none;
