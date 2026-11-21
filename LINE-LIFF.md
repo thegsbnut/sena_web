@@ -24,7 +24,7 @@
 - `https://liff.line.me/LIFF_ID?club=sena&page=book`
 - `https://liff.line.me/LIFF_ID?club=88&page=book`
 
-เว็บ Safari/Chrome ใช้ `/liff.html?club=sena` ได้เช่นกัน โดยกดเข้าสู่ระบบ LINE ไม่มีการนำชื่อโปรไฟล์ LINE ไปแทนชื่อในก๊วน
+เว็บ Safari/Chrome ใช้ `/liff.html?club=sena` ได้เช่นกัน โดยกดเข้าสู่ระบบ LINE (คนที่กดปุ่มจากหน้าจอง/บิลมาแล้ว `liff.js` พาไป LINE ให้เองหนึ่งครั้ง ไม่ต้องกดซ้ำ; หลังล็อกอินไม่สำเร็จ/ออกจากระบบ ภายใน 2 นาที จะโชว์ปุ่มแทนเพื่อไม่ให้วนลูป — `sessionStorage['sena-liff-login-tried']`) ไม่มีการนำชื่อโปรไฟล์ LINE ไปแทนชื่อในก๊วน
 
 ## ช่วงเก็บตก: เลือกชื่อครั้งเดียว ผูกทั้ง Sena และ 88
 
