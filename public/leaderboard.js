@@ -86,7 +86,21 @@
           .reverse()
           .map(c => {
             const standings = Sena.standings(c.teams, c.matches);
-            return `<article class="panel"><div class="sectionhead"><h2>${esc(c.title)}</h2><span>${esc(c.date)}</span></div><p class="hint">${c.inBaseline ? 'รวมอยู่ในยอดตั้งต้นแล้ว' : 'นับเพิ่มในสถิติสะสม'} · ${c.matches.length} เกม</p><details><summary>ดูอันดับและคะแนน</summary><ol>${standings.map(row => `<li>${esc(row.name)} · ชนะ ${row.w} · แต้ม ${row.pf}–${row.pa}</li>`).join('')}</ol>${c.matches.map((m, i) => `<p>เกม ${i + 1} · ${esc(nameOf(c.teams[m.a]))} <b>${m.sa} : ${m.sb}</b> ${esc(nameOf(c.teams[m.b]))}</p>`).join('')}</details>${data.canEdit ? `<button class="secondary" data-edit-history="${esc(c.id)}">แก้ไขรายการนี้</button>` : ''}</article>`;
+            // Same tie rule as the leaderboard crowns: 🥇 = champion team, 💩 = last place team.
+            const medals = Sena.cupAwards(c);
+            const byMedal = badge =>
+              c.teams
+                .flat()
+                .filter(n => medals.get(String(n).trim().toLowerCase()) === badge)
+                .map(esc)
+                .join(' / ');
+            const champ = byMedal('🥇'),
+              last = byMedal('💩');
+            const awards =
+              champ || last
+                ? `<p class="cup-awards">${champ ? `<span>👑 แชม: <b>${champ}</b></span>` : ''}${last ? `<span>💩 อุนจิ: <b>${last}</b></span>` : ''}</p>`
+                : '';
+            return `<article class="panel"><div class="sectionhead"><h2>${esc(c.title)}</h2><span>${esc(c.date)}</span></div>${awards}<p class="hint">${c.inBaseline ? 'รวมอยู่ในยอดตั้งต้นแล้ว' : 'นับเพิ่มในสถิติสะสม'} · ${c.matches.length} เกม</p><details><summary>ดูอันดับและคะแนน</summary><ol>${standings.map(row => `<li>${esc(row.name)} · ชนะ ${row.w} · แต้ม ${row.pf}–${row.pa}</li>`).join('')}</ol>${c.matches.map((m, i) => `<p>เกม ${i + 1} · ${esc(nameOf(c.teams[m.a]))} <b>${m.sa} : ${m.sb}</b> ${esc(nameOf(c.teams[m.b]))}</p>`).join('')}</details>${data.canEdit ? `<button class="secondary" data-edit-history="${esc(c.id)}">แก้ไขรายการนี้</button>` : ''}</article>`;
           })
           .join('')
       : activeClub === '88'

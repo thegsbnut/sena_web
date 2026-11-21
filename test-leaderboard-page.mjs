@@ -69,7 +69,7 @@ function page(responses) {
       const body = responses.shift() ?? {};
       return { ok: !body.error, json: async () => body };
     },
-    Sena: { standings: () => [] },
+    Sena: { standings: () => [], cupAwards: () => new Map() },
     SenaHistoryForm: { parseTeams: () => [] },
     structuredClone,
     Intl,
@@ -205,4 +205,12 @@ test('leaderboard.js ไฮไลต์แถวของสมาชิกท�
     new sandbox.CustomEvent('sena:leaderboard', { detail: { ...board } }),
   );
   assert.equal(select.value, 'Ann');
+});
+
+test('cup history cards name the champion and the last-place team', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('./public/leaderboard.js', import.meta.url), 'utf8');
+  assert.match(js, /Sena\.cupAwards\(c\)/);
+  assert.match(js, /👑 แชม:/);
+  assert.match(js, /💩 อุนจิ:/);
 });

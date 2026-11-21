@@ -436,3 +436,10 @@ summary:focus-visible {
 #leaderboardStatus:empty {
   display: none;
 }
+.cup-awards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 6px 0 2px;
+  font-size: 14px;
+}
