@@ -433,3 +433,6 @@ summary:focus-visible {
 #leaderboard .leaderboard-head h1 {
   margin: 0;
 }
+#leaderboardStatus:empty {
+  display: none;
+}

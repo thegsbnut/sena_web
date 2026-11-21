@@ -107,7 +107,8 @@
     window.dispatchEvent(
       new CustomEvent('sena:leaderboard', { detail: window.SenaLeaderboardSnapshot }),
     );
-    status('ข้อมูลออนไลน์ล่าสุด');
+    // Loaded fine: no caption (the line only shows progress and errors).
+    status('');
   }
   function openEditor(record = null, current = false) {
     if (!data.canEdit) return;
@@ -359,7 +360,7 @@
             : 'บันทึกประวัติและคำนวณยอดสะสมแล้ว ✓',
         );
       } catch {
-        status('บันทึกประวัติแล้ว แต่โหลดตารางล่าสุดไม่สำเร็จ กดโหลดสถิติล่าสุดอีกครั้ง');
+        status('บันทึกประวัติแล้ว แต่โหลดตารางล่าสุดไม่สำเร็จ กดปุ่ม ↻ ในกรอบสถิติสะสมอีกครั้ง');
       }
       document
         .querySelector('#leaderboardStatus')

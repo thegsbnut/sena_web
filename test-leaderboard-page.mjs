@@ -131,7 +131,7 @@ test('leaderboard.js วาดตารางอันดับได้โด�
   assert.match(rows, /NEW/);
   assert.doesNotMatch(rows, /class="is-me"/);
   assert.equal(sandbox.window.SenaLeaderboardSnapshot.me, null);
-  assert.equal(element('#leaderboardStatus').textContent, 'ข้อมูลออนไลน์ล่าสุด');
+  assert.equal(element('#leaderboardStatus').textContent, '');
 });
 
 test('leaderboard.js ไฮไลต์แถวของสมาชิกที่ล็อกอินและส่งชื่อ me ให้ buddy-ui เลือกอัตโนมัติ', async () => {
