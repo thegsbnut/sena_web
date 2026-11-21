@@ -105,16 +105,7 @@
 .booking-login:not([hidden]) {
   margin-bottom: 14px;
 }
-/* Refresh sits next to the map link in the dates header; status line under the weekly pattern. */
-.booking-head-tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-inline-start: auto;
-}
-.booking-head-tools .booking-map-link {
-  margin-inline-start: 0;
-}
+/* Dates header: title left, update time + refresh right; pattern and map link underneath. */
 .booking-refresh {
   flex: 0 0 auto;
   width: 40px;
@@ -130,16 +121,39 @@
   outline: 2px solid #385747;
   outline-offset: 2px;
 }
-.booking-dates .booking-status {
+.booking-dates .sectionhead .booking-status {
   min-height: 0;
-  margin: -4px 0 0;
+  margin: 0 0 0 auto;
   font-size: 12px;
   color: #5d7066;
-  text-align: right;
+  white-space: nowrap;
 }
-.booking-dates .booking-status.is-error {
-  margin: 0 0 8px;
-  text-align: left;
+/* An error needs the full width: drop it under the title row. */
+.booking-dates .sectionhead .booking-status.is-error {
+  order: 3;
+  flex: 1 1 100%;
+  margin: 4px 0 0;
+  white-space: normal;
+}
+.booking-dates .sectionhead .booking-status:empty + .booking-refresh {
+  margin-inline-start: auto;
+}
+.booking-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 6px 0 4px;
+}
+.booking-meta .hint {
+  margin: 0;
+}
+.booking-meta .booking-map-link {
+  min-height: 36px;
+  margin: 0;
+}
+.booking-meta .booking-map-link[hidden] {
+  display: none;
 }
 .booking-dates .booking-status:empty {
   display: none;

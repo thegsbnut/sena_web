@@ -296,11 +296,12 @@ function renderCupNext() {
   const show = !canManage && !state.cup;
   box.hidden = !show;
   if (!show) return;
+  // undefined = booking data not loaded yet; null = loaded, no Cup day set.
   const next = window.SenaNextCup;
-  const key = next ? next.date + next.time : 'none';
+  const key = next ? next.date + next.time : next === null ? 'none' : 'loading';
   if (box.dataset.key === key) return;
   box.dataset.key = key;
-  box.innerHTML = `<small>${esc(venueText('SENA CUP'))} ครั้งถัดไป</small><b>${next ? esc(next.label) : 'ยังไม่กำหนดวัน'}</b><p>${next ? esc(next.time) + ' • ' : ''}ยังไม่มีตารางแข่ง ผู้จัดจะสร้างตารางในวันแข่ง แล้วผลจะขึ้นที่นี่</p><div class="cup-next-actions"><button type="button" class="primary" data-cup-board="rank">🏆 ดูอันดับสะสม</button><button type="button" class="secondary" data-cup-board="history">📜 ประวัติ Cup</button></div>`;
+  box.innerHTML = `<small>${esc(venueText('SENA CUP'))} ครั้งถัดไป</small><b>${next ? esc(next.label) : next === null ? 'ยังไม่กำหนดวัน' : 'กำลังโหลด…'}</b><p>${next ? esc(next.time) + ' • ' : ''}ยังไม่มีตารางแข่ง ผู้จัดจะสร้างตารางในวันแข่ง แล้วผลจะขึ้นที่นี่</p><div class="cup-next-actions"><button type="button" class="primary" data-cup-board="rank">🏆 ดูอันดับสะสม</button><button type="button" class="secondary" data-cup-board="history">📜 ประวัติ Cup</button></div>`;
 }
 $('#cupNext').addEventListener('click', e => {
   const board = e.target.closest('[data-cup-board]')?.dataset.cupBoard;
