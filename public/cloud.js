@@ -26,7 +26,9 @@ function cloudLock() {
   // Attribute changes only: the MutationObserver below calls this on every DOM change.
   bar.classList.toggle('is-compact', !cloudEditable && !cloudDirty);
   const headerTools = document.querySelector('header a[href="#club-tools"]');
-  if (headerTools) headerTools.hidden = !cloudEditable;
+  // A linked member reaches the club tools from the profile sheet (booking.js #meChip).
+  if (headerTools)
+    headerTools.hidden = !cloudEditable || document.body.classList.contains('has-me');
   if (cupToolsRole !== cloudEditable) {
     cupToolsRole = cloudEditable;
     $('#cupTools').open = cloudEditable;

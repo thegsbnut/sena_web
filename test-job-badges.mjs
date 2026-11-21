@@ -490,9 +490,17 @@ test('auth-status bar shows only for password admins; booking page renders compa
   const bookingJs = readFileSync(new URL('./public/booking.js', import.meta.url), 'utf8');
   const bookingCss = readFileSync(new URL('./public/booking.css', import.meta.url), 'utf8');
   const authCss = readFileSync(new URL('./public/auth-status.css', import.meta.url), 'utf8');
-  assert.match(bookingJs, /id="bookingProfile"/);
+  // Profile lives in the header chip + sheet, not a card on the booking page
+  assert.doesNotMatch(bookingJs, /id="bookingProfile"/);
   assert.match(bookingJs, /function renderProfile\(\)/);
-  assert.match(bookingJs, /booking-profile-role">ผู้จัด</);
-  assert.match(bookingCss, /\.booking-profile\s*\{/);
+  assert.match(bookingJs, /me-tag">ผู้จัด</);
+  assert.match(bookingCss, /\.me-chip\s*\{/);
+  assert.match(bookingCss, /\.me-sheet\s*\{/);
+  const court = readFileSync(new URL('./public/court.html', import.meta.url), 'utf8');
+  assert.match(
+    court,
+    /<button type="button" id="meChip" class="me-chip"[^>]*hidden><\/button><\/header>/,
+  );
+  assert.match(readFileSync(new URL('./public/cloud.js', import.meta.url), 'utf8'), /has-me/);
   assert.match(authCss, /\.sena-authbar\[hidden\]/);
 });

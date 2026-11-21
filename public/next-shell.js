@@ -44,6 +44,7 @@
 
   // Red "!" on the bills tab while the player has an unpaid (or re-send) bill. Quiet on any error.
   function markDue(count) {
+    window.SenaBillsDue = count; // read by the profile sheet (booking.js)
     const tab = document.querySelector('.next-tabbar .tab[data-tab="bills"]');
     if (!tab) return;
     if (count > 0) {

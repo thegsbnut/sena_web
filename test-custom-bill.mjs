@@ -972,3 +972,17 @@ test('LIFF logged-out visitor is sent straight to LINE once, then gets the butto
   assert.deepEqual(readOnly.logins, []);
   assert.deepEqual(readOnly.buttons, ['เข้าสู่ระบบด้วย LINE']);
 });
+
+test('profile sheet: member reads and saves their own PromptPay; strangers get 401', async t => {
+  const f = fixture(t),
+    a = await f.login(users.a, 'p0');
+  const url = '/api/billing?action=mypromptpay&club=sena';
+  assert.deepEqual(await (await f.request(url, null, a)).json(), { promptpay: '' });
+  const bad = await f.request(url, { promptpay: '1234' }, a);
+  assert.equal(bad.status, 400);
+  const ok = await (await f.request(url, { promptpay: '081-234-5678' }, a)).json();
+  assert.equal(ok.promptpay, '0812345678');
+  assert.deepEqual(await (await f.request(url, null, a)).json(), { promptpay: '0812345678' });
+  assert.equal((await f.request(url)).status, 401);
+  assert.equal((await f.request(url, { promptpay: '0812345678' })).status, 401);
+});

@@ -395,7 +395,7 @@
         .join('') || '<p class="hint">ยังไม่มีประวัติการถอนตัว</p>'
     }<p class="hint">เวลาไทย · ประวัติเริ่มเก็บหลังเปิดใช้ระบบนี้</p></section>`;
   }
-  root.innerHTML = `<div id="bookingLogin" class="booking-login" hidden><div><b id="bookingLoginTitle"></b><small id="bookingLoginText"></small></div><a id="bookingMemberLogin" class="booking-login-cta" href="${html(venueUrl('/liff.html'))}"></a></div><div id="bookingProfile" class="booking-profile" hidden></div>
+  root.innerHTML = `<div id="bookingLogin" class="booking-login" hidden><div><b id="bookingLoginTitle"></b><small id="bookingLoginText"></small></div><a id="bookingMemberLogin" class="booking-login-cta" href="${html(venueUrl('/liff.html'))}"></a></div>
  <div class="booking-layout"><div><section class="panel booking-dates"><div class="sectionhead"><h2>เลือกวันตีแบด</h2><p id="bookingStatus" class="booking-status" role="status" aria-live="polite"></p><button type="button" class="booking-refresh" id="bookingRefresh" aria-label="อัปเดตคิว" title="อัปเดตคิว">↻</button></div><div class="booking-meta"><p class="hint" id="bookingPattern"></p><a id="bookingVenueMap" class="booking-map-link" target="_blank" rel="noopener noreferrer" hidden>📍 แผนที่สนาม ↗</a></div><div id="bookingDates"></div><button type="button" class="secondary booking-more" id="bookingMore" aria-controls="bookingDates" aria-expanded="false" hidden>ดูวันเพิ่มเติม</button></section>
  <dialog id="bookingCancelDialog" class="booking-feedback" aria-labelledby="bookingCancelTitle" aria-describedby="bookingCancelName bookingCancelDeadline bookingCancelWarning"><h2 id="bookingCancelTitle">ยืนยันถอนตัว</h2><p id="bookingCancelName"></p><p id="bookingCancelDeadline" class="hint"></p><p id="bookingCancelWarning" class="booking-cancel-warning" hidden>⚠ เลยเวลาถอนปลอดภัยแล้ว หากผู้เล่นไม่ครบจนไม่สามารถตีได้ อาจมีค่าใช้จ่าย โดยผู้จัดจะพิจารณาอีกครั้ง</p><p id="bookingCancelStatus" role="status"></p><div class="actions"><button type="button" class="primary" id="bookingCancelConfirm">ยืนยันถอนตัว</button><button type="button" class="secondary" id="bookingCancelBack">กลับ</button></div></dialog>
  <dialog id="bookingSponsorDialog" class="booking-feedback booking-submit booking-sponsor-dialog" aria-labelledby="bookingSponsorTitle"><form id="bookingSponsorForm"><h2 id="bookingSponsorTitle">🎁 สปอนเซอร์</h2><label for="sponsorPrize">ของรางวัล</label><input id="sponsorPrize" type="text" maxlength="60" required placeholder="เช่น ลูกแบด 1 หลอด"><fieldset class="booking-sponsor-awards"><legend>มอบให้</legend>${sponsorAwards.map(([value, label]) => `<label><input type="radio" name="sponsorAward" value="${value}"><span>${label}</span></label>`).join('')}</fieldset><input id="sponsorAwardNote" type="text" maxlength="30" placeholder="เช่น คนตบแรงสุด" aria-label="มอบให้ใคร" hidden><label for="sponsorMessage">ข้อความถึงเพื่อนๆ <small>(ไม่ใส่ก็ได้)</small></label><input id="sponsorMessage" type="text" maxlength="60" placeholder="เช่น สู้ๆ นะทุกคน"><div id="sponsorNameField" hidden><label for="sponsorDisplayName">ชื่อผู้สนับสนุน</label><input id="sponsorDisplayName" type="text" maxlength="30"><p class="hint" id="sponsorNameHint"></p></div><label class="booking-check" id="sponsorNotifyRow"><input type="checkbox" id="sponsorNotify" checked> แจ้งเข้ากลุ่ม LINE ของก๊วน</label><p id="bookingSponsorStatus" role="status"></p><div class="actions"><button type="submit" class="primary" id="sponsorSubmit">ยืนยันเป็นสปอนเซอร์</button><button type="button" class="secondary" id="sponsorBack">กลับ</button></div><p id="sponsorDeleteRow" hidden><button type="button" class="textbtn" id="sponsorDelete">ยกเลิกการเป็นสปอนเซอร์</button> <span id="sponsorDeleteConfirm" hidden>แน่ใจไหม? <button type="button" class="secondary" id="sponsorDeleteYes">ยืนยันยกเลิก</button></span></p></form></dialog>
@@ -486,24 +486,151 @@
   mobileDetails.addEventListener('change', () => {
     if (!mobileDetails.matches && detailsDialog.open) detailsDialog.close();
   });
+  // Profile chip in the header (replaces the old card on the booking page) + "my profile" sheet.
+  // Shown only to a logged-in member linked to a player; logged-out visitors use the login card.
+  const meChip = document.querySelector('#meChip');
+  const meSheet = document.createElement('dialog');
+  meSheet.id = 'meSheet';
+  meSheet.className = 'me-sheet';
+  meSheet.setAttribute('aria-labelledby', 'meSheetName');
+  document.body.append(meSheet);
+  let promptpayCache = null;
+  const myPlayer = () =>
+    (data?.member?.playerId && data.roster.find(p => p.id === data.member.playerId)) || null;
   function renderProfile() {
-    const box = q('#bookingProfile');
-    const me = data.member?.playerId && data.roster.find(p => p.id === data.member.playerId);
+    const me = myPlayer();
+    document.body.classList.toggle('has-me', Boolean(me));
+    const tools = document.querySelector('header a[href="#club-tools"]');
+    if (tools && me) tools.hidden = true;
+    if (!meChip) return;
+    meChip.hidden = !me;
     if (!me) {
-      box.hidden = true;
-      box.innerHTML = '';
+      if (meSheet.open) meSheet.close();
       return;
     }
     const badge = me.badge || { plays: 0 };
-    const jobTh = SenaJobs.jobThai(badge);
-    const lineTh = badge.chosen && SenaJobs.JOBS[badge.line]?.th;
-    const goal = SenaJobRules.nextGoal(badge.plays);
-    const playsText = '🏸 ' + badge.plays + (goal ? '/' + goal : '') + ' ครั้ง';
-    const ready = !badge.chosen && SenaJobRules.jobLevel(badge.plays).lvl >= 1;
-    const roleTag = data.canEdit ? '<span class="booking-profile-role">ผู้จัด</span>' : '';
-    box.hidden = false;
-    box.innerHTML = `<div class="booking-profile-main"><button type="button" class="jb-own" data-job-pick="${html(me.id)}" aria-label="เลือกสาย job ของฉัน">${SenaJobs.badgeHtml(badge, 40, { mine: true })}</button><div class="booking-profile-info"><div class="booking-profile-name"><strong>${html(me.name)}</strong>${roleTag}</div><div class="booking-profile-meta">${html(jobTh)}${lineTh ? ' · ' + html(lineTh) : ''} · ${html(playsText)}</div></div></div><button type="button" class="booking-profile-pick" data-job-pick="${html(me.id)}">${ready ? 'เลือกสาย !' : 'เปลี่ยนสาย'}</button>`;
+    meChip.innerHTML = `${SenaJobs.badgeHtml(badge, 30, { mine: true })}<span><b>${html(me.name)}</b><small>${html(SenaJobs.jobThai(badge))}</small></span><i aria-hidden="true">▾</i>`;
+    meChip.setAttribute('aria-label', 'โปรไฟล์ของฉัน: ' + me.name);
+    if (meSheet.open) fillSheet();
   }
+  // Stats come from data the page already has: booking sessions, the bills-tab count
+  // (next-shell.js) and the leaderboard snapshot (leaderboard.js). No extra requests.
+  function myStats(me) {
+    const now = data.sessions
+      .filter(s => !s.started && !s.skipped)
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const next = now.find(s => s.registrations.some(r => r.playerId === me.id && !r.guest));
+    const reg = next?.registrations.find(r => r.playerId === me.id && !r.guest);
+    const booked = next
+      ? `${shortDate(next.date)} · ${reg.status === 'waitlist' ? 'สำรอง #' + reg.position : 'ตัวจริง ✓'}`
+      : 'ยังไม่ได้ลงชื่อ';
+    const due = window.SenaBillsDue;
+    const bills = typeof due !== 'number' ? '—' : due > 0 ? `ค้าง ${due} บิล` : 'ไม่มี ✓';
+    const key = me.name.trim().toLowerCase();
+    const row = window.SenaLeaderboardSnapshot?.standings?.find(
+      p => p.name.trim().toLowerCase() === key,
+    );
+    const cup = row
+      ? `อันดับ ${row.position} · 👑 ${row.crown || 0} · 💩 ${row.poo || 0}`
+      : 'ยังไม่มีสถิติ';
+    return { booked, bills, due: typeof due === 'number' && due > 0, cup };
+  }
+  const shortDate = d =>
+    new Date(d + 'T12:00:00+07:00').toLocaleDateString('th-TH', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Asia/Bangkok',
+    });
+  function fillSheet() {
+    const me = myPlayer();
+    if (!me) return;
+    const badge = me.badge || { plays: 0 };
+    const lineTh = SenaJobs.JOBS[badge.line]?.th;
+    const goal = SenaJobRules.nextGoal(badge.plays);
+    const ready = !badge.chosen && SenaJobRules.jobLevel(badge.plays).lvl >= 1;
+    const pct = goal ? Math.min(100, Math.round((badge.plays / goal) * 100)) : 100;
+    const stats = myStats(me);
+    const pp = promptpayCache;
+    meSheet.innerHTML = `<div class="me-grab" aria-hidden="true"></div>
+<div class="me-top"><button type="button" class="jb-own" data-job-pick="${html(me.id)}" aria-label="เลือกสาย job ของฉัน">${SenaJobs.badgeHtml(badge, 64, { mine: true })}</button><div><h2 id="meSheetName">${html(me.name)}${data.canEdit ? '<span class="me-tag">ผู้จัด</span>' : ''}</h2><p>ก๊วน ${html(venueLabel)}</p></div><button type="button" class="me-close" data-me-close aria-label="ปิด">✕</button></div>
+<section class="me-card"><h3>JOB ของฉัน <button type="button" data-job-pick="${html(me.id)}">${ready ? 'เลือกสาย !' : 'เปลี่ยนสาย'}</button></h3><p><b>${html(SenaJobs.jobThai(badge))}</b>${badge.chosen && lineTh ? ' · ' + html(lineTh) : ''}</p><div class="me-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div><small>🏸 ตีแล้ว ${badge.plays} ครั้ง${goal ? ` · อีก ${goal - badge.plays} ครั้งเลื่อนขั้น` : ' · ขั้นสูงสุดแล้ว'}</small></section>
+<section class="me-card"><h3>ข้อมูลของฉัน</h3><div class="me-row"><span>ชื่อในก๊วน</span><b>${html(me.name)}</b></div>${me.thai ? `<div class="me-row"><span>ชื่อไทย</span><b>${html(me.thai)}</b></div>` : ''}<form class="me-row me-pp" id="mePromptpay"><span>พร้อมเพย์ <small>(ใช้ตอนเก็บเงิน)</small></span>${
+      pp === null
+        ? '<b class="me-muted">กำลังโหลด…</b>'
+        : `<input name="promptpay" inputmode="numeric" maxlength="17" autocomplete="off" placeholder="เบอร์ 10 หลัก / เลขบัตร 13 หลัก" value="${html(pp)}" aria-label="พร้อมเพย์ของฉัน"><button type="submit">บันทึก</button>`
+    }</form><p class="me-status" id="mePromptpayStatus" role="status"></p><small class="me-muted">ชื่อแก้โดยผู้จัด</small></section>
+<section class="me-card"><h3>สถิติ</h3><div class="me-row"><span>ลงชื่อรอบถัดไป</span><b>${html(stats.booked)}</b></div><div class="me-row"><span>บิลค้างจ่าย</span>${stats.due ? `<button type="button" class="me-link" data-me-bills>${html(stats.bills)} ›</button>` : `<b>${html(stats.bills)}</b>`}</div><div class="me-row"><span>${html(cupName)}</span><b>${html(stats.cup)}</b></div></section>
+<div class="me-actions">${data.canEdit ? '<a class="me-dark" href="#club-tools" data-me-tools>🛠 จัดการก๊วน</a>' : ''}<button type="button" data-me-logout>ออกจากระบบ</button></div>`;
+  }
+  async function loadPromptpay() {
+    try {
+      const r = await venueFetch('/api/billing?action=mypromptpay', { cache: 'no-store' });
+      promptpayCache = r.ok ? (await r.json()).promptpay || '' : '';
+    } catch {
+      promptpayCache = '';
+    }
+    if (meSheet.open) fillSheet();
+  }
+  meChip?.addEventListener('click', () => {
+    if (!myPlayer()) return;
+    fillSheet();
+    meSheet.showModal();
+    if (promptpayCache === null) loadPromptpay();
+  });
+  meSheet.addEventListener('click', async e => {
+    if (e.target === meSheet || e.target.closest('[data-me-close]')) return meSheet.close();
+    const job = e.target.closest('[data-job-pick]');
+    if (job) {
+      meSheet.close();
+      return window.SenaBookingJobs.pick(job.dataset.jobPick);
+    }
+    if (e.target.closest('[data-me-tools]')) return meSheet.close();
+    if (e.target.closest('[data-me-bills]')) {
+      meSheet.close();
+      return document.querySelector('.next-tabbar .tab[data-tab="bills"]')?.click();
+    }
+    const out = e.target.closest('[data-me-logout]');
+    if (out) {
+      out.disabled = true;
+      out.textContent = 'กำลังออกจากระบบ…';
+      try {
+        await fetch('/api/member/logout', { method: 'POST' });
+      } catch {}
+      location.reload();
+    }
+  });
+  meSheet.addEventListener('submit', async e => {
+    if (e.target.id !== 'mePromptpay') return;
+    e.preventDefault();
+    const input = e.target.elements.promptpay,
+      button = e.target.querySelector('button'),
+      note = meSheet.querySelector('#mePromptpayStatus');
+    const value = input.value.replace(/[\s-]/g, '');
+    if (!/^0[0-9]{9}$|^[0-9]{13}$/.test(value)) {
+      note.textContent = 'ใส่เบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลัก';
+      return input.focus();
+    }
+    button.disabled = true;
+    note.textContent = 'กำลังบันทึก…';
+    try {
+      const r = await venueFetch('/api/billing?action=mypromptpay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ promptpay: value }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw Error(body.error || 'บันทึกไม่สำเร็จ');
+      promptpayCache = body.promptpay;
+      input.value = body.promptpay;
+      note.textContent = 'บันทึกแล้ว ✓';
+    } catch (error) {
+      note.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
   // Who sponsors as "me": the linked LINE member, or the picked name without LINE login.
   const sponsorSelf = () => data.member?.playerId || (data.requireLogin ? '' : playerId);
   function sponsorBox(s) {

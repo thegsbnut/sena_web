@@ -602,6 +602,21 @@ async function customRoute(req, env, admin, club, action) {
   const member = memberMode(env) ? await memberFor(req, env, club) : null;
   const approved = member?.link?.status === 'approved';
   if (!admin && !approved) return fail('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว', 401);
+  // The member's own PromptPay (profile sheet): read it, or save a new one.
+  if (action === 'mypromptpay') {
+    if (!approved) return fail('กรุณาเข้าสู่ระบบ LINE ที่ผูกชื่อแล้ว', 401);
+    if (req.method === 'GET')
+      return json({ promptpay: await getMemberPromptPay(db, member.userId) });
+    if (req.method !== 'POST') return fail('Method not allowed', 405);
+    const input = await readLimitedJson(req);
+    const promptpay = String(input?.promptpay ?? '').replace(/[\s-]/g, '');
+    if (!promptPayPattern.test(promptpay))
+      return fail(
+        'กรุณาใส่พร้อมเพย์เท่านั้น: เบอร์โทร 10 หลัก (ขึ้นต้น 0) หรือเลขบัตรประชาชน 13 หลัก ไม่รับเลขบัญชีธนาคาร',
+      );
+    await saveMemberPromptPay(db, member.userId, promptpay);
+    return json({ ok: true, promptpay });
+  }
   if (action === 'people') {
     if (req.method !== 'GET') return fail('Method not allowed', 405);
     await prepareMembers(db);
@@ -705,7 +720,7 @@ export async function billingRoute(req, env, admin, club, ctx) {
   const supplied = req.headers.get('X-Bill-Token') || '';
   if (id && !idPattern.test(id)) return fail('ไม่พบบิล', 404);
   await prepare(db);
-  if (!id && (action === 'people' || action === 'custom'))
+  if (!id && ['people', 'custom', 'mypromptpay'].includes(action))
     return await customRoute(req, env, admin, club, action);
   if (!id) {
     if (!admin) return fail('กรุณาเข้าสู่ระบบผู้จัด', 401);

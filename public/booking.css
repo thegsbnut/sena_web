@@ -161,72 +161,231 @@
 .booking-dates .booking-status:empty {
   display: none;
 }
-.booking-profile {
+/* Header profile chip (booking.js #meChip) and the "my profile" sheet (#meSheet). */
+.me-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 58vw;
+  min-height: 44px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid #728d79;
+  border-radius: 999px;
+  background: #ffffff10;
+  color: #fffae6;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.me-chip[hidden] {
+  display: none;
+}
+.me-chip .jb-badge {
+  flex: none;
+}
+.me-chip > span {
+  min-width: 0;
+}
+.me-chip b,
+.me-chip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.15;
+}
+.me-chip b {
+  font-size: 14px;
+}
+.me-chip small {
+  font-size: 11px;
+  color: #cfe0d6;
+}
+.me-chip i {
+  font-style: normal;
+  color: var(--lime);
+  font-size: 12px;
+}
+.me-chip:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+.me-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 92vh;
+  margin: auto auto 0;
+  padding: 10px 18px calc(22px + env(safe-area-inset-bottom, 0px));
+  border: 0;
+  border-radius: 22px 22px 0 0;
+  background: #f6f3e3;
+  color: #173f35;
+  font-size: 14px;
+  box-shadow: 0 -10px 30px #0006;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.me-sheet::backdrop {
+  background: #0009;
+}
+.me-grab {
+  width: 44px;
+  height: 5px;
+  margin: 0 auto 12px;
+  border-radius: 9px;
+  background: #c9cdb8;
+}
+.me-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.me-top h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: #173f35;
+}
+.me-top p {
+  margin: 2px 0 0;
+  color: #50655a;
+  font-size: 13px;
+}
+.me-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 9px;
+  background: #173f35;
+  color: var(--lime);
+  font-size: 11px;
+  vertical-align: middle;
+}
+.me-close {
+  flex: none;
+  align-self: flex-start;
+  width: 40px;
+  height: 40px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  background: #e6e8d6;
+  color: #173f35;
+  font-size: 18px;
+}
+.me-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #d2dbcc;
+  border-radius: 14px;
+  background: #fffdf3;
+}
+.me-card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #173f35;
+}
+.me-card p {
+  margin: 0;
+}
+.me-card h3 button,
+.me-pp button,
+.me-actions button,
+.me-actions a {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid #b8c4ad;
+  border-radius: 10px;
+  background: #eef1e3;
+  color: #173f35;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.me-bar {
+  height: 9px;
+  margin: 6px 0 4px;
+  border-radius: 9px;
+  background: #e1e5d3;
+  overflow: hidden;
+}
+.me-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #9ccf1f, var(--lime));
+}
+.me-card small,
+.me-muted {
+  color: #50655a;
+  font-size: 12px;
+}
+.me-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 10px;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background: #133128;
-  border: 1px solid #2f6252;
-  color: #f6f7ee;
+  padding: 7px 0;
+  border-top: 1px dashed #d8dfcf;
 }
-.booking-profile[hidden] {
+.me-card h3 + .me-row {
+  border-top: 0;
+}
+.me-row > span {
+  color: #50655a;
+}
+.me-row > b {
+  text-align: right;
+}
+.me-pp {
+  flex-wrap: wrap;
+}
+.me-pp > span {
+  flex-basis: 100%;
+}
+.me-pp input {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #b8c4ad;
+  border-radius: 10px;
+  background: #fff;
+  color: #173f35;
+  font: inherit;
+  font-size: 16px;
+}
+.me-status:empty {
   display: none;
 }
-.booking-profile-main {
+.me-status {
+  margin: 0 0 4px !important;
+  font-size: 12px;
+  font-weight: 700;
+}
+.me-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #a33d16;
+  font: inherit;
+  font-weight: 800;
+}
+.me-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.me-actions .me-dark {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.booking-profile-info {
-  min-width: 0;
-}
-.booking-profile-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  line-height: 1.25;
-}
-.booking-profile-name strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.booking-profile-role {
-  flex-shrink: 0;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: #24574a;
-  border: 1px solid #6f8d7c;
+  background: #173f35;
+  border-color: #173f35;
   color: var(--lime);
-  font-size: 11px;
-  font-weight: 800;
-}
-.booking-profile-meta {
-  font-size: 12px;
-  color: #b8cdbf;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.booking-profile-pick {
-  flex-shrink: 0;
-  min-height: 36px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--lime);
-  color: #102219;
-  border: 1.5px solid #445321;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
 }
 .booking-status {
   font-size: 13px;
