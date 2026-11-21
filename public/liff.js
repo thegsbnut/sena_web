@@ -110,10 +110,14 @@
       // The visitor already pressed a login button to get here, so go straight to LINE instead of
       // asking again. One automatic try per two minutes: after a failed or cancelled login, or right after
       // "ออกจากระบบ", the button stays so the page never loops.
+      // auto only turns true once the flag is saved: a browser that reads but cannot write
+      // sessionStorage would otherwise be sent to LINE again every time it came back.
       let auto = false;
       try {
-        auto = Date.now() - Number(sessionStorage.getItem('sena-liff-login-tried') || 0) > 120000;
-        if (auto) sessionStorage.setItem('sena-liff-login-tried', String(Date.now()));
+        if (Date.now() - Number(sessionStorage.getItem('sena-liff-login-tried') || 0) > 120000) {
+          sessionStorage.setItem('sena-liff-login-tried', String(Date.now()));
+          auto = true;
+        }
       } catch {}
       if (auto) {
         message('กำลังพาไปเข้าสู่ระบบด้วย LINE…');

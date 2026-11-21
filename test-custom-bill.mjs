@@ -917,7 +917,10 @@ async function liffLoggedOut(storage) {
     Number,
     sessionStorage: {
       getItem: key => storage[key] ?? null,
-      setItem: (key, value) => (storage[key] = String(value)),
+      setItem: (key, value) => {
+        if (storage.readOnly) throw Error('QuotaExceededError');
+        storage[key] = String(value);
+      },
       removeItem: key => delete storage[key],
     },
     document: {
@@ -964,4 +967,8 @@ test('LIFF logged-out visitor is sent straight to LINE once, then gets the butto
   // The flag expires, so a later tap from the court goes straight to LINE again
   storage['sena-liff-login-tried'] = String(Date.now() - 3 * 60 * 1000);
   assert.equal((await liffLoggedOut(storage)).logins.length, 1);
+  // Storage that can be read but not written: never redirect on its own, show the button
+  const readOnly = await liffLoggedOut({ readOnly: true });
+  assert.deepEqual(readOnly.logins, []);
+  assert.deepEqual(readOnly.buttons, ['เข้าสู่ระบบด้วย LINE']);
 });
