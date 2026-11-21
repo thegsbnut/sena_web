@@ -1359,7 +1359,7 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
   assert.match(courtHtml, /\/booking\.css\?v=20261121-me/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261121-me2/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261121-me/);
 });
 
 test('players see a one-line organizer link and a next-Cup card; organizer tools fold away', () => {
