@@ -1380,4 +1380,7 @@
       t => t.dataset.tab === location.hash.slice(1) && !t.hidden,
     ) || document.querySelector('[data-tab="booking"]');
   initialTab.click();
+  // Opened on another tab (e.g. Badbot "เก็บเงิน" → /court#bills): still load once in the
+  // background so the header profile chip appears. No-op when the booking tab already loads.
+  if (!data) load(true);
 })();
