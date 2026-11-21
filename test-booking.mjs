@@ -1330,14 +1330,25 @@ test('booking UI supports quick-withdraw on day cards, clean locked LINE review 
   assert.match(js, /function renderLogin\(\)/);
   assert.match(js, /id="bookingLogin" class="booking-login" hidden/);
   assert.match(css, /\.booking-login\[hidden\]\s*\{/);
+  // Refresh lives in the dates header beside the map link; status line under the weekly pattern
+  assert.match(
+    js,
+    /class="booking-head-tools"><a id="bookingVenueMap"[\s\S]*?<\/a><button type="button" class="booking-refresh" id="bookingRefresh"/,
+  );
+  assert.match(js, /id="bookingPattern"><\/p><p id="bookingStatus"/);
+  // Manga hero only on wide screens
+  assert.match(
+    readFileSync(new URL('./public/next-nav.css', import.meta.url), 'utf8'),
+    /@media \(max-width: 760px\) \{\s*body\.nxc \.rally-hero \{\s*display: none;/,
+  );
 
   // CSS rules & cache-busting query params
   assert.match(css, /\.booking-date-actions\s*\{/);
   assert.match(css, /\.booking-date-bottom \.booking-withdraw-action\s*\{/);
   assert.match(css, /\.booking-person\.is-me\s*\{/);
   assert.match(css, /\.booking-player-locked\s*\{/);
-  assert.match(courtHtml, /\/booking\.css\?v=20261121-login/);
-  assert.match(courtHtml, /\/booking\.js\?v=20261121-cup/);
+  assert.match(courtHtml, /\/booking\.css\?v=20261121-refresh/);
+  assert.match(courtHtml, /\/booking\.js\?v=20261121-refresh/);
 });
 
 test('players see a one-line organizer link and a next-Cup card; organizer tools fold away', () => {
