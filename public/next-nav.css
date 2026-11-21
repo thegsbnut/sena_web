@@ -212,3 +212,10 @@ body.nxc #club-tools.is-compact + #backups[hidden] {
 .cup-tools.is-organizer > summary {
   display: none;
 }
+
+/* Phones: the manga hero takes most of the first screen, so it is shown on wider screens only. */
+@media (max-width: 760px) {
+  body.nxc .rally-hero {
+    display: none;
+  }
+}
